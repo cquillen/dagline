@@ -8,9 +8,15 @@ namespace Dagline;
 /// is a function of the order in which task bodies end.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A change and everything that follows from it are one step: the step publishes its events in order, each with
 /// the snapshot as of that event, before the next change is looked at. No consumer code runs under the lock:
 /// task bodies are started on the thread pool, and reporters are called by <see cref="ReporterDelivery"/>.
+/// </para>
+/// <para>
+/// What a running task reports through its <see cref="TaskContext"/> is a change like any other and is applied under the same lock.
+/// It goes straight onto the task as the snapshot shows it, and only a warning that is kept is published.
+/// </para>
 /// </remarks>
 internal sealed class Run : ISnapshotSource
 {
@@ -23,12 +29,13 @@ internal sealed class Run : ISnapshotSource
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
     private readonly List<GraphGroup> _settledInThisStep = [];
     private readonly SortedSet<int> _ready = [];
+    private readonly HashSet<int> _reportedFailures = [];
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
     private DateTimeOffset? _endedAt;
     private RunOutcome? _outcome;
-    private volatile Snapshot _current;
+    private volatile Snapshot? _current;
 
     public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery)
     {
@@ -42,10 +49,9 @@ internal sealed class Run : ISnapshotSource
             group => new StatusCounts(pending: group.TaskCount));
         _nodes = [.. graph.Nodes.Select(AtTheStart)];
         _startedAt = timeProvider.GetUtcNow();
-        _current = TakeSnapshot();
     }
 
-    public Snapshot Current => _current;
+    public Snapshot Current => _current ?? TakeCurrent();
 
     /// <summary>Completes with the run outcome once no task is running and none is ready.</summary>
     public Task<RunOutcome> Ended => _ended.Task;
@@ -59,11 +65,84 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private void Settle(GraphTask task, TaskOutcome outcome)
+    /// <summary>
+    /// Applies what a running task reports about itself. A report from a task that has settled changes nothing.
+    /// </summary>
+    /// <param name="task">The task that reports.</param>
+    /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
+    public void Report(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    {
+        lock (_gate)
+        {
+            Apply(task, report);
+        }
+    }
+
+    /// <summary>
+    /// Applies a report that is a reported failure: from then on the task settles failed as a reported failure, however its body ends.
+    /// </summary>
+    /// <param name="task">The task that reports.</param>
+    /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
+    public void ReportFailure(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    {
+        lock (_gate)
+        {
+            if (Apply(task, report))
+            {
+                _reportedFailures.Add(task.Position);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
+    /// </summary>
+    /// <exception cref="ArgumentException">The task does not depend on the node.</exception>
+    public NodeStatus StatusOf(GraphTask task, Node dependency)
+    {
+        if (!_graph.TryGetDependency(task, dependency, out var position))
+        {
+            throw new ArgumentException(
+                $"The task '{task.Path}' does not depend on the node '{dependency.Path}'. A task can read the status of an upstream "
+                + "declared on it or on a group that holds it, and of a node beneath such an upstream.",
+                nameof(dependency));
+        }
+
+        lock (_gate)
+        {
+            return _nodes[position].Status;
+        }
+    }
+
+    /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
+    private bool Apply(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    {
+        var before = _nodes[task.Position];
+        if (before.Status is not NodeStatus.Running)
+        {
+            return false;
+        }
+
+        var after = report(before);
+        _nodes[task.Position] = after;
+        _current = null;
+
+        // A warning that was kept is the one report that is also an event.
+        foreach (var warning in after.Warnings.Skip(before.Warnings.Count))
+        {
+            Publish(new WarningAdded(_timeProvider.GetUtcNow(), task.Path, warning));
+        }
+
+        return true;
+    }
+
+    /// <summary>Settles a task whose body has ended. A reported failure the task recorded wins over the way the body ended.</summary>
+    private void Settle(GraphTask task, TaskOutcome ended)
     {
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
+            var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure : ended;
             _slots.GiveBack(task);
             Move(task, outcome, now);
             var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
@@ -212,7 +291,7 @@ internal sealed class Run : ISnapshotSource
     {
         try
         {
-            await task.Body(new TaskContext(task.Path, _timeProvider)).ConfigureAwait(false);
+            await task.Body(new TaskContext(this, task, _timeProvider)).ConfigureAwait(false);
             return TaskOutcome.Succeeded;
         }
         catch (Exception escaped)
@@ -241,17 +320,7 @@ internal sealed class Run : ISnapshotSource
     /// <summary>Settles a task: moves it to the status of its outcome and freezes that outcome on it.</summary>
     private void Move(GraphTask task, TaskOutcome outcome, DateTimeOffset now)
     {
-        var settled = _nodes[task.Position] with
-        {
-            Status = outcome.Status,
-            Settled = now,
-            Failure = outcome.Failure,
-            BlockedBy = outcome.BlockedBy,
-            Message = outcome.Message,
-            Detail = outcome.Detail,
-        };
-
-        Replace(task, settled, now);
+        Replace(task, outcome.Settle(_nodes[task.Position], now), now);
     }
 
     /// <summary>
@@ -298,8 +367,19 @@ internal sealed class Run : ISnapshotSource
 
     private void Publish(RunEvent runEvent)
     {
-        _current = TakeSnapshot();
-        _delivery.Publish(runEvent, _current);
+        var snapshot = TakeSnapshot();
+        _current = snapshot;
+        _delivery.Publish(runEvent, snapshot);
+    }
+
+    // A progress report only marks the current snapshot as out of date, so a task that reports often costs
+    // one snapshot for each read and not one for each report.
+    private Snapshot TakeCurrent()
+    {
+        lock (_gate)
+        {
+            return _current ??= TakeSnapshot();
+        }
     }
 
     private Snapshot TakeSnapshot()

@@ -4,6 +4,8 @@
   href: concepts.md
 - name: Defining a graph
   href: defining-a-graph.md
+- name: Writing tasks
+  href: writing-tasks.md
 - name: Running and stopping
   href: running-and-stopping.md
 - name: Terminal UI

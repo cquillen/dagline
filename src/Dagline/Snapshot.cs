@@ -17,6 +17,7 @@ public sealed class Snapshot
     private readonly FrozenDictionary<NodePath, int> _positions;
     private IReadOnlyList<NodeSnapshot>? _failed;
     private IReadOnlyList<BlockedTasks>? _blocked;
+    private IReadOnlyList<NodeSnapshot>? _withWarnings;
 
     internal Snapshot(
         DateTimeOffset started,
@@ -94,6 +95,20 @@ public sealed class Snapshot
     /// </remarks>
     public IReadOnlyList<BlockedTasks> Blocked
         => LazyInitializer.EnsureInitialized(ref _blocked, () => BlockedTasks.Among(_nodes, _positions));
+
+    /// <summary>
+    /// How many warnings the tasks of the run have added so far, whatever the status of each task: those kept in
+    /// <see cref="NodeSnapshot.Warnings"/> and those only counted in <see cref="NodeSnapshot.WarningsOmitted"/>.
+    /// </summary>
+    public int WarningCount => WithWarnings.Sum(task => task.Warnings.Count + task.WarningsOmitted);
+
+    /// <summary>Every task that has added at least one warning, in declaration order. Empty when no task has.</summary>
+    /// <remarks>
+    /// A task is listed from its first warning on, while it is still running, and whatever status it settles with.
+    /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> WithWarnings
+        => LazyInitializer.EnsureInitialized(ref _withWarnings, () => [.. _nodes.Where(node => node.Warnings.Count > 0)]);
 
     /// <summary>The node with the given path.</summary>
     /// <param name="path">The path of a node of the graph.</param>

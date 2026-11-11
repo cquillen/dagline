@@ -68,7 +68,10 @@ public sealed record NodeSnapshot
     /// Why the task failed, or <see langword="null"/> for a task that has not failed and for a group.
     /// </summary>
     /// <remarks>
-    /// An exception that escapes a task body, a cancellation exception included, is <see cref="FailureKind.Unexpected"/>.
+    /// A task that called <see cref="TaskContext.Fail"/> fails as <see cref="FailureKind.Reported"/>, however its body ended.
+    /// Any other task whose body let an exception escape, a cancellation exception included, fails as
+    /// <see cref="FailureKind.Unexpected"/>. The kind is set when the task settles: it is <see langword="null"/> while the task
+    /// is running, even after it has called <see cref="TaskContext.Fail"/>.
     /// </remarks>
     public FailureKind? Failure { get; internal init; }
 
@@ -83,17 +86,72 @@ public sealed record NodeSnapshot
 
     /// <summary>
     /// The one-line message of the task's outcome, or <see langword="null"/> when it has none and for a group.
-    /// For an unexpected failure it is the message of the exception that escaped the task body, with each line break in it
-    /// replaced by a space.
     /// </summary>
+    /// <remarks>
+    /// It is the message the task last set with <see cref="TaskContext.Message"/> or <see cref="TaskContext.Fail"/>,
+    /// and shows from the moment it is set, while the task is still running. For an unexpected failure it is the message
+    /// of the exception that escaped the task body, which replaces any the task had set. Each line break in the text given
+    /// is replaced by a space.
+    /// </remarks>
     public string? Message { get; internal init; }
 
     /// <summary>
     /// The detail lines of the task's outcome, in the order added. Empty when it has none and for a group.
-    /// For an unexpected failure they are the full name of the exception's type, then each line of its stack trace
-    /// as the runtime wrote it.
     /// </summary>
+    /// <remarks>
+    /// They are the lines the task added with <see cref="TaskContext.Detail"/> and <see cref="TaskContext.Fail"/>,
+    /// each shown from the moment it is added. An unexpected failure adds, after any lines the task had already added,
+    /// the full name of the exception's type, then each line of its stack trace as the runtime wrote it.
+    /// Only the first 100 detail lines of a task are kept, whichever way they were added:
+    /// <see cref="DetailOmitted"/> counts the rest.
+    /// </remarks>
     public IReadOnlyList<string> Detail { get; internal init; } = [];
+
+    /// <summary>
+    /// How many detail lines were added after the 100 that <see cref="Detail"/> keeps. Zero for a group.
+    /// </summary>
+    public int DetailOmitted { get; internal init; }
+
+    /// <summary>
+    /// The warnings the task added with <see cref="TaskContext.Warn"/>, in the order added, each on one line.
+    /// Empty when it added none and for a group.
+    /// </summary>
+    /// <remarks>
+    /// A warning shows here from the moment it is added, while the task is still running, and stays whatever status the task
+    /// settles with. Only the first 100 warnings of a task are kept: <see cref="WarningsOmitted"/> counts the rest.
+    /// </remarks>
+    public IReadOnlyList<string> Warnings { get; internal init; } = [];
+
+    /// <summary>
+    /// How many warnings the task added after the 100 that <see cref="Warnings"/> keeps. Zero for a group.
+    /// </summary>
+    public int WarningsOmitted { get; internal init; }
+
+    /// <summary>
+    /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
+    /// <see langword="null"/> when the task has set none or has cleared it, and for a group.
+    /// </summary>
+    /// <remarks>
+    /// Progress is never an event: read it from a snapshot. It is frozen when the task settles, so a settled task
+    /// still shows how far it got.
+    /// </remarks>
+    public string? StatusText { get; internal init; }
+
+    /// <summary>
+    /// The count of the task's progress: the number the task last gave <see cref="TaskContext.Count"/>.
+    /// <see langword="null"/> when the task has given none, and for a group.
+    /// </summary>
+    /// <remarks>Like <see cref="StatusText"/>, it is never an event and is frozen when the task settles.</remarks>
+    public long? Count { get; internal init; }
+
+    /// <summary>
+    /// The total that <see cref="Count"/> is counting towards, as the task last gave it to <see cref="TaskContext.Count"/>.
+    /// <see langword="null"/> when the last count came with no total, when the task has given no count, and for a group.
+    /// </summary>
+    /// <remarks>
+    /// Dagline does not compare the two numbers, so the count can be above the total.
+    /// </remarks>
+    public long? Total { get; internal init; }
 
     /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
