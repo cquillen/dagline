@@ -4,6 +4,8 @@ A reporter is something that presents a run to people while it happens: lines in
 
 A reporter watches a run and cannot change it. Nothing a reporter does, or fails to do, changes a task or the run outcome.
 
+The `Dagline` package ships one reporter, [the plain-text reporter](#the-plain-text-reporter), which prints a run as timestamped lines. The sections before it are for writing your own.
+
 > [!NOTE]
 > While a display is up, your app's own logging goes to a file and not to the console: see [Terminal UI](terminal-ui.md).
 
@@ -49,7 +51,7 @@ group checks settled: failed
 report: ready -> running
 ```
 
-A blocked task gets one event, pending to blocked, and its `Node` names the failed task in <xref:Dagline.NodeSnapshot.BlockedBy>. A reporter that would rather print one line for a whole cascade than one per task can group consecutive blocked events by that path.
+A blocked task gets one event, pending to blocked, and its `Node` names the failed task in <xref:Dagline.NodeSnapshot.BlockedBy>. A reporter that would rather print one line for a whole cascade than one per task can group consecutive blocked events by that path, as the plain-text reporter does.
 
 A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, the count of tasks per status, and how full the cap and each limit are. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
 
@@ -198,3 +200,115 @@ What to know about the source:
 A timer is the reporter's own concurrency. Dagline makes one call at a time into `OnEventAsync`, but it knows nothing of a loop the reporter started, so the reporter keeps the two apart itself. The example writes from `OnEventAsync` only after its loop has stopped. It also awaits the loop while handling `RunEnded`, so an exception from the loop leaves `OnEventAsync` and is reported like any other reporter error.
 
 Pass the timer the same `TimeProvider` as the run, so that a test with a fake clock drives both.
+
+## The plain-text reporter
+
+<xref:Dagline.PlainTextReporter> prints a run as lines of text: one timestamped line per thing that happened, and a summary at the end. It is the reporter to use when output is redirected to a file or shown by a build server. Give it the writer to print to:
+
+```csharp
+var result = await Runner.RunAsync(graph, new RunOptions
+{
+    Journal = Journal.None,
+    Reporters = [new PlainTextReporter(Console.Out)],
+});
+```
+
+It writes to that writer and to nothing else, and never closes it.
+
+Take a group `checks` that holds the tasks `a` and `b`, a task `publish` that requires `checks`, a task `notify` that requires `publish`, and a task `report` that runs after `checks`. When `b` fails, the run prints:
+
+```text
+2026-11-11T04:12:00Z run started: 5 tasks
+2026-11-11T04:12:00Z started checks/a
+2026-11-11T04:12:00Z started checks/b
+2026-11-11T04:12:02Z warning checks/a: entity 9 has no region
+2026-11-11T04:12:03Z failed checks/b in 3.1s: 2 bad entities
+    entity 3: missing owner
+    entity 17: bad date
+2026-11-11T04:12:03Z blocked 2 tasks by checks/b
+2026-11-11T04:12:05Z succeeded checks/a in 5.0s: checked 40 entities
+2026-11-11T04:12:05Z group checks failed: 1 succeeded, 1 failed
+2026-11-11T04:12:05Z started report
+2026-11-11T04:13:05Z tasks: 1 running, 1 succeeded, 1 failed, 2 blocked
+2026-11-11T04:13:20Z succeeded report in 1m15s
+2026-11-11T04:13:20Z run ended: incomplete in 1m20s
+tasks: 2 succeeded, 1 failed, 2 blocked
+failed: 1
+  checks/b (reported) at 2026-11-11T04:12:03Z after 3.1s
+    progress: checking entities, 17 of 40
+    message: 2 bad entities
+    detail:
+      entity 3: missing owner
+      entity 17: bad date
+    blocked 2 tasks: publish, notify
+warnings: 1
+  checks/a
+    entity 9 has no region
+```
+
+### The lines of a run
+
+Every line about an event begins with the time of the event, read from the run's clock.
+
+| Line | When |
+| --- | --- |
+| `run started: <n> tasks` | The run starts. |
+| `started <path>` | A task starts running. |
+| `succeeded <path> in <duration>: <message>` | A task succeeds. |
+| `failed <path> in <duration>: <message>` | A task fails with a reported failure. Its detail lines follow, indented. |
+| `failed <path> in <duration> (unexpected): <message>` | A task fails with an unexpected failure. Its detail lines follow, indented: the type of the exception and its stack trace. |
+| `blocked <n> tasks by <path>` | A failure blocked tasks. The path is that of the failed task. |
+| `warning <path>: <warning>` | A task adds a warning that is kept. |
+| `group <path> <status>: <counts>` | The last task beneath a group settles. |
+| `tasks: <counts>` | Nothing has been printed for a minute. |
+| `run ended: <run outcome> in <duration>` | The run ends. The summary follows. |
+
+What to know about them:
+
+- **A settle with no message ends after the duration**, as `succeeded report in 1m15s` does. The detail lines of a task that succeeded are not printed.
+- **A task that becomes ready is not printed, and neither is progress.** The log has one line when a task starts and one when it settles.
+- **Paths are printed and titles are not**, so a line can be found by the path your code declared.
+- **One line for a whole cascade.** Consecutive blocked events that name the same failed task are counted into one line, and a single task reads `blocked 1 task by <path>`. The reporter cannot know that the last of them has arrived until something else happens, so the line is printed just before the next line of any other kind. It still carries the time at which the tasks were blocked.
+- **A line of counts after a quiet minute.** One minute after the last line it printed, while the run has not ended, the reporter prints the count of tasks per status as the run is at that moment, so that a quiet hour does not look like a hang. It prints another after each further quiet minute, and none once the run has ended.
+
+### The formats
+
+- **Times** are in UTC, as `2026-11-11T04:12:03Z`, whatever the time zone of the machine.
+- **Numbers** are written in the invariant culture with no grouping: `1234567`.
+- **A duration** is `3.1s` under a minute, `1m15s` under an hour and `2h14m` from there, always rounded down.
+- **A list of counts** names each status that has at least one task, in the order pending, ready, running, succeeded, failed, blocked, cancelled. When there are no tasks at all it reads `no tasks`.
+- **Lines that were not kept.** Dagline keeps the first 100 detail lines and the first 100 warnings of a task. Where there were more, a line such as `and 3 more` follows the ones that were kept, at the same indent.
+
+### The summary
+
+The summary follows the `run ended` line and has no timestamps. It has up to three sections. A section with nothing in it is left out, so a complete run with no warnings ends with the counts alone.
+
+1. **The counts**: `tasks:` and the count of tasks per status.
+2. **The failures**: `failed:` and the number of failed tasks, then each of them in declaration order. The first line of a failure has the path, the kind of failure (`reported` or `unexpected`), when the task failed and how long it had run. Beneath it, each only when there is something to show:
+   - `progress:` the progress the task had reported when it failed. It reads `<text>`, `<count>`, `<count> of <total>`, or the text and the count joined by a comma.
+   - `message:` its message.
+   - `detail:` its detail lines, one to a line.
+   - `blocked <n> tasks:` what the failure blocked, named by its roots: the highest nodes whose every task it blocked. A failure that blocked every task beneath a group names that one group.
+3. **The warnings**: `warnings:` and the number of warnings added in the run, kept or not, then each task that has any, in declaration order, with the warnings that were kept beneath it.
+
+### The writer and the clock
+
+All the lines about one event are written with one call to the writer, which is then flushed. A writer your app also writes to therefore never puts a line of its own in the middle of a failure's detail lines or of the summary. The reporter's own writes never overlap either: the line of counts comes from a timer, and it waits for a write that is in progress. Writes are synchronous.
+
+The quiet minute is measured on a clock of the reporter's own, which is the system clock unless you pass another. That clock drives only the line of counts, and gives it its time. In a test, pass the reporter the same fake clock as the run:
+
+```csharp
+var clock = new FakeTimeProvider();
+var writer = new StringWriter();
+
+var result = await Runner.RunAsync(graph, new RunOptions
+{
+    Journal = Journal.None,
+    TimeProvider = clock,
+    Reporters = [new PlainTextReporter(writer, clock)],
+});
+```
+
+When the writer throws, the plain-text reporter is dropped like any other reporter and prints nothing more, the line of counts included. The error is on <xref:Dagline.RunResult.ReporterErrors>: see [When a reporter fails](#when-a-reporter-fails). An error from writing a line of counts stops that line at once and is reported with the next event of the run.
+
+Give one plain-text reporter to one run at a time.

@@ -47,5 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TaskContext.StatusOf` reads the status of a node the task depends on: an upstream declared on it or on a group that holds it, or any node beneath an upstream group.
 - A `TaskContext` is safe to call from several threads at once, and changes nothing once its task has settled.
 - Docs: the Writing tasks article.
+- `PlainTextReporter` prints a run to a `TextWriter` the app hands it: a UTC-timestamped line when the run starts, when a task starts, succeeds or fails (with its duration and message, and a failed task's detail lines beneath it), when a task adds a warning, when a group settles (with its counts) and when the run ends. A task that becomes ready and progress are not printed.
+- The plain-text reporter prints one line for consecutive blocked events with one cause, such as `blocked 2 tasks by checks/b`, and a line of counts one minute after the last line it printed, measured on its own `TimeProvider`, until the run ends.
+- The plain-text reporter ends a run with a summary: the count of tasks per status, every failed task (kind, time, duration, progress, message, detail lines and what it blocked, named by roots) and every kept warning under its task. A section with nothing in it is left out.
+- The plain-text reporter writes all the lines of one event with one call and never lets two of its writes overlap. A writer that throws drops the reporter and stops its line of counts, and the error is on `RunResult.ReporterErrors`.
+- `samples/Dagline.Samples.Basic` is a real run: one group, two tasks and a *requires*, printed by the plain-text reporter on standard output, with the run outcome mapped to the exit code.
+- Docs: the plain-text reporter and its line formats in the Reporters article, and the Concepts article.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main

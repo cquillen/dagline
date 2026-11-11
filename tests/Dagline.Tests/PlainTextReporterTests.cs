@@ -545,6 +545,36 @@ public class PlainTextReporterTests
     }
 
     [Test]
+    public async Task A_reporter_given_to_a_second_run_once_the_first_has_ended_prints_that_run_as_well()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new StringWriter();
+        var builder = new GraphBuilder();
+        builder.Task("prepare", _ => Task.CompletedTask);
+        var graph = builder.Build();
+        var options = Options(clock, new PlainTextReporter(writer, clock));
+
+        await Runner.RunAsync(graph, options);
+        clock.Advance(TimeSpan.FromMinutes(3));
+        await Runner.RunAsync(graph, options);
+        clock.Advance(TimeSpan.FromMinutes(3));
+
+        Lines(writer).ShouldBe(
+        [
+            "2026-11-11T04:12:00Z run started: 1 task",
+            "2026-11-11T04:12:00Z started prepare",
+            "2026-11-11T04:12:00Z succeeded prepare in 0.0s",
+            "2026-11-11T04:12:00Z run ended: complete in 0.0s",
+            "tasks: 1 succeeded",
+            "2026-11-11T04:15:00Z run started: 1 task",
+            "2026-11-11T04:15:00Z started prepare",
+            "2026-11-11T04:15:00Z succeeded prepare in 0.0s",
+            "2026-11-11T04:15:00Z run ended: complete in 0.0s",
+            "tasks: 1 succeeded",
+        ]);
+    }
+
+    [Test]
     public async Task The_reporter_rejects_a_null_writer_a_null_event_and_a_null_snapshot()
     {
         var reporter = new PlainTextReporter(new StringWriter());
