@@ -14,8 +14,12 @@ public static class Runner
     /// </param>
     /// <returns>
     /// A task that completes when no task is running and none is ready, and every reporter that was not dropped
-    /// has handled every event. That wait has no time bound. A reporter's exception never faults the task:
-    /// the reporter is dropped and its error is on <see cref="RunResult.ReporterErrors"/>.
+    /// has handled every event. That wait has no time bound, but any request on <paramref name="stop"/> made during it,
+    /// the first or a later one, ends it: each reporter still busy is dropped, the token passed to its
+    /// <see cref="IReporter.OnEventAsync"/> is cancelled, its remaining events are discarded, and the task completes
+    /// without waiting for its call to come back. Such a request does not change the run outcome.
+    /// A reporter's exception never faults the task either: the reporter is dropped and its error is on
+    /// <see cref="RunResult.ReporterErrors"/>. A reporter dropped by a stop has an <see cref="OperationCanceledException"/> there.
     /// </returns>
     /// <remarks>
     /// <para>
@@ -100,7 +104,7 @@ public static class Runner
         IReporter[] reporters,
         StopSignal? stop)
     {
-        var delivery = new ReporterDelivery(reporters);
+        var delivery = new ReporterDelivery(reporters, stop);
         var run = new Run(graph, settings, delivery, stop);
 
         run.Start();

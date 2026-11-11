@@ -16,6 +16,10 @@ namespace Dagline;
 /// The second request ends that wait at once. Later requests are counted in <see cref="Requests"/> and change nothing.
 /// </para>
 /// <para>
+/// Once a run has ended it waits for its reporters to handle every event. Any request made during that wait,
+/// the first or a later one, ends it and drops the reporters still busy, without changing the run outcome.
+/// </para>
+/// <para>
 /// A signal is not tied to one run. A run reads the requests made up to its end and ignores later ones,
 /// and a signal already requested when a run starts stops that run from its start: the run starts no task at all.
 /// The same signal can therefore be passed to a second run after the first has ended, and that run stops from its start.
@@ -30,9 +34,12 @@ namespace Dagline;
     Justification = "The sources have no timer and no wait handle is ever taken from them, so they hold nothing to free, and a signal an app forgets to dispose must still work.")]
 public class StopSignal
 {
-    // Cancelled on the first and the second request. They are never disposed, so cancelling them cannot throw.
+    // Cancelled on the first and the second request. No source here is ever disposed, so cancelling one cannot throw.
     private readonly CancellationTokenSource _firstRequest = new();
     private readonly CancellationTokenSource _secondRequest = new();
+
+    // Swapped for a fresh source on every request, then cancelled, so it answers whichever request comes next.
+    private CancellationTokenSource _nextRequest = new();
     private int _requests;
 
     /// <summary><see langword="true"/> once <see cref="Request"/> has been called at least once.</summary>
@@ -46,6 +53,12 @@ public class StopSignal
 
     /// <summary>A token cancelled on the second request, through which a run hears that it should stop waiting.</summary>
     internal CancellationToken SecondRequest => _secondRequest.Token;
+
+    /// <summary>
+    /// A token cancelled by the first request made after it was read, whichever request that is.
+    /// Requests made before it was read do not cancel it.
+    /// </summary>
+    internal CancellationToken NextRequest => Volatile.Read(ref _nextRequest).Token;
 
     /// <summary>Requests a stop, or counts one more request.</summary>
     /// <remarks>
@@ -62,6 +75,8 @@ public class StopSignal
             2 => _secondRequest.CancelAsync(),
             _ => Task.CompletedTask,
         };
+
+        _ = Interlocked.Exchange(ref _nextRequest, new CancellationTokenSource()).CancelAsync();
     }
 
     // Saturates instead of wrapping, so the count never goes down and never reads as no request.
