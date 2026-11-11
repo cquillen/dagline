@@ -36,6 +36,7 @@ public static class Runner
         return RunToEndAsync(graph, options.TimeProvider, reporters);
     }
 
+    // No token, by design: a run is not stopped through a CancellationToken, so there is none to pass on.
     private static async Task<RunResult> RunToEndAsync(Graph graph, TimeProvider timeProvider, IReporter[] reporters)
     {
         var delivery = new ReporterDelivery(reporters);

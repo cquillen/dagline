@@ -35,6 +35,33 @@ public class RunTests
     }
 
     [Test]
+    public async Task A_task_that_requires_several_tasks_becomes_ready_only_once_all_of_them_have_succeeded()
+    {
+        var builder = new GraphBuilder();
+        var first = builder.Task("shard-1", _ => Task.CompletedTask);
+        var second = builder.Task("shard-2", _ => Task.CompletedTask);
+        builder.Task("merge", _ => Task.CompletedTask).Requires(first).Requires(second);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        var lines = reporter.Lines.ToList();
+        var mergeReady = lines.IndexOf("merge: pending -> ready");
+        mergeReady.ShouldBeGreaterThan(lines.IndexOf("shard-1: running -> succeeded"));
+        mergeReady.ShouldBeGreaterThan(lines.IndexOf("shard-2: running -> succeeded"));
+        lines.Skip(mergeReady).ShouldBe(
+        [
+            "merge: pending -> ready",
+            "merge: ready -> running",
+            "merge: running -> succeeded",
+            "run ended: complete",
+        ]);
+    }
+
+    [Test]
     public async Task Tasks_with_no_dependency_between_them_all_become_ready_then_start_in_declaration_order()
     {
         var builder = new GraphBuilder();
