@@ -1,23 +1,25 @@
-using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Dagline;
 
 /// <summary>
-/// One run of a graph, and the single owner of everything that changes during it.
-/// Every change is applied under one lock, one at a time, so the order of the run's events
-/// is a function of the order in which task bodies end.
+/// One run of a graph: the shell that carries out the steps its <see cref="RunSteps"/> decides, and owns every effect.
+/// Every input is given to the steps under one lock, one at a time, so the order of the run's events
+/// is a function of the order in which things happen to it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A change and everything that follows from it are one step: the step publishes its events in order, each with
-/// the snapshot as of that event, before the next change is looked at. No consumer code runs under the lock:
-/// task bodies are started on the thread pool, and reporters are called by <see cref="ReporterDelivery"/>.
+/// The run owns the lock, the current snapshot, the grace-period timer, the registration on the stop signal, the source of the token
+/// every task sees, the task bodies, delivery to reporters and the end result. It reads the clock once each time it takes the lock,
+/// and passes that time to the steps. No consumer code runs under the lock: task bodies are started on the thread pool,
+/// and reporters are called by <see cref="ReporterDelivery"/>.
 /// </para>
 /// <para>
-/// Everything about one task lives in its <see cref="TaskInstance"/>, which decides what each change does to the task
-/// and which event, if any, the change produced. What a running task reports through its <see cref="TaskContext"/> is a change
-/// like any other and is applied under the same lock.
+/// Each step is carried out under the lock, in this order: the tasks' token is signalled, if the step asks; if the step ends the run,
+/// the registration on the signal and the timer are released; the events are published, each with its snapshot; the bodies of the
+/// tasks the step starts are started; the grace-period timer is started, if the step asks; and if the step ends the run, the wait for
+/// reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
+/// So the token is signalled before the run can end, and the wait for reporters listens before the run's end is set.
 /// </para>
 /// </remarks>
 [SuppressMessage(
@@ -30,47 +32,22 @@ internal sealed class Run : ISnapshotSource
     private readonly Graph _graph;
     private readonly TimeProvider _timeProvider;
     private readonly ReporterDelivery _delivery;
-    private readonly StatusCounts _counts;
-    private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
-    private readonly List<BuiltGroup> _settledInThisStep = [];
-    private readonly SortedSet<int> _ready = [];
-    private readonly TaskInstance?[] _instances;
-    private readonly Slots _slots;
+    private readonly RunSteps _steps;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly StopSignal? _signal;
-    private readonly TimeSpan _gracePeriod;
-
     private readonly CancellationTokenSource _stopping = new();
-    private readonly DateTimeOffset _startedAt;
+
     private IDisposable? _hearsTheSignal;
-    private int _requestsApplied;
     private ITimer? _gracePeriodTimer;
-    private StopState? _stop;
-    private ChunkedList<NodeSnapshot> _nodes;
-    private DateTimeOffset? _endedAt;
-    private RunOutcome? _outcome;
     private volatile Snapshot? _current;
 
     public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, StopSignal? signal)
     {
         _signal = signal;
         _graph = graph;
-        _slots = new Slots(graph.LimitNames, settings.Sizes);
         _timeProvider = settings.TimeProvider;
-        _gracePeriod = settings.GracePeriod;
         _delivery = delivery;
-        _counts = new StatusCounts(pending: graph.Tasks.Length);
-        _groupCounts = graph.Nodes.OfType<BuiltGroup>().ToFrozenDictionary(
-            group => group.Position,
-            group => new StatusCounts(pending: group.TaskCount));
-        _instances = new TaskInstance?[graph.Nodes.Length];
-        foreach (var task in graph.Tasks)
-        {
-            _instances[task.Position] = new TaskInstance(task);
-        }
-
-        _nodes = ChunkedList<NodeSnapshot>.From(graph.Nodes.Select(AtTheStart));
-        _startedAt = _timeProvider.GetUtcNow();
+        _steps = new RunSteps(graph, settings, this);
     }
 
     public Snapshot Current => _current ?? TakeCurrent();
@@ -86,18 +63,7 @@ internal sealed class Run : ISnapshotSource
     {
         lock (_gate)
         {
-            Publish(new RunStarted(_startedAt, this));
-            MakeReady(_graph.Tasks, _startedAt);
-            AnnounceSettledGroups(_startedAt);
-
-            // A second request needs nothing more here: once stopped from its start, the run has no task to stop waiting for.
-            _requestsApplied = _signal?.Requests ?? 0;
-            if (_requestsApplied > 0)
-            {
-                ApplyStop(_startedAt);
-            }
-
-            StartWhatFitsOrEnd(_startedAt);
+            CarryOut(_steps.Start(_timeProvider.GetUtcNow(), _signal?.Requests ?? 0));
         }
 
         HearTheSignal();
@@ -118,7 +84,7 @@ internal sealed class Run : ISnapshotSource
         var hearing = _signal.OnRequest(Hear);
         lock (_gate)
         {
-            if (_outcome is null)
+            if (!_ended.Task.IsCompleted)
             {
                 _hearsTheSignal = hearing;
                 return;
@@ -129,114 +95,20 @@ internal sealed class Run : ISnapshotSource
         hearing.Dispose();
     }
 
-    /// <summary>
-    /// Applies the requests made so far on the run's signal. The first is a stop: from this step on nothing starts,
-    /// and the run ends once nothing is running. The second also ends the wait for the running tasks.
-    /// It reads the count, so however many calls it takes to hear them, requests are applied in order and once.
-    /// A request already applied, or heard after the run has ended, changes nothing here: the wait for reporters hears it.
-    /// </summary>
     private void Hear()
     {
         lock (_gate)
         {
-            if (_outcome is not null)
-            {
-                return;
-            }
-
-            _requestsApplied = _signal!.Requests;
-            var now = _timeProvider.GetUtcNow();
-            if (_stop is null)
-            {
-                ApplyStop(now);
-                StartWhatFitsOrEnd(now);
-                BoundTheGracePeriod(now);
-            }
-
-            if (_requestsApplied >= 2)
-            {
-                LetGo(StoppedWaitingReason.SecondStop, now);
-            }
+            CarryOut(_steps.StopHeard(_signal!.Requests, _timeProvider.GetUtcNow()));
         }
-    }
-
-    /// <summary>
-    /// Applies the first request: from this step on nothing starts. The token every task sees is signalled in the same step,
-    /// so it is signalled before the run can end and <see cref="Runner.RunAsync"/> return.
-    /// </summary>
-    private void ApplyStop(DateTimeOffset now)
-    {
-        _stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod));
-        SignalTheTasks();
-        Publish(new StopRequested(now, _gracePeriod));
-    }
-
-    /// <summary>
-    /// Bounds the grace period once a stop has been applied: a grace period of zero lets go of the running tasks at once,
-    /// and a limited one sets a timer on the run's clock that lets go of those still running when it fires.
-    /// </summary>
-    private void BoundTheGracePeriod(DateTimeOffset now)
-    {
-        if (_outcome is not null || GracePeriodRules.IsUnlimited(_gracePeriod))
-        {
-            return;
-        }
-
-        if (_gracePeriod == TimeSpan.Zero)
-        {
-            LetGo(StoppedWaitingReason.GracePeriodOver, now);
-            return;
-        }
-
-        _gracePeriodTimer = _timeProvider.CreateTimer(
-            static run => ((Run)run!).GracePeriodOver(),
-            this,
-            _gracePeriod,
-            Timeout.InfiniteTimeSpan);
     }
 
     private void GracePeriodOver()
     {
         lock (_gate)
         {
-            LetGo(StoppedWaitingReason.GracePeriodOver, _timeProvider.GetUtcNow());
+            CarryOut(_steps.GracePeriodOver(_timeProvider.GetUtcNow()));
         }
-    }
-
-    /// <summary>
-    /// Ends the wait for the running tasks after a stop, if the run is still waiting for any: publishes
-    /// <see cref="StoppedWaiting"/>, then records each running task as cancelled in declaration order and lets go of it.
-    /// What follows is applied once for all of them, as after any task settles, and the run ends, since nothing is left running.
-    /// </summary>
-    private void LetGo(StoppedWaitingReason reason, DateTimeOffset now)
-    {
-        if (_outcome is not null || _counts[NodeStatus.Running] == 0)
-        {
-            return;
-        }
-
-        Publish(new StoppedWaiting(now, reason));
-        List<BuiltTask> leftBehind = [.. _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Running)];
-        foreach (var task in leftBehind)
-        {
-            Settle(task, TaskOutcome.LeftBehind, now);
-        }
-
-        Advance(DependentsOf(leftBehind), now);
-    }
-
-    /// <summary>
-    /// Signals the token every task sees. The token reads as cancelled at once, while the callbacks that task bodies
-    /// registered on it run later on the thread pool, so none runs under the lock or holds up the end of the run.
-    /// </summary>
-    private void SignalTheTasks()
-    {
-        _ = _stopping.CancelAsync().ContinueWith(
-            // A callback a task body registered on its token threw. That is the body's affair, and the stop goes on.
-            static signalled => _ = signalled.Exception,
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
     }
 
     /// <summary>Sets the status text of a task's progress.</summary>
@@ -272,22 +144,15 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     public void CloseWaitingScope(BuiltTask task) => Report(task, (instance, now) => instance.CloseWait(now));
 
-    /// <summary>
-    /// Applies what a running task reports about itself to its instance, and publishes the event the report produced, if any.
-    /// A report on a task that is not running changes nothing.
-    /// </summary>
+    /// <summary>Gives the steps what a running task reports about itself, and carries out the step it caused, if any.</summary>
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
     private bool Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
     {
         lock (_gate)
         {
-            if (report(InstanceOf(task), _timeProvider.GetUtcNow()) is not { } change)
-            {
-                return false;
-            }
-
-            Apply(task, change);
-            return true;
+            var steps = _steps.Report(task, report, _timeProvider.GetUtcNow());
+            CarryOut(steps);
+            return steps.Count > 0;
         }
     }
 
@@ -307,204 +172,100 @@ internal sealed class Run : ISnapshotSource
 
         lock (_gate)
         {
-            return _nodes[position].Status;
+            return _steps.StatusAt(position);
+        }
+    }
+
+    private void CarryOut(IReadOnlyList<Step> steps)
+    {
+        foreach (var step in steps)
+        {
+            CarryOut(step);
+        }
+    }
+
+    /// <summary>Carries out one step, under the lock, in the order the remarks of this type give.</summary>
+    private void CarryOut(Step step)
+    {
+        if (step.SignalsTheTasks)
+        {
+            SignalTheTasks();
+        }
+
+        if (step.Ends is not null)
+        {
+            // Neither Dispose waits for a callback that is running, which may be waiting for this lock.
+            _hearsTheSignal?.Dispose();
+            _gracePeriodTimer?.Dispose();
+        }
+
+        Publish(step.Events);
+        foreach (var task in step.Starts)
+        {
+            _ = Task.Run(() => RunBodyAsync(task));
+        }
+
+        if (step.GracePeriodTimer is { } gracePeriod)
+        {
+            _gracePeriodTimer = _timeProvider.CreateTimer(
+                static run => ((Run)run!).GracePeriodOver(),
+                this,
+                gracePeriod,
+                Timeout.InfiniteTimeSpan);
+        }
+
+        if (step.Ends is { } end)
+        {
+            // Only once RunEnded is queued, as ListenBeyond requires: a request heard while a reporter has handled every event
+            // but RunEnded is still to come would leave that reporter to be waited for.
+            _delivery.ListenBeyond(end.RequestsApplied);
+            _delivery.Complete();
+            _ended.SetResult(end.Outcome);
         }
     }
 
     /// <summary>
-    /// Settles a task whose body has ended, then applies what follows from it: the tasks its failure blocks, and what follows
-    /// for all of them. A task the run has let go of has settled already, and its body ending changes nothing.
+    /// Signals the token every task sees. The token reads as cancelled at once, while the callbacks that task bodies
+    /// registered on it run later on the thread pool, so none runs under the lock or holds up the end of the run.
     /// </summary>
-    private void Settled(BuiltTask task, TaskOutcome ended)
+    private void SignalTheTasks()
     {
-        lock (_gate)
-        {
-            var now = _timeProvider.GetUtcNow();
-            if (!Settle(task, ended, now))
-            {
-                return;
-            }
-
-            var blocked = InstanceOf(task).Status is NodeStatus.Failed ? Block(task, now) : [];
-            Advance(DependentsOf([task, .. blocked]), now);
-        }
+        _ = _stopping.CancelAsync().ContinueWith(
+            // A callback a task body registered on its token threw. That is the body's affair, and the stop goes on.
+            static signalled => _ = signalled.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     /// <summary>
-    /// Settles a running task with the outcome its instance decides, gives back its slots, and publishes the end of its wait,
-    /// if it was waiting, then its change of status.
+    /// Publishes a step's events, each with its snapshot, and keeps the last snapshot as the current one. A step with no events
+    /// changed only the snapshot, so it only marks the current snapshot as out of date.
     /// </summary>
-    /// <returns><see langword="true"/> when the task settled: it was running.</returns>
-    private bool Settle(BuiltTask task, TaskOutcome ended, DateTimeOffset now)
+    private void Publish(IReadOnlyList<StepEvent> events)
     {
-        var changes = InstanceOf(task).Settle(ended, runHasStopped: _stop is not null, now);
-        if (changes.Count == 0)
+        if (events.Count == 0)
         {
-            return false;
+            _current = null;
+            return;
         }
 
-        _slots.GiveBack(task);
-        foreach (var change in changes)
+        foreach (var (runEvent, snapshot) in events)
         {
-            Apply(task, change);
+            _delivery.Publish(runEvent, snapshot);
         }
 
-        return true;
-    }
-
-    /// <summary>
-    /// Blocks every pending task that requires a task that has just failed: directly, through a group that holds it,
-    /// or through a task that this blocks. Each records the failed task as its cause.
-    /// </summary>
-    /// <returns>The tasks blocked, in declaration order.</returns>
-    private List<BuiltTask> Block(BuiltTask failed, DateTimeOffset now)
-    {
-        List<BuiltTask> blocked = [.. PendingTasksThatRequire(failed).Order().Select(_graph.TaskAt)];
-        foreach (var task in blocked)
-        {
-            Apply(task, InstanceOf(task).Block(failed.Path, now));
-        }
-
-        return blocked;
-    }
-
-    /// <summary>
-    /// The positions of the pending tasks that cannot run now that a task has failed. A task that is already blocked is passed over,
-    /// with everything that requires it: an earlier failure reached it first.
-    /// </summary>
-    private HashSet<int> PendingTasksThatRequire(BuiltTask failed)
-    {
-        HashSet<int> found = [];
-        HashSet<int> cannotSucceed = [];
-        Queue<BuiltNode> unvisited = new();
-        Reach(failed);
-        while (unvisited.TryDequeue(out var node))
-        {
-            foreach (var dependent in _graph.Requiring(node).Where(IsPending))
-            {
-                if (found.Add(dependent.Position))
-                {
-                    Reach(dependent);
-                }
-            }
-        }
-
-        return found;
-
-        // A group is visited once, however many of the tasks beneath it the failure reaches.
-        void Reach(BuiltTask task)
-        {
-            foreach (var taskOrGroup in _graph.WithItsGroups(task))
-            {
-                if (cannotSucceed.Add(taskOrGroup.Position))
-                {
-                    unvisited.Enqueue(taskOrGroup);
-                }
-            }
-        }
-    }
-
-    private bool IsPending(BuiltTask task) => InstanceOf(task).Status is NodeStatus.Pending;
-
-    /// <summary>
-    /// The tasks, in declaration order, that depend on one of the tasks that have just settled or on a group that settled with them.
-    /// </summary>
-    private IEnumerable<BuiltTask> DependentsOf(IEnumerable<BuiltTask> settled)
-        => settled
-            .Concat<BuiltNode>(_settledInThisStep)
-            .SelectMany(node => node.Dependents)
-            .Distinct()
-            .Order()
-            .Select(_graph.TaskAt);
-
-    /// <summary>
-    /// Applies what follows from one change, causes before effects: the tasks among <paramref name="candidates"/>
-    /// whose dependencies are now met become ready, the groups that the step settled are announced,
-    /// the ready tasks that fit start, and the run ends when nothing is left to do.
-    /// </summary>
-    private void Advance(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
-    {
-        MakeReady(candidates, now);
-        AnnounceSettledGroups(now);
-        StartWhatFitsOrEnd(now);
-    }
-
-    /// <summary>
-    /// Starts the ready tasks that fit, unless a stop has been applied, and ends the run when nothing is left to do:
-    /// no task is running and, unless a stop has been applied, none is ready.
-    /// </summary>
-    private void StartWhatFitsOrEnd(DateTimeOffset now)
-    {
-        if (_stop is null)
-        {
-            StartWhatFits(now);
-        }
-
-        if (_counts[NodeStatus.Running] == 0 && (_stop is not null || _counts[NodeStatus.Ready] == 0))
-        {
-            End(now);
-        }
-    }
-
-    private void MakeReady(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
-    {
-        List<BuiltTask> ready = [.. candidates.Where(DependenciesAreMet)];
-        foreach (var task in ready)
-        {
-            Apply(task, InstanceOf(task).MakeReady(now));
-            _ready.Add(task.Position);
-        }
-    }
-
-    private bool DependenciesAreMet(BuiltTask task)
-        => task.Upstreams.All(upstream => _nodes[upstream.Position].Status.Meets(upstream.Kind));
-
-    /// <summary>Publishes one event for each group the current step settled: the deepest first, then in declaration order.</summary>
-    private void AnnounceSettledGroups(DateTimeOffset now)
-    {
-        foreach (var group in _settledInThisStep.OrderByDescending(group => group.Depth).ThenBy(group => group.Position))
-        {
-            var settled = _nodes[group.Position];
-            Publish(new GroupSettled(now, group.Path, settled.Status, settled.Counts));
-        }
-
-        _settledInThisStep.Clear();
-    }
-
-    /// <summary>
-    /// Tries the ready tasks in declaration order and starts each one that finds a slot free in the cap and in every limit it holds.
-    /// One that does not fit is passed over and stays ready, so it never holds up the tasks behind it.
-    /// The walk ends as soon as the cap is full, since every task holds a slot of the cap and none after that point could start.
-    /// </summary>
-    private void StartWhatFits(DateTimeOffset now)
-    {
-        var started = new List<int>();
-        foreach (var position in _ready)
-        {
-            if (_slots.CapIsFull)
-            {
-                break;
-            }
-
-            var task = _graph.TaskAt(position);
-            if (_slots.TryTake(task))
-            {
-                // Moved at once, not after the walk, so the snapshot with each start counts only the slots taken so far.
-                Apply(task, InstanceOf(task).Start(now));
-                _ = Task.Run(() => RunBodyAsync(task));
-                started.Add(position);
-            }
-        }
-
-        // The ready set cannot change while it is walked, so the tasks that started leave it here.
-        started.ForEach(position => _ready.Remove(position));
+        _current = events[^1].Snapshot;
     }
 
     // No token: a run is stopped through its signal, and a task body takes none.
     private async Task RunBodyAsync(BuiltTask task)
     {
         var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
-        Settled(task, outcome);
+        lock (_gate)
+        {
+            CarryOut(_steps.BodyEnded(task, outcome, _timeProvider.GetUtcNow()));
+        }
     }
 
     /// <summary>
@@ -526,93 +287,13 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private void End(DateTimeOffset now)
-    {
-        var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete
-            : _stop is not null ? RunOutcome.Stopped
-            : RunOutcome.Incomplete;
-
-        // Neither Dispose waits for a callback that is running, which may be waiting for this lock.
-        _hearsTheSignal?.Dispose();
-        _gracePeriodTimer?.Dispose();
-        _endedAt = now;
-        _outcome = outcome;
-        Publish(new RunEnded(now, outcome));
-        _delivery.ListenBeyond(_requestsApplied);
-        _delivery.Complete();
-        _ended.SetResult(outcome);
-    }
-
-    /// <summary>
-    /// Puts a task as it is after a change to its instance in place of the task as it was. A change of status is counted in the run
-    /// and in every group that holds the task. The event the change produced is published; a change that produced none
-    /// only marks the current snapshot as out of date.
-    /// </summary>
-    private void Apply(BuiltTask task, TaskChange change)
-    {
-        _nodes = _nodes.With(task.Position, change.Task);
-        switch (change.Event)
-        {
-            case TaskStatusChanged moved:
-                _counts.Move(moved.From, moved.To);
-                foreach (var group in task.Groups.Select(_graph.GroupAt))
-                {
-                    MoveBeneath(group, moved.From, moved.To);
-                }
-
-                Publish(moved);
-                break;
-            case { } produced:
-                Publish(produced);
-                break;
-            default:
-                _current = null;
-                break;
-        }
-    }
-
-    /// <summary>
-    /// Counts one task's change of status in a group that holds it, and derives the group's status again.
-    /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
-    /// </summary>
-    private void MoveBeneath(BuiltGroup group, NodeStatus from, NodeStatus to)
-    {
-        var counts = _groupCounts[group.Position];
-        counts.Move(from, to);
-        var status = counts.GroupStatus;
-        _nodes = _nodes.With(group.Position, _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() });
-
-        if (status.IsSettled())
-        {
-            _settledInThisStep.Add(group);
-        }
-    }
-
-    private NodeSnapshot AtTheStart(BuiltNode node)
-        => _groupCounts.TryGetValue(node.Position, out var counts)
-            ? new NodeSnapshot(node, counts.GroupStatus, counts.ToDictionary())
-            : InstanceOf((BuiltTask)node).Snapshot;
-
-    // Indexed by position among the nodes, so a group's place is empty.
-    private TaskInstance InstanceOf(BuiltTask task) => _instances[task.Position]!;
-
-    private void Publish(RunEvent runEvent)
-    {
-        var snapshot = TakeSnapshot();
-        _current = snapshot;
-        _delivery.Publish(runEvent, snapshot);
-    }
-
     // A progress report only marks the current snapshot as out of date, so a task that reports often costs
     // one snapshot for each read and not one for each report.
     private Snapshot TakeCurrent()
     {
         lock (_gate)
         {
-            return _current ??= TakeSnapshot();
+            return _current ??= _steps.TakeSnapshot();
         }
     }
-
-    private Snapshot TakeSnapshot()
-        => new(_startedAt, _endedAt, _outcome, _stop, _nodes, _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
 }

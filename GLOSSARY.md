@@ -128,6 +128,10 @@ _Avoid_: Crash, fault, exception
 One execution of a graph by one process.
 _Avoid_: Execution, session, job
 
+**Step**:
+Everything a run does in response to one thing happening: a start, a settle, a stop, a report. Its events share one time and come in a fixed order, causes before effects.
+_Avoid_: Tick, cycle, batch
+
 **Stop**:
 A request, usually from the operator, that the run start nothing new and that its running tasks end. A second stop ends the wait.
 _Avoid_: Cancel, abort, kill, shut down

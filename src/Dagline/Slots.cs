@@ -8,7 +8,7 @@ namespace Dagline;
 /// kept up to date as tasks start and settle. The cap behaves as a limit that every task holds.
 /// </summary>
 /// <remarks>
-/// It is not safe to use from several threads at once: the run that owns it changes it one step at a time.
+/// It is not safe to use from several threads at once: <see cref="RunSteps"/> owns it and changes it one step at a time.
 /// </remarks>
 /// <param name="limitNames">Every limit the graph names, as <see cref="Graph.LimitNames"/> gives them.</param>
 /// <param name="sizes">The size of the cap and of each of those limits.</param>
@@ -20,9 +20,6 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     /// <summary>The cap with its size and how many tasks are running now.</summary>
     public LimitUse Cap => new(sizes.Cap, _running);
 
-    /// <summary>Whether every slot of the cap is in use, so that no task can start until one settles.</summary>
-    public bool CapIsFull => _running == sizes.Cap;
-
     /// <summary>
     /// Each limit the graph names with its size and the slots in use now, in the order the graph first names them.
     /// </summary>
@@ -32,16 +29,23 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
             limit => new LimitUse(sizes.Limits[limit.Index], _inUse[limit.Index]),
             LimitName.TextComparer));
 
+    private bool CapIsFull => _running == sizes.Cap;
+
     /// <summary>
     /// Takes one slot of the cap and of every limit a task holds, if each has one free.
     /// A task that does not fit takes none, so it never holds one slot while it waits for another.
+    /// The cap is looked at first, since every task holds a slot of it.
     /// </summary>
-    /// <returns><see langword="true"/> when the task now holds its slots and may start.</returns>
-    public bool TryTake(BuiltTask task)
+    public SlotsAnswer Take(BuiltTask task)
     {
-        if (CapIsFull || task.HeldLimits.Any(limit => _inUse[limit] == sizes.Limits[limit]))
+        if (CapIsFull)
         {
-            return false;
+            return SlotsAnswer.CapFull;
+        }
+
+        if (task.HeldLimits.Any(limit => _inUse[limit] == sizes.Limits[limit]))
+        {
+            return SlotsAnswer.LimitFull;
         }
 
         _running++;
@@ -50,7 +54,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
             _inUse[limit]++;
         }
 
-        return true;
+        return SlotsAnswer.Took;
     }
 
     /// <summary>Gives back the slots a task took when it started.</summary>
