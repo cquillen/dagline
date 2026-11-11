@@ -26,11 +26,14 @@ namespace Dagline;
 [SuppressMessage(
     "Reliability",
     "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The source has no timer and no wait handle is ever taken from it, so it holds nothing to free, and a signal an app forgets to dispose must still work.")]
+    Justification = "The sources have no timer and no wait handle is ever taken from them, so they hold nothing to free, and a signal an app forgets to dispose must still work.")]
 public class StopSignal
 {
     // Cancelled on the first request. It is never disposed, so cancelling it cannot throw.
     private readonly CancellationTokenSource _firstRequest = new();
+
+    // Swapped for a fresh source on every request, then cancelled, so it answers whichever request comes next.
+    private CancellationTokenSource _nextRequest = new();
     private int _requests;
 
     /// <summary><see langword="true"/> once <see cref="Request"/> has been called at least once.</summary>
@@ -41,6 +44,12 @@ public class StopSignal
 
     /// <summary>A token cancelled on the first request, through which a run hears of it.</summary>
     internal CancellationToken FirstRequest => _firstRequest.Token;
+
+    /// <summary>
+    /// A token cancelled by the first request made after it was read, whichever request that is.
+    /// Requests made before it was read do not cancel it.
+    /// </summary>
+    internal CancellationToken NextRequest => Volatile.Read(ref _nextRequest).Token;
 
     /// <summary>Requests a stop, or counts one more request.</summary>
     /// <remarks>
@@ -55,6 +64,8 @@ public class StopSignal
             // Cancelled asynchronously, so a run's work in hearing of the stop never runs on the caller's thread.
             _ = _firstRequest.CancelAsync();
         }
+
+        _ = Interlocked.Exchange(ref _nextRequest, new CancellationTokenSource()).CancelAsync();
     }
 
     // Saturates instead of wrapping, so the count never goes down and never reads as no request.
