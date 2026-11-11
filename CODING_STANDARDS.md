@@ -41,7 +41,7 @@ A departure from the Microsoft guidelines is a judgement call.
 
 - **Async all the way.** Asynchronous work is awaited. `.Result`, `.Wait()`, `GetAwaiter().GetResult()` and `async void` are breaches.
 - **Awaits capture no context.** Under `src/`, every `await` ends in `ConfigureAwait(false)`, so a continuation is never posted back to the caller's synchronization context. The build rejects a missing call. `ConfigureAwait(true)` passes the build, so review treats it as a breach.
-- **Cancellation flows through.** A method that awaits takes a `CancellationToken` as its last parameter and passes it to every awaited call that accepts one. A signature fixed by an interface or base type, such as `DisposeAsync`, is exempt.
+- **Cancellation flows through.** A method that awaits takes a `CancellationToken` as its last parameter and passes it to every awaited call that accepts one. An `await foreach` passes it with `WithCancellation`, unless the stream was created with the token. A signature fixed by an interface or base type, such as `DisposeAsync`, is exempt.
 - **Fail at the boundary.** A public member validates its arguments on entry with the `ThrowIf` helpers and throws the most specific exception type.
 - **Catch what you handle.** A `catch` names the exception it can deal with. A catch-all belongs only where consumer code is invoked, to record an unexpected failure.
 
