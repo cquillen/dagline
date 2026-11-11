@@ -9,7 +9,7 @@ public sealed record RunResult
         Snapshot = snapshot;
     }
 
-    /// <summary>How the run ended.</summary>
+    /// <summary>How the run ended. <see cref="RunOutcomeExtensions.ToExitCode"/> maps it to a process exit code.</summary>
     public RunOutcome Outcome { get; }
 
     /// <summary>

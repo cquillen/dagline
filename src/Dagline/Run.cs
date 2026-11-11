@@ -95,7 +95,7 @@ internal sealed class Run : ISnapshotSource
     // No token: a run cannot be stopped, and a task body takes none.
     private async Task RunBodyAsync(GraphTask task)
     {
-        await task.Body(new TaskContext()).ConfigureAwait(false);
+        await task.Body(new TaskContext(task.Path, _timeProvider)).ConfigureAwait(false);
         Settle(task, NodeStatus.Succeeded);
     }
 
