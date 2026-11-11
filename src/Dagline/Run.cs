@@ -30,10 +30,10 @@ internal sealed class Run : ISnapshotSource
     private RunOutcome? _outcome;
     private volatile Snapshot _current;
 
-    public Run(Graph graph, int cap, TimeProvider timeProvider, ReporterDelivery delivery)
+    public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery)
     {
         _graph = graph;
-        _slots = new Slots(cap);
+        _slots = new Slots(sizes);
         _timeProvider = timeProvider;
         _delivery = delivery;
         _counts = new StatusCounts(pending: graph.Tasks.Length);
@@ -64,7 +64,7 @@ internal sealed class Run : ISnapshotSource
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
-            _slots.GiveBack();
+            _slots.GiveBack(task);
             Move(task, status, now);
             Advance(WaitingFor(task), now);
         }
@@ -130,7 +130,7 @@ internal sealed class Run : ISnapshotSource
     {
         foreach (var task in _ready.Select(_graph.TaskAt).ToList())
         {
-            if (_slots.TryTake())
+            if (_slots.TryTake(task))
             {
                 _ready.Remove(task.Position);
                 Move(task, NodeStatus.Running, now);

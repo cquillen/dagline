@@ -35,14 +35,18 @@ public static class Runner
             throw new ArgumentException("A reporter in the options is null.", nameof(options));
         }
 
-        return RunToEndAsync(graph, options.Cap, options.TimeProvider, reporters);
+        return RunToEndAsync(graph, LimitSizes.For(graph, options), options.TimeProvider, reporters);
     }
 
     // No token, by design: a run is not stopped through a CancellationToken, so there is none to pass on.
-    private static async Task<RunResult> RunToEndAsync(Graph graph, int cap, TimeProvider timeProvider, IReporter[] reporters)
+    private static async Task<RunResult> RunToEndAsync(
+        Graph graph,
+        LimitSizes sizes,
+        TimeProvider timeProvider,
+        IReporter[] reporters)
     {
         var delivery = new ReporterDelivery(reporters);
-        var run = new Run(graph, cap, timeProvider, delivery);
+        var run = new Run(graph, sizes, timeProvider, delivery);
 
         run.Start();
         var outcome = await run.Ended.ConfigureAwait(false);
