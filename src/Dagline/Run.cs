@@ -29,6 +29,7 @@ internal sealed class Run : ISnapshotSource
     private readonly List<BuiltGroup> _settledInThisStep = [];
     private readonly SortedSet<int> _ready = [];
     private readonly HashSet<int> _reportedFailures = [];
+    private readonly Dictionary<int, int> _openWaitingScopes = [];
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
@@ -114,6 +115,69 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
+    /// <summary>
+    /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
+    /// </summary>
+    /// <returns><see langword="true"/> when the scope was opened: the task is running.</returns>
+    public bool OpenWaitingScope(BuiltTask task, string? text)
+    {
+        lock (_gate)
+        {
+            var before = _nodes[task.Position];
+            if (before.Status is not NodeStatus.Running)
+            {
+                return false;
+            }
+
+            var open = _openWaitingScopes.GetValueOrDefault(task.Position) + 1;
+            _openWaitingScopes[task.Position] = open;
+            if (open == 1)
+            {
+                var now = _timeProvider.GetUtcNow();
+                _nodes = _nodes.With(task.Position, before with { WaitingSince = now, WaitingText = text });
+                Publish(new WaitingChanged(now, task.Path, Waiting: true, text, Since: now));
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Closes one waiting scope of a task. Its last open scope ends the marker. Once the task has settled this changes nothing,
+    /// since settling ended the marker.
+    /// </summary>
+    public void CloseWaitingScope(BuiltTask task)
+    {
+        lock (_gate)
+        {
+            if (!_openWaitingScopes.TryGetValue(task.Position, out var open))
+            {
+                return;
+            }
+
+            if (open > 1)
+            {
+                _openWaitingScopes[task.Position] = open - 1;
+                return;
+            }
+
+            EndWaiting(task, _timeProvider.GetUtcNow());
+        }
+    }
+
+    /// <summary>Ends the waiting marker of a task if it has one, however many of its scopes are still open.</summary>
+    private void EndWaiting(BuiltTask task, DateTimeOffset now)
+    {
+        if (!_openWaitingScopes.Remove(task.Position))
+        {
+            return;
+        }
+
+        var waiting = _nodes[task.Position];
+        _nodes = _nodes.With(task.Position, waiting with { WaitingSince = null, WaitingText = null });
+        Publish(new WaitingChanged(now, task.Path, Waiting: false, waiting.WaitingText, waiting.WaitingSince!.Value));
+    }
+
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
     private bool Apply(BuiltTask task, Func<NodeSnapshot, NodeSnapshot> report)
     {
@@ -144,6 +208,7 @@ internal sealed class Run : ISnapshotSource
             var now = _timeProvider.GetUtcNow();
             var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure : ended;
             _slots.GiveBack(task);
+            EndWaiting(task, now);
             Move(task, outcome, now);
             var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
             Advance(DependentsOf([task, .. blocked]), now);

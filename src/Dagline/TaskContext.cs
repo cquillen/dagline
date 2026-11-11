@@ -190,6 +190,35 @@ public sealed class TaskContext
         return new ReportedFailureException(TaskReportRules.OneLine(message), [.. detail.SelectMany(TaskReportRules.Lines)]);
     }
 
+    /// <summary>
+    /// Opens a waiting scope: marks the task as idle until an external system changes, until the scope is disposed.
+    /// <c>using (context.Waiting("job 17 to finish")) { ... }</c>.
+    /// </summary>
+    /// <param name="text">
+    /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. It is kept as given.
+    /// </param>
+    /// <returns>The scope. Dispose it when the wait is over. Disposing it again does nothing.</returns>
+    /// <remarks>
+    /// <para>
+    /// Waiting is a marker on a running task and never a status. Dependencies, group status, the run outcome and the scheduler
+    /// ignore it, and a waiting task keeps the slots it holds in the cap and in its limits. Progress, warnings and the outcome
+    /// work as usual while the task waits.
+    /// </para>
+    /// <para>
+    /// The marker begins when the task's first open scope opens, with that scope's text and the time on the run's clock,
+    /// and ends when its last open scope closes. Scopes that overlap therefore make one wait, with the text and time of the one
+    /// that opened first. Each begin and end is published to reporters as a <see cref="WaitingChanged"/>, and while the task
+    /// waits its <see cref="NodeSnapshot.WaitingSince"/> and <see cref="NodeSnapshot.WaitingText"/> are set. A task may wait
+    /// several times in one run.
+    /// </para>
+    /// <para>
+    /// A task that settles with a scope still open stops waiting immediately before it settles, and disposing that scope later
+    /// does nothing. A scope opened once the task has settled does nothing at all.
+    /// </para>
+    /// </remarks>
+    public IDisposable Waiting(string? text = null)
+        => new WaitingScope(_run.OpenWaitingScope(_task, text) ? _run : null, _task);
+
     /// <summary>Reads the status, and nothing else, of a node this task depends on.</summary>
     /// <param name="dependency">The handle of the node, as the builder returned it. Handles stay valid for this after the graph is built.</param>
     /// <returns>
