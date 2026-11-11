@@ -29,6 +29,13 @@ public static class Runner
     /// A size for a limit the graph does not name is ignored.
     /// </para>
     /// <para>
+    /// A task that fails costs only the work that requires it. An exception that escapes a task body fails that task
+    /// and is never thrown from this method. Every task that requires the failed task, directly, through a group or through
+    /// a chain of such tasks, becomes blocked at once and records the failed task in <see cref="NodeSnapshot.BlockedBy"/>.
+    /// A task that runs <em>after</em> it still runs, and so does every task with no dependency on it.
+    /// The run outcome is then <see cref="RunOutcome.Incomplete"/>.
+    /// </para>
+    /// <para>
     /// The method takes no <see cref="CancellationToken"/>: a run cannot be stopped.
     /// Dagline never writes to the console.
     /// </para>

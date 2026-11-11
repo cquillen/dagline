@@ -34,5 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: build errors in the Defining a graph article.
 - `NodeSnapshot.IsGroup`, a derived `Status` for a group, and `NodeSnapshot.Counts`: the tasks per status beneath a group. The `GroupSettled` event is published when the last task beneath a group settles, deepest group first.
 - Docs: the Defining a graph article.
+- An exception that escapes a task body, a cancellation exception included, fails that task as an unexpected failure and the run carries on: `NodeSnapshot.Failure` is `FailureKind.Unexpected`, `Message` is the exception's message, and `Detail` holds its type and stack trace. The run outcome is then incomplete.
+- Blocking: every task that requires a failed task, directly, through a group or through a chain, becomes blocked at once and names the failed task in `NodeSnapshot.BlockedBy`. A blocked task has a settle time and no start time. *After* tasks and unrelated tasks still run, and a group settles failed when a task beneath it failed, or blocked when none failed and one is blocked.
+- The order of events within one step is fixed: the settle, the tasks it blocks, the tasks it makes ready, the groups that settle (deepest first), then the tasks that start, each list in declaration order.
+- `Snapshot.Failed` lists the failed tasks, and `Snapshot.Blocked` gives one `BlockedTasks` per failed task that blocked anything, with every task it blocked and the roots: the highest nodes whose every task it blocked.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main

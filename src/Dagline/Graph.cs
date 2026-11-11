@@ -121,6 +121,16 @@ public sealed class Graph : IReadOnlyList<Node>
     /// <summary>The group at a position among the nodes of the graph.</summary>
     internal GraphGroup GroupAt(int position) => (GraphGroup)Nodes[position];
 
+    /// <summary>A task and every group that holds it: the nodes that cannot succeed unless the task does.</summary>
+    internal IEnumerable<GraphNode> WithItsGroups(GraphTask task) => task.Groups.Select(GroupAt).Prepend<GraphNode>(task);
+
+    /// <summary>The tasks that require a node, in declaration order.</summary>
+    internal IEnumerable<GraphTask> Requiring(GraphNode node)
+    {
+        var requires = new Upstream(node.Position, DependencyKind.Requires);
+        return node.Dependents.Select(TaskAt).Where(dependent => dependent.Upstreams.Contains(requires));
+    }
+
     /// <summary>The limits a task holds: those named on it and those named on every group that holds it, each once.</summary>
     private static IEnumerable<string> HeldBy(TaskNode task)
         => task.Ancestors().Prepend<Node>(task).SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal);

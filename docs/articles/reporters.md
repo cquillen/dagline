@@ -22,6 +22,30 @@ An **event** is a record of one thing that happened in the run, with the time it
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
+### The order within one step
+
+A change and everything that follows from it at once are one step. The events of a step all have the same time and come in a fixed order, causes before effects:
+
+1. The change itself: the run starting, or a task settling.
+2. Every task that this blocks, pending to blocked.
+3. Every task whose dependencies are now all met, pending to ready.
+4. Every group that is now settled, deepest first.
+5. Every task that now starts, ready to running.
+
+Each list is in declaration order. The steps of a run never overlap, so the events of one are never mixed with those of another.
+
+A failure is the step with the most consequences. Take a group `checks` that holds the task `verify`, a task `publish` that requires `checks`, and a task `report` that runs after `checks`. When `verify` fails, a reporter receives:
+
+```text
+checks/verify: running -> failed
+publish: pending -> blocked
+report: pending -> ready
+group checks settled: failed
+report: ready -> running
+```
+
+A blocked task gets one event, pending to blocked, and its `Node` names the failed task in <xref:Dagline.NodeSnapshot.BlockedBy>. A reporter that would rather print one line for a whole cascade than one per task can group consecutive blocked events by that path.
+
 A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, the count of tasks per status, and how full the cap and each limit are. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
 
 A reporter gets snapshots in two ways:
@@ -30,6 +54,11 @@ A reporter gets snapshots in two ways:
 - **From the snapshot source.** <xref:Dagline.RunStarted> carries an <xref:Dagline.ISnapshotSource>, and its `Current` is the run as it is now. Use it to show the run on a timer of your own.
 
 Dagline keeps the snapshot, so a reporter never rebuilds the state of the run from events, and two reporters never disagree about it.
+
+A snapshot also answers the questions a summary asks, each in declaration order, so every reporter's summary agrees:
+
+- <xref:Dagline.Snapshot.Failed> lists the failed tasks. Each has its <xref:Dagline.NodeSnapshot.Failure> kind, its message and its detail lines.
+- <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line.
 
 ## What a reporter may rely on
 
