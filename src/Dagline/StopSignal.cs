@@ -15,6 +15,10 @@ namespace Dagline;
 /// on every running task, and waits for the running tasks to end. Later requests are counted in <see cref="Requests"/>.
 /// </para>
 /// <para>
+/// Once a run has ended it waits for its reporters to handle every event. Any request made during that wait,
+/// the first or a later one, ends it and drops the reporters still busy, without changing the run outcome.
+/// </para>
+/// <para>
 /// A signal is not tied to one run. A run reads the requests made up to its end and ignores later ones,
 /// and a signal already requested when a run starts stops that run from its start: the run starts no task at all.
 /// The same signal can therefore be passed to a second run after the first has ended, and that run stops from its start.
