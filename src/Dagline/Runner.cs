@@ -6,6 +6,10 @@ public static class Runner
     /// <summary>Runs every task of <paramref name="graph"/> in dependency order and returns once the run has ended.</summary>
     /// <param name="graph">The graph to run. It is not changed, and can be run again.</param>
     /// <param name="options">The choices for this run.</param>
+    /// <param name="stop">
+    /// The signal through which the app asks this run to stop, or <see langword="null"/> for a run that cannot be stopped.
+    /// A signal already requested stops the run from its start, and requests made after the run has ended are ignored.
+    /// </param>
     /// <returns>
     /// A task that completes when no task is running and none is ready, and every reporter that was not dropped
     /// has handled every event. That wait has no time bound. A reporter's exception never faults the task:
@@ -36,8 +40,20 @@ public static class Runner
     /// The run outcome is then <see cref="RunOutcome.Incomplete"/>.
     /// </para>
     /// <para>
-    /// The method takes no <see cref="CancellationToken"/>: a run cannot be stopped.
-    /// Dagline never writes to the console.
+    /// A run is stopped through <paramref name="stop"/>, not through a <see cref="CancellationToken"/>. Once the first request
+    /// on it has been applied, which publishes <see cref="StopRequested"/>, nothing starts, <em>after</em> tasks included,
+    /// and <see cref="TaskContext.CancellationToken"/> is signalled on every running task. The run then waits, with no time bound,
+    /// for its running tasks to end. While it waits a task that succeeds still makes its dependents ready, where they stay,
+    /// and a task that fails still blocks its dependents. <see cref="TaskContext.CancellationToken"/> says how a task ends
+    /// once a stop has been requested. Tasks the run never reached keep their status, pending or ready, and are listed in
+    /// <see cref="Snapshot.NeverReached"/>.
+    /// </para>
+    /// <para>
+    /// The run outcome is <see cref="RunOutcome.Stopped"/> when a stop was applied and a task has not succeeded,
+    /// and <see cref="RunOutcome.Complete"/> when every task succeeded, stop or no stop.
+    /// </para>
+    /// <para>
+    /// Dagline never writes to the console and never hooks a console or process signal: the app decides what requests a stop.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
@@ -46,7 +62,7 @@ public static class Runner
     /// The cap or a size is below 1, or the graph names a limit that the options give no size. The message lists every problem.
     /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
     /// </exception>
-    public static Task<RunResult> RunAsync(Graph graph, RunOptions options)
+    public static Task<RunResult> RunAsync(Graph graph, RunOptions options, StopSignal? stop = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(options);
@@ -54,18 +70,19 @@ public static class Runner
         IReporter[] reporters = [.. options.Reporters];
         Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));
 
-        return RunToEndAsync(graph, LimitSizes.For(graph, options), options.TimeProvider, reporters);
+        return RunToEndAsync(graph, LimitSizes.For(graph, options), options.TimeProvider, reporters, stop);
     }
 
-    // No token, by design: a run is not stopped through a CancellationToken, so there is none to pass on.
+    // No token, by design: a run is stopped through its StopSignal, not a CancellationToken, so there is none to pass on.
     private static async Task<RunResult> RunToEndAsync(
         Graph graph,
         LimitSizes sizes,
         TimeProvider timeProvider,
-        IReporter[] reporters)
+        IReporter[] reporters,
+        StopSignal? stop)
     {
         var delivery = new ReporterDelivery(reporters);
-        var run = new Run(graph, sizes, timeProvider, delivery);
+        var run = new Run(graph, sizes, timeProvider, delivery, stop);
 
         run.Start();
         var outcome = await run.Ended.ConfigureAwait(false);

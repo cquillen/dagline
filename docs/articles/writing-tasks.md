@@ -26,6 +26,7 @@ A run creates one context for each task it starts. The context gives the body:
 | --- | --- |
 | `Path` | The path of the task this body is running as. |
 | `TimeProvider` | The clock of the run. Take delays and timestamps from it so that a test controls time. |
+| `CancellationToken` | Signalled when the run is [stopped](#when-the-run-is-stopped). Pass it to everything the body awaits. |
 | `Status`, `Count` | [Progress](#progress-status-text-and-a-count): what the task is doing now. |
 | `Warn` | [Warnings](#warnings): notes that do not change the task's status. |
 | `Message`, `Detail` | The [outcome](#message-and-detail): what the task did or found. |
@@ -159,7 +160,7 @@ An unexpected failure is one the task did not declare: its code broke. Any excep
 
 An exception type can override `Message` and `StackTrace`, and an override can itself throw. Dagline reads both once, when it catches the exception, and a property that cannot be read never costs the task its outcome: a message that throws or is `null` is replaced by the full name of the exception's type, and a stack trace that throws is left out, so the type is the only detail line added.
 
-The exception is never thrown at your app and fails no other task. A cancellation exception is treated the same way, since a run cannot be stopped.
+The exception is never thrown at your app and fails no other task. A cancellation exception is treated the same way unless the run has been stopped: see [When the run is stopped](#when-the-run-is-stopped).
 
 A `ReportedFailureException` is not special by itself. One that escapes a task whose own context recorded no failure, such as an exception caught from another task's `Fail` and thrown again, is an unexpected failure.
 
@@ -208,6 +209,33 @@ A task can ask about:
 A group's status is derived from the tasks beneath it. For any other node, such as an unrelated task, the task itself, a group that holds it or a handle from another graph, `StatusOf` throws `ArgumentException`.
 
 `StatusOf` gives the status and nothing else: no message, no detail and no data. A task starts only once its dependencies are met, so every node it can ask about has already settled. One it requires has succeeded, and one it runs after has succeeded, failed or been blocked.
+
+## When the run is stopped
+
+An app can ask a run to stop: see [Stopping a run](running-and-stopping.md#stopping-a-run). The task finds out through <xref:Dagline.TaskContext.CancellationToken>, which every running task sees signalled the moment the stop is applied. Pass it to everything the body awaits, so the task ends promptly:
+
+```csharp
+builder.Task("load", async context =>
+{
+    foreach (var page in pages)
+    {
+        await LoadPageAsync(page, context.CancellationToken);
+        context.Count(page.Number, pages.Count);
+    }
+});
+```
+
+The token is the same for every task of the run, is signalled once, and stays signalled. A run that is never stopped never signals it. Do your own cleanup when it is signalled, so you leave other systems in a known condition, then let the cancellation escape.
+
+Once a stop has been requested, a task ends in the first of these ways that applies:
+
+1. It called `Fail`: it is **failed** as a reported failure. A failure you reported is never recorded as a cancellation.
+2. Its body ended with any `OperationCanceledException`, whichever token caused it: it is **cancelled**.
+3. Otherwise it gets its real status: **succeeded** if the body returned, and **failed** as an unexpected failure if it threw anything else. Work that finished in spite of the stop is not thrown away.
+
+Before any stop, a cancellation exception is an unexpected failure like any other.
+
+A cancelled task keeps its outcome: its message, detail lines, warnings and frozen progress. Cancelled is settled and never blocks: a task that requires a cancelled task stays pending, and a task that runs after it becomes ready. Neither starts, since nothing starts once a stop has been requested.
 
 ## After the task has settled
 
