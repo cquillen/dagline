@@ -24,10 +24,10 @@ internal static class PlainTextLines
     {
         RunStarted => [At(runEvent.At, $"run started: {CountsText.Tasks(snapshot.Counts.Values.Sum())}")],
         TaskStatusChanged { To: NodeStatus.Running } changed => [At(runEvent.At, $"started {changed.Node.Path}")],
-        TaskStatusChanged { To: NodeStatus.Succeeded } changed => [At(runEvent.At, Settle(changed.Node))],
+        TaskStatusChanged { To: NodeStatus.Succeeded } changed => [At(runEvent.At, Settled(changed.Node))],
         TaskStatusChanged { To: NodeStatus.Failed } changed =>
         [
-            At(runEvent.At, Settle(changed.Node)),
+            At(runEvent.At, Settled(changed.Node)),
             .. Kept(changed.Node.Detail, changed.Node.DetailOmitted, _detailIndent),
         ],
         WarningAdded added => [At(runEvent.At, $"warning {added.Path}: {added.Warning}")],
@@ -43,7 +43,7 @@ internal static class PlainTextLines
         _ => [],
     };
 
-    /// <summary>The one line for a run of consecutive blocked events with one cause.</summary>
+    /// <summary>The one line for a streak of consecutive blocked events with one cause.</summary>
     /// <param name="at">The time of the events.</param>
     /// <param name="tasks">How many tasks were blocked.</param>
     /// <param name="cause">The path of the failed task that blocked them.</param>
@@ -61,7 +61,7 @@ internal static class PlainTextLines
 
     private static string Counts(Snapshot snapshot) => $"tasks: {CountsText.PerStatus(snapshot.Counts)}";
 
-    private static string Settle(NodeSnapshot task)
+    private static string Settled(NodeSnapshot task)
     {
         var unexpected = task.Failure is FailureKind.Unexpected ? $" ({NameText.Of(FailureKind.Unexpected)})" : "";
         var message = task.Message is { Length: > 0 } set ? $": {set}" : "";
