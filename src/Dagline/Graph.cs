@@ -16,36 +16,27 @@ public sealed class Graph : IReadOnlyList<Node>
 {
     private readonly ImmutableArray<Node> _handles;
 
-    internal Graph(ImmutableArray<Node> nodes, IReadOnlyList<DeclaredDependency> dependencies)
+    internal Graph(ImmutableArray<Node> nodes, IReadOnlyList<DeclaredDependency> declared)
     {
         _handles = nodes;
 
-        var positions = nodes.Index().ToDictionary(node => node.Item, node => node.Index);
-        var declaredOn = dependencies.ToLookup(dependency => dependency.Dependent);
-        var dependentsOf = dependencies.ToLookup(
-            dependency => positions[dependency.Upstream],
-            dependency => positions[dependency.Dependent]);
+        var dependencies = new TaskDependencies(nodes, declared);
 
         Nodes = [.. nodes.Select(ToGraphNode)];
         Tasks = [.. Nodes.OfType<GraphTask>()];
         Positions = Nodes.ToFrozenDictionary(node => node.Path, node => node.Position);
 
         GraphNode ToGraphNode(Node node, int position)
-        {
-            IReadOnlyList<Dependency> declared =
-                [.. declaredOn[node].Select(dependency => new Dependency(dependency.Upstream.Path, dependency.Kind))];
-
-            return node is TaskNode task
+            => node is TaskNode task
                 ? new GraphTask(
                     position,
                     node.Path,
                     node.TitleText,
-                    declared,
+                    dependencies.DeclaredOn(node),
                     task.Body,
-                    [.. declaredOn[node].Select(dependency => new Upstream(positions[dependency.Upstream], dependency.Kind))],
-                    [.. dependentsOf[position].Distinct().Order()])
-                : new GraphGroup(position, node.Path, node.TitleText, declared);
-        }
+                    dependencies.UpstreamsOf(task),
+                    dependencies.DependentsOf(task))
+                : new GraphGroup(position, node.Path, node.TitleText, dependencies.DeclaredOn(node));
     }
 
     /// <summary>How many nodes the graph has, tasks and groups together.</summary>

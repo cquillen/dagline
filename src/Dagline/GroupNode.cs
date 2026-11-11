@@ -39,6 +39,40 @@ public sealed class GroupNode : Node
         return this;
     }
 
+    /// <summary>
+    /// Declares that every task beneath this group <em>requires</em> <paramref name="upstream"/>:
+    /// each becomes ready only once the upstream has succeeded.
+    /// </summary>
+    /// <param name="upstream">The node the tasks beneath this group require.</param>
+    /// <returns>This handle.</returns>
+    /// <remarks>
+    /// The dependency applies to every task beneath the group at any depth, whether it was added before or after this call.
+    /// The snapshot shows it on the group, not on each task.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
+    public GroupNode Requires(Node upstream)
+    {
+        Declare(upstream, DependencyKind.Requires);
+        return this;
+    }
+
+    /// <summary>
+    /// Declares that every task beneath this group runs <em>after</em> <paramref name="upstream"/>:
+    /// each becomes ready once the upstream has settled, whatever the outcome.
+    /// </summary>
+    /// <param name="upstream">The node the tasks beneath this group run after.</param>
+    /// <returns>This handle.</returns>
+    /// <remarks>
+    /// The dependency applies to every task beneath the group at any depth, whether it was added before or after this call.
+    /// The snapshot shows it on the group, not on each task.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
+    public GroupNode After(Node upstream)
+    {
+        Declare(upstream, DependencyKind.After);
+        return this;
+    }
+
     /// <summary>Adds a group beneath this group.</summary>
     /// <param name="segment">The segment that names the new group among the children of this one.</param>
     /// <returns>A handle to the new group, which is also the scope for its own children.</returns>

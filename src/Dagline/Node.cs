@@ -29,6 +29,15 @@ public abstract class Node
 
     private protected GraphBuilder Builder { get; }
 
+    /// <summary>Every group that holds this node, the nearest first.</summary>
+    internal IEnumerable<GroupNode> Ancestors()
+    {
+        for (var group = Parent; group is not null; group = group.Parent)
+        {
+            yield return group;
+        }
+    }
+
     private protected void SetTitle(string title)
     {
         ArgumentNullException.ThrowIfNull(title);
