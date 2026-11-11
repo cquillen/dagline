@@ -36,9 +36,10 @@ internal sealed record TaskOutcome
     private bool EndedByCancellation { get; init; }
 
     /// <summary>The message that replaces the task's own, or <see langword="null"/> to keep the task's.</summary>
-    private string? ReplacingMessage { get; init; }
+    public string? ReplacingMessage { get; private init; }
 
-    private IReadOnlyList<string> AddedDetail { get; init; } = [];
+    /// <summary>The detail lines added after the task's own when <see cref="ReplacingMessage"/> replaces its message.</summary>
+    public IReadOnlyList<string> AddedDetail { get; private init; } = [];
 
     /// <summary>
     /// The outcome of a task whose body let an exception escape: the exception's message becomes the task's message,
@@ -72,18 +73,6 @@ internal sealed record TaskOutcome
     /// directly, through a group or through a chain of blocked tasks.
     /// </summary>
     public static TaskOutcome Blocked(NodePath cause) => new(NodeStatus.Blocked) { BlockedBy = cause };
-
-    /// <summary>The task as it is once it has settled with this outcome.</summary>
-    /// <param name="task">The task as it was just before it settled, with everything it reported.</param>
-    /// <param name="now">When it settled.</param>
-    public NodeSnapshot Settle(NodeSnapshot task, DateTimeOffset now)
-    {
-        var settled = task with { Status = Status, Settled = now, Failure = Failure, BlockedBy = BlockedBy };
-
-        return ReplacingMessage is null
-            ? settled
-            : settled.WithMessage(ReplacingMessage).WithDetail(AddedDetail);
-    }
 
     /// <returns>What the member gave, or <see langword="null"/> when it gave nothing or threw.</returns>
     private static string? Read(Exception exception, Func<Exception, string?> member)

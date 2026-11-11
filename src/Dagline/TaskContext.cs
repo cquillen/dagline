@@ -98,7 +98,7 @@ public sealed class TaskContext
     /// Progress is never an event, so calling this often costs a reporter nothing. The text is kept as given, line breaks included.
     /// A reporter decides how to show them: <see cref="PlainTextReporter"/> prints each as a space.
     /// </remarks>
-    public void Status(string? text) => _run.Report(_task, task => task.WithStatusText(text));
+    public void Status(string? text) => _run.SetStatusText(_task, text);
 
     /// <summary>Sets the count of the task's progress, with or without the total it is counting towards.</summary>
     /// <param name="current">How far the task has got. It replaces the last count.</param>
@@ -121,7 +121,7 @@ public sealed class TaskContext
             ArgumentOutOfRangeException.ThrowIfNegative(towards, nameof(total));
         }
 
-        _run.Report(_task, task => task.WithCount(current, total));
+        _run.SetCount(_task, current, total);
     }
 
     /// <summary>
@@ -144,7 +144,7 @@ public sealed class TaskContext
     {
         ArgumentNullException.ThrowIfNull(warning);
 
-        _run.Report(_task, task => task.WithWarning(warning));
+        _run.Warn(_task, warning);
     }
 
     /// <summary>Sets the one-line message of the task's outcome: what the task did, or what it found.</summary>
@@ -158,7 +158,7 @@ public sealed class TaskContext
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        _run.Report(_task, task => task.WithMessage(message));
+        _run.SetMessage(_task, message);
     }
 
     /// <summary>Adds detail lines to the task's outcome, after those already there.</summary>
@@ -178,7 +178,7 @@ public sealed class TaskContext
     {
         ThrowIfAnyNull(lines, nameof(lines));
 
-        _run.Report(_task, task => task.WithDetail(lines));
+        _run.AddDetail(_task, lines);
     }
 
     /// <summary>
@@ -220,9 +220,9 @@ public sealed class TaskContext
         ArgumentNullException.ThrowIfNull(message);
         ThrowIfAnyNull(detail, nameof(detail));
 
-        _run.ReportFailure(_task, task => task.WithMessage(message).WithDetail(detail));
+        _run.Fail(_task, message, detail);
 
-        return new ReportedFailureException(TaskReportRules.OneLine(message), [.. detail.SelectMany(TaskReportRules.Lines)]);
+        return new ReportedFailureException(LineBreaks.OneLine(message), [.. detail.SelectMany(LineBreaks.Lines)]);
     }
 
     /// <summary>

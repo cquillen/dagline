@@ -15,8 +15,9 @@ namespace Dagline;
 /// task bodies are started on the thread pool, and reporters are called by <see cref="ReporterDelivery"/>.
 /// </para>
 /// <para>
-/// What a running task reports through its <see cref="TaskContext"/> is a change like any other and is applied under the same lock.
-/// It goes straight onto the task as the snapshot shows it, and only a warning that is kept is published.
+/// Everything about one task lives in its <see cref="TaskInstance"/>, which decides what each change does to the task
+/// and which event, if any, the change produced. What a running task reports through its <see cref="TaskContext"/> is a change
+/// like any other and is applied under the same lock.
 /// </para>
 /// </remarks>
 [SuppressMessage(
@@ -33,8 +34,7 @@ internal sealed class Run : ISnapshotSource
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
     private readonly List<BuiltGroup> _settledInThisStep = [];
     private readonly SortedSet<int> _ready = [];
-    private readonly HashSet<int> _reportedFailures = [];
-    private readonly OpenWaitingScopes _openWaitingScopes = new();
+    private readonly TaskInstance?[] _instances;
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly StopSignal? _signal;
@@ -63,6 +63,12 @@ internal sealed class Run : ISnapshotSource
         _groupCounts = graph.Nodes.OfType<BuiltGroup>().ToFrozenDictionary(
             group => group.Position,
             group => new StatusCounts(pending: group.TaskCount));
+        _instances = new TaskInstance?[graph.Nodes.Length];
+        foreach (var task in graph.Tasks)
+        {
+            _instances[task.Position] = new TaskInstance(task);
+        }
+
         _nodes = ChunkedList<NodeSnapshot>.From(graph.Nodes.Select(AtTheStart));
         _startedAt = _timeProvider.GetUtcNow();
     }
@@ -200,7 +206,7 @@ internal sealed class Run : ISnapshotSource
     /// <summary>
     /// Ends the wait for the running tasks after a stop, if the run is still waiting for any: publishes
     /// <see cref="StoppedWaiting"/>, then records each running task as cancelled in declaration order and lets go of it.
-    /// What follows is applied as after any task settles, and the run ends, since nothing is left running.
+    /// What follows is applied once for all of them, as after any task settles, and the run ends, since nothing is left running.
     /// </summary>
     private void LetGo(StoppedWaitingReason reason, DateTimeOffset now)
     {
@@ -210,13 +216,10 @@ internal sealed class Run : ISnapshotSource
         }
 
         Publish(new StoppedWaiting(now, reason));
-        List<BuiltTask> leftBehind = [.. _graph.Tasks.Where(task => _nodes[task.Position].Status is NodeStatus.Running)];
+        List<BuiltTask> leftBehind = [.. _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Running)];
         foreach (var task in leftBehind)
         {
-            _slots.GiveBack(task);
-            _reportedFailures.Remove(task.Position);
-            EndWaiting(task, now);
-            Move(task, TaskOutcome.LeftBehind, now);
+            Settle(task, TaskOutcome.LeftBehind, now);
         }
 
         Advance(DependentsOf(leftBehind), now);
@@ -236,32 +239,55 @@ internal sealed class Run : ISnapshotSource
             TaskScheduler.Default);
     }
 
-    /// <summary>
-    /// Applies what a running task reports about itself. A report from a task that has settled changes nothing.
-    /// </summary>
-    /// <param name="task">The task that reports.</param>
-    /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
-    public void Report(BuiltTask task, Func<NodeSnapshot, NodeSnapshot> report)
-    {
-        lock (_gate)
-        {
-            Apply(task, report);
-        }
-    }
+    /// <summary>Sets the status text of a task's progress.</summary>
+    public void SetStatusText(BuiltTask task, string? text) => Report(task, (instance, _) => instance.SetStatusText(text));
+
+    /// <summary>Sets the count of a task's progress, and the total it counts towards.</summary>
+    public void SetCount(BuiltTask task, long current, long? total) => Report(task, (instance, _) => instance.SetCount(current, total));
+
+    /// <summary>Adds a warning to a task. A warning that is kept is published.</summary>
+    public void Warn(BuiltTask task, string warning) => Report(task, (instance, now) => instance.Warn(warning, now));
+
+    /// <summary>Sets the message of a task's outcome.</summary>
+    public void SetMessage(BuiltTask task, string message) => Report(task, (instance, _) => instance.SetMessage(message));
+
+    /// <summary>Adds detail lines to a task's outcome.</summary>
+    public void AddDetail(BuiltTask task, IEnumerable<string> texts) => Report(task, (instance, _) => instance.AddDetail(texts));
 
     /// <summary>
-    /// Applies a report that is a reported failure: from then on the task settles failed as a reported failure, however its body ends.
+    /// Records a reported failure: from then on the task settles failed as a reported failure, however its body ends.
     /// </summary>
-    /// <param name="task">The task that reports.</param>
-    /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
-    public void ReportFailure(BuiltTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    public void Fail(BuiltTask task, string message, IEnumerable<string> detail)
+        => Report(task, (instance, _) => instance.Fail(message, detail));
+
+    /// <summary>
+    /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
+    /// </summary>
+    /// <returns><see langword="true"/> when the scope was opened: the task is running.</returns>
+    public bool OpenWaitingScope(BuiltTask task, string? text) => Report(task, (instance, now) => instance.OpenWait(text, now));
+
+    /// <summary>
+    /// Closes one waiting scope of a task. Its last open scope ends the marker. Once the task has settled this changes nothing,
+    /// since settling ended the marker.
+    /// </summary>
+    public void CloseWaitingScope(BuiltTask task) => Report(task, (instance, now) => instance.CloseWait(now));
+
+    /// <summary>
+    /// Applies what a running task reports about itself to its instance, and publishes the event the report produced, if any.
+    /// A report on a task that is not running changes nothing.
+    /// </summary>
+    /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
+    private bool Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
     {
         lock (_gate)
         {
-            if (Apply(task, report))
+            if (report(InstanceOf(task), _timeProvider.GetUtcNow()) is not { } change)
             {
-                _reportedFailures.Add(task.Position);
+                return false;
             }
+
+            Apply(task, change);
+            return true;
         }
     }
 
@@ -286,106 +312,44 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
+    /// Settles a task whose body has ended, then applies what follows from it: the tasks its failure blocks, and what follows
+    /// for all of them. A task the run has let go of has settled already, and its body ending changes nothing.
     /// </summary>
-    /// <returns><see langword="true"/> when the scope was opened: the task is running.</returns>
-    public bool OpenWaitingScope(BuiltTask task, string? text)
+    private void Settled(BuiltTask task, TaskOutcome ended)
     {
         lock (_gate)
         {
-            var before = _nodes[task.Position];
-            if (before.Status is not NodeStatus.Running)
-            {
-                return false;
-            }
-
-            if (_openWaitingScopes.Open(task.Position))
-            {
-                var now = _timeProvider.GetUtcNow();
-                _nodes = _nodes.With(task.Position, before with { WaitingSince = now, WaitingText = text });
-                Publish(new WaitingChanged(now, task.Path, Waiting: true, text, Since: now));
-            }
-
-            return true;
-        }
-    }
-
-    /// <summary>
-    /// Closes one waiting scope of a task. Its last open scope ends the marker. Once the task has settled this changes nothing,
-    /// since settling ended the marker.
-    /// </summary>
-    public void CloseWaitingScope(BuiltTask task)
-    {
-        lock (_gate)
-        {
-            if (_openWaitingScopes.Close(task.Position))
-            {
-                EndMarker(task, _timeProvider.GetUtcNow());
-            }
-        }
-    }
-
-    /// <summary>Ends the waiting marker of a task if it has one, however many of its scopes are still open.</summary>
-    private void EndWaiting(BuiltTask task, DateTimeOffset now)
-    {
-        if (_openWaitingScopes.CloseAll(task.Position))
-        {
-            EndMarker(task, now);
-        }
-    }
-
-    private void EndMarker(BuiltTask task, DateTimeOffset now)
-    {
-        var waiting = _nodes[task.Position];
-        _nodes = _nodes.With(task.Position, waiting with { WaitingSince = null, WaitingText = null });
-        Publish(new WaitingChanged(now, task.Path, Waiting: false, waiting.WaitingText, waiting.WaitingSince!.Value));
-    }
-
-    /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
-    private bool Apply(BuiltTask task, Func<NodeSnapshot, NodeSnapshot> report)
-    {
-        var before = _nodes[task.Position];
-        if (before.Status is not NodeStatus.Running)
-        {
-            return false;
-        }
-
-        var after = report(before);
-        _nodes = _nodes.With(task.Position, after);
-        _current = null;
-
-        // A warning that was kept is the one report that is also an event.
-        foreach (var warning in after.Warnings.Skip(before.Warnings.Count))
-        {
-            Publish(new WarningAdded(_timeProvider.GetUtcNow(), task.Path, warning));
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Settles a task whose body has ended. A reported failure the task recorded wins over the way the body ended.
-    /// A task the run has let go of has settled already, and its body ending changes nothing.
-    /// </summary>
-    private void Settle(BuiltTask task, TaskOutcome ended)
-    {
-        lock (_gate)
-        {
-            if (_nodes[task.Position].Status is not NodeStatus.Running)
+            var now = _timeProvider.GetUtcNow();
+            if (!Settle(task, ended, now))
             {
                 return;
             }
 
-            var now = _timeProvider.GetUtcNow();
-            var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure
-                : _stop is not null ? ended.OnceStopped()
-                : ended;
-            _slots.GiveBack(task);
-            EndWaiting(task, now);
-            Move(task, outcome, now);
-            var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
+            var blocked = InstanceOf(task).Status is NodeStatus.Failed ? Block(task, now) : [];
             Advance(DependentsOf([task, .. blocked]), now);
         }
+    }
+
+    /// <summary>
+    /// Settles a running task with the outcome its instance decides, gives back its slots, and publishes the end of its wait,
+    /// if it was waiting, then its change of status.
+    /// </summary>
+    /// <returns><see langword="true"/> when the task settled: it was running.</returns>
+    private bool Settle(BuiltTask task, TaskOutcome ended, DateTimeOffset now)
+    {
+        var changes = InstanceOf(task).Settle(ended, runHasStopped: _stop is not null, now);
+        if (changes.Count == 0)
+        {
+            return false;
+        }
+
+        _slots.GiveBack(task);
+        foreach (var change in changes)
+        {
+            Apply(task, change);
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -396,10 +360,9 @@ internal sealed class Run : ISnapshotSource
     private List<BuiltTask> Block(BuiltTask failed, DateTimeOffset now)
     {
         List<BuiltTask> blocked = [.. PendingTasksThatRequire(failed).Order().Select(_graph.TaskAt)];
-        var outcome = TaskOutcome.Blocked(failed.Path);
         foreach (var task in blocked)
         {
-            Move(task, outcome, now);
+            Apply(task, InstanceOf(task).Block(failed.Path, now));
         }
 
         return blocked;
@@ -441,7 +404,7 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private bool IsPending(BuiltTask task) => _nodes[task.Position].Status is NodeStatus.Pending;
+    private bool IsPending(BuiltTask task) => InstanceOf(task).Status is NodeStatus.Pending;
 
     /// <summary>
     /// The tasks, in declaration order, that depend on one of the tasks that have just settled or on a group that settled with them.
@@ -488,7 +451,7 @@ internal sealed class Run : ISnapshotSource
         List<BuiltTask> ready = [.. candidates.Where(DependenciesAreMet)];
         foreach (var task in ready)
         {
-            Move(task, NodeStatus.Ready, now);
+            Apply(task, InstanceOf(task).MakeReady(now));
             _ready.Add(task.Position);
         }
     }
@@ -527,7 +490,7 @@ internal sealed class Run : ISnapshotSource
             if (_slots.TryTake(task))
             {
                 // Moved at once, not after the walk, so the snapshot with each start counts only the slots taken so far.
-                Move(task, NodeStatus.Running, now);
+                Apply(task, InstanceOf(task).Start(now));
                 _ = Task.Run(() => RunBodyAsync(task));
                 started.Add(position);
             }
@@ -541,7 +504,7 @@ internal sealed class Run : ISnapshotSource
     private async Task RunBodyAsync(BuiltTask task)
     {
         var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
-        Settle(task, outcome);
+        Settled(task, outcome);
     }
 
     /// <summary>
@@ -580,37 +543,32 @@ internal sealed class Run : ISnapshotSource
         _ended.SetResult(outcome);
     }
 
-    /// <summary>Moves a task on to a status in which it has not settled: ready, or running.</summary>
-    private void Move(BuiltTask task, NodeStatus to, DateTimeOffset now)
-    {
-        var before = _nodes[task.Position];
-        Replace(task, before with { Status = to, Started = to is NodeStatus.Running ? now : before.Started }, now);
-    }
-
-    /// <summary>Settles a task: moves it to the status of its outcome and freezes that outcome on it.</summary>
-    private void Move(BuiltTask task, TaskOutcome outcome, DateTimeOffset now)
-    {
-        Replace(task, outcome.Settle(_nodes[task.Position], now), now);
-    }
-
     /// <summary>
-    /// Puts a task as it is after a change of status in place of the task as it was, counts the change in the run
-    /// and in every group that holds the task, and publishes it.
+    /// Puts a task as it is after a change to its instance in place of the task as it was. A change of status is counted in the run
+    /// and in every group that holds the task. The event the change produced is published; a change that produced none
+    /// only marks the current snapshot as out of date.
     /// </summary>
-    private void Replace(BuiltTask task, NodeSnapshot changed, DateTimeOffset now)
+    private void Apply(BuiltTask task, TaskChange change)
     {
-        var from = _nodes[task.Position].Status;
-        var to = changed.Status;
-        var after = changed with { Counts = StatusCounts.OfOneTask(to) };
-
-        _nodes = _nodes.With(task.Position, after);
-        _counts.Move(from, to);
-        foreach (var group in task.Groups.Select(_graph.GroupAt))
+        _nodes = _nodes.With(task.Position, change.Task);
+        switch (change.Event)
         {
-            MoveBeneath(group, from, to);
-        }
+            case TaskStatusChanged moved:
+                _counts.Move(moved.From, moved.To);
+                foreach (var group in task.Groups.Select(_graph.GroupAt))
+                {
+                    MoveBeneath(group, moved.From, moved.To);
+                }
 
-        Publish(new TaskStatusChanged(now, after, from, to));
+                Publish(moved);
+                break;
+            case { } produced:
+                Publish(produced);
+                break;
+            default:
+                _current = null;
+                break;
+        }
     }
 
     /// <summary>
@@ -633,7 +591,10 @@ internal sealed class Run : ISnapshotSource
     private NodeSnapshot AtTheStart(BuiltNode node)
         => _groupCounts.TryGetValue(node.Position, out var counts)
             ? new NodeSnapshot(node, counts.GroupStatus, counts.ToDictionary())
-            : new NodeSnapshot(node, NodeStatus.Pending, StatusCounts.OfOneTask(NodeStatus.Pending));
+            : InstanceOf((BuiltTask)node).Snapshot;
+
+    // Indexed by position among the nodes, so a group's place is empty.
+    private TaskInstance InstanceOf(BuiltTask task) => _instances[task.Position]!;
 
     private void Publish(RunEvent runEvent)
     {
