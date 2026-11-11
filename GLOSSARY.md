@@ -62,6 +62,10 @@ _Avoid_: Permit, token, lease
 The most tasks that may be running at once in a run, whatever limits they hold.
 _Avoid_: Max parallelism, degree of parallelism, global limit
 
+**Held**:
+Said of a ready task that cannot start because a limit it holds is full or the cap is reached.
+_Avoid_: Queued, throttled, starved
+
 **Declaration order**:
 The order in which nodes were added to the graph, read from the top of the tree down. It decides both what the display shows first and which ready task is first in line to start.
 _Avoid_: Priority, sort order
@@ -156,6 +160,10 @@ _Avoid_: Sub-step, percent
 Said of a running task that has told Dagline it is idle until an external system changes. Waiting is not a status: the task is running, and only a reporter treats it differently.
 _Avoid_: Polling, sleeping, suspended, paused
 
+**Working**:
+Said of a running task that is not waiting.
+_Avoid_: Active, busy, executing
+
 **Checkpoint**:
 A small piece of text a running task saves so that a later run continuing the same journal can carry on from it instead of starting over. Dagline keeps it until the task succeeds.
 _Avoid_: Saved state, bookmark, handle, resume token
@@ -173,6 +181,14 @@ _Avoid_: Notification, message, callback
 **Snapshot**:
 Everything Dagline knows about a run at one instant: the graph, and each node's status with the data attached to it.
 _Avoid_: State, view, model
+
+**Display**:
+The reporter that draws a run on a terminal and keeps redrawing it as the run changes.
+_Avoid_: Dashboard, TUI, live view, UI
+
+**Summary**:
+What a reporter shows once a run has ended: the run outcome, the count of tasks per status, and every failure, cancelled task and warning.
+_Avoid_: Report, recap, results
 
 ### Journals
 
