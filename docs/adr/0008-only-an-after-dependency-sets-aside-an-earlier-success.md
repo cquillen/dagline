@@ -2,7 +2,7 @@
 
 When a run continues a journal, a task the journal records as succeeded is an earlier success: it has the status succeeded from the start, with its whole outcome (message, detail lines, warnings and the time it succeeded), and it does not run again. Every other task starts as pending. That covers a task that failed, was blocked or was cancelled, one that was never reached, and one that was started but never settled because the process died. The only thing such a task gets from earlier runs is its checkpoint. Its earlier failure stays in the journal as history and plays no part in the new run.
 
-There is one exception. A task that is *after* something keeps its earlier success only if everything it is after is itself an earlier success. Otherwise the continuing run sets the success aside and the task runs again once its dependencies are met. A *requires* dependency never sets an earlier success aside.
+There is one exception. A task that is *after* something keeps its earlier success only if everything it is after is itself an earlier success. Against a group that means every task beneath it at any depth, and an empty group qualifies, as it does for any dependency. Otherwise the continuing run sets the success aside and the task runs again once its dependencies are met. A *requires* dependency never sets an earlier success aside.
 
 Two cases show why the kinds differ:
 
@@ -35,5 +35,5 @@ None of these is an error. The run reports how many journal paths it did not fin
 - An author who wants finished work to run again after its upstreams changed starts a new journal.
 - Whether a journal is finished is judged against the graph of its latest run. Paths that run did not find do not count.
 - A task that was running when the process died is indistinguishable, to the next run, from one that was never reached, apart from its checkpoint.
-- The warnings of an earlier success are shown again in every continuing run, so the summary of the last run covers the whole journal.
+- The warnings of an earlier success are shown again in every continuing run whose graph has its path, so the summary of the last run covers every task in that run's graph. It is not a history of the journal: paths the graph no longer has are left out.
 - A checkpoint whose path has left the graph is kept until the journal is deleted.

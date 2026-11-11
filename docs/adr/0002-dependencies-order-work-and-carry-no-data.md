@@ -2,7 +2,7 @@
 
 A dependency says only when the dependent may start. It comes in two kinds: *requires* is met when the upstream has succeeded, and *after* is met when the upstream has settled, whatever the outcome. Neither kind carries a value from the upstream to the dependent: Dagline passes nothing between tasks.
 
-The reason is continuing a journal. A task that succeeded in an earlier run does not run again, so any value a dependency carried would have to be saved and loaded back. That would turn the journal into a data store, with serialisation and versioning of consumer types to match. Tasks that need each other's results share them through the consumer's own services, outside Dagline, and whatever a task needs to know about its place in the graph (which tenant it belongs to) is bound when the consumer builds the graph.
+The reason is continuing a journal. A task that succeeded in an earlier run is kept as an earlier success and does not run again (ADR 0008 has the one exception), so any value a dependency carried would have to be saved and loaded back. That would turn the journal into a data store, with serialisation and versioning of consumer types to match. Tasks that need each other's results share them through the consumer's own services, outside Dagline, and whatever a task needs to know about its place in the graph (which tenant it belongs to) is bound when the consumer builds the graph.
 
 A task may read the status of the nodes it depends on, so that a cleanup task knows what it is cleaning up after. Status is Dagline's own data, not a value a task produced.
 

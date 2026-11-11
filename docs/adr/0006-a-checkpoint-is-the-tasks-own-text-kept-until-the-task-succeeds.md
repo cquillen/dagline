@@ -15,6 +15,8 @@ One window stays open. If the process dies after the task has started the extern
 
 A lookup, by id or by name, closes the window only if finding nothing rules out a start the external system has already accepted. Where it cannot, the start itself has to be idempotent on that id or name.
 
+A second window opens only when a task is left behind after the grace period (ADR 0004) and the process stays alive. The task may still be executing, and it may start external work after a later run has started the same task again. Its save would throw, so nothing records that start, and a lookup the later run has already made cannot see it. An app that exits once its run has returned closes this window, as a command-line app does. One that stays alive must not continue the journal while a task left behind may still be executing, unless the start is idempotent.
+
 A checkpoint proves the work started only when it was saved after the start. "Start it unless the checkpoint says it was started" is a few lines in the task and is documented as guidance, not provided as a shape.
 
 ## Considered options
