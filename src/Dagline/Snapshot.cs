@@ -87,20 +87,14 @@ public sealed class Snapshot
     /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read
     /// and kept, so reading it again costs nothing.
     /// </remarks>
-    public IReadOnlyList<NodeSnapshot> Failed
-        => LazyInitializer.EnsureInitialized(
-            ref _failed,
-            () => [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
+    public IReadOnlyList<NodeSnapshot> Failed => TasksWith(ref _failed, status => status is NodeStatus.Failed);
 
     /// <summary>Every cancelled task, in declaration order. Empty when no task has been cancelled.</summary>
     /// <remarks>
     /// A task is cancelled when its body ended with a cancellation exception after a stop. Each entry is the same object
     /// as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
     /// </remarks>
-    public IReadOnlyList<NodeSnapshot> Cancelled
-        => LazyInitializer.EnsureInitialized(
-            ref _cancelled,
-            () => [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Cancelled })]);
+    public IReadOnlyList<NodeSnapshot> Cancelled => TasksWith(ref _cancelled, status => status is NodeStatus.Cancelled);
 
     /// <summary>
     /// Every task the run never reached: those still pending or ready once the run has ended, in declaration order.
@@ -113,11 +107,7 @@ public sealed class Snapshot
     /// The list is worked out on the first read and kept.
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> NeverReached
-        => LazyInitializer.EnsureInitialized(
-            ref _neverReached,
-            () => Ended is null
-                ? []
-                : [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Pending or NodeStatus.Ready })]);
+        => Ended is null ? [] : TasksWith(ref _neverReached, status => status is NodeStatus.Pending or NodeStatus.Ready);
 
     /// <summary>
     /// What each failure blocked: one entry for each failed task that blocked at least one task, in declaration order
@@ -163,4 +153,8 @@ public sealed class Snapshot
         node = found ? Nodes[position] : null;
         return found;
     }
+
+    /// <summary>The tasks, in declaration order, whose status passes <paramref name="matches"/>: worked out on the first read and kept.</summary>
+    private IReadOnlyList<NodeSnapshot> TasksWith(ref IReadOnlyList<NodeSnapshot>? kept, Func<NodeStatus, bool> matches)
+        => LazyInitializer.EnsureInitialized(ref kept, () => [.. Nodes.Where(node => !node.IsGroup && matches(node.Status))]);
 }
