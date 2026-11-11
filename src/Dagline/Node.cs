@@ -4,8 +4,15 @@ namespace Dagline;
 /// A handle to a node of a graph that is being built, returned by the builder when the node is added.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Dependencies are declared between handles, never between strings, so a misspelt upstream does not compile.
 /// The set of node kinds is closed: a type outside Dagline cannot derive from this class.
+/// </para>
+/// <para>
+/// A handle belongs to the builder that returned it, and a dependency joins two handles of one builder.
+/// Once that builder has built its graph, every member of the handle that would change the graph throws
+/// <see cref="InvalidOperationException"/>. The handle stays valid to read.
+/// </para>
 /// </remarks>
 public abstract class Node
 {
@@ -21,6 +28,11 @@ public abstract class Node
     /// <summary>
     /// The identity of this node: the segment of every group that holds it, from the root down, then its own segment.
     /// </summary>
+    /// <remarks>
+    /// Segments are checked when the graph is built, not when a node is added. Until <see cref="GraphBuilder.Build"/> has returned
+    /// a graph, the path of a node whose segment is invalid, or which is beneath a group whose segment is, is the text as it was given
+    /// and is not a valid path.
+    /// </remarks>
     public NodePath Path { get; }
 
     /// <summary>The group that holds this node, or <see langword="null"/> for a node at the root.</summary>
@@ -77,6 +89,7 @@ public abstract class Node
         }
 
         Builder.ThrowIfBuilt();
+
         foreach (var upstream in handles)
         {
             Builder.Declare(this, upstream, kind);

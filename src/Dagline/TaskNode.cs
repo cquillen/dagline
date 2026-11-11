@@ -25,6 +25,7 @@ public sealed class TaskNode : Node
     /// without changing which work the path means. It is carried to <see cref="NodeSnapshot.Title"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="title"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public TaskNode Title(string title)
     {
         SetTitle(title);
@@ -44,6 +45,7 @@ public sealed class TaskNode : Node
     /// declared on itself or on a group that holds it, <em>requires</em> that upstream.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public TaskNode Requires(Node upstream)
     {
         Declare(upstream, DependencyKind.Requires);
@@ -61,6 +63,7 @@ public sealed class TaskNode : Node
     /// <returns>This handle.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="upstreams"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A handle in <paramref name="upstreams"/> is <see langword="null"/>. Nothing is declared.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public TaskNode Requires(IEnumerable<Node> upstreams)
     {
         Declare(upstreams, DependencyKind.Requires);
@@ -81,6 +84,7 @@ public sealed class TaskNode : Node
     /// declared on itself or on a group that holds it, <em>requires</em> that upstream.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public TaskNode After(Node upstream)
     {
         Declare(upstream, DependencyKind.After);
@@ -98,6 +102,7 @@ public sealed class TaskNode : Node
     /// <returns>This handle.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="upstreams"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A handle in <paramref name="upstreams"/> is <see langword="null"/>. Nothing is declared.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public TaskNode After(IEnumerable<Node> upstreams)
     {
         Declare(upstreams, DependencyKind.After);

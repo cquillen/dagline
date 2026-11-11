@@ -33,6 +33,7 @@ public sealed class GroupNode : Node
     /// without changing which work the path means. It is carried to <see cref="NodeSnapshot.Title"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="title"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public GroupNode Title(string title)
     {
         SetTitle(title);
@@ -53,6 +54,7 @@ public sealed class GroupNode : Node
     /// The snapshot shows it on the group, not on each task.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public GroupNode Requires(Node upstream)
     {
         Declare(upstream, DependencyKind.Requires);
@@ -70,6 +72,7 @@ public sealed class GroupNode : Node
     /// <returns>This handle.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="upstreams"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A handle in <paramref name="upstreams"/> is <see langword="null"/>. Nothing is declared.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public GroupNode Requires(IEnumerable<Node> upstreams)
     {
         Declare(upstreams, DependencyKind.Requires);
@@ -90,6 +93,7 @@ public sealed class GroupNode : Node
     /// The snapshot shows it on the group, not on each task.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public GroupNode After(Node upstream)
     {
         Declare(upstream, DependencyKind.After);
@@ -107,6 +111,7 @@ public sealed class GroupNode : Node
     /// <returns>This handle.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="upstreams"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A handle in <paramref name="upstreams"/> is <see langword="null"/>. Nothing is declared.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public GroupNode After(IEnumerable<Node> upstreams)
     {
         Declare(upstreams, DependencyKind.After);
@@ -114,15 +119,32 @@ public sealed class GroupNode : Node
     }
 
     /// <summary>Adds a group beneath this group.</summary>
-    /// <param name="segment">The segment that names the new group among the children of this one.</param>
-    /// <returns>A handle to the new group, which is also the scope for its own children.</returns>
+    /// <param name="segment">
+    /// The segment that names the new group among the children of this one.
+    /// A segment is one or more of <c>A-Z</c>, <c>a-z</c>, <c>0-9</c>, <c>.</c>, <c>_</c> and <c>-</c>,
+    /// and no other child of this group may have the same one, or one that differs only by case.
+    /// </param>
+    /// <returns>
+    /// A handle to the new group, which is also the scope for its own children.
+    /// A handle is returned even when the segment is invalid or already taken: <see cref="GraphBuilder.Build"/> reports that.
+    /// Adding a group with the segment of an existing group makes a duplicate path and does not reopen that group.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="segment"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public GroupNode Group(string segment) => Children.AddGroup(segment);
 
     /// <summary>Adds a task beneath this group.</summary>
-    /// <param name="segment">The segment that names the task among the children of this group.</param>
+    /// <param name="segment">
+    /// The segment that names the task among the children of this group.
+    /// A segment is one or more of <c>A-Z</c>, <c>a-z</c>, <c>0-9</c>, <c>.</c>, <c>_</c> and <c>-</c>,
+    /// and no other child of this group may have the same one, or one that differs only by case.
+    /// </param>
     /// <param name="body">The work of the task.</param>
-    /// <returns>A handle to the new task, on which its dependencies are declared and which other nodes can depend on.</returns>
+    /// <returns>
+    /// A handle to the new task, on which its dependencies are declared and which other nodes can depend on.
+    /// A handle is returned even when the segment is invalid or already taken: <see cref="GraphBuilder.Build"/> reports that.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="segment"/> or <paramref name="body"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public TaskNode Task(string segment, TaskBody body) => Children.AddTask(segment, body);
 }

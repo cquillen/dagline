@@ -16,15 +16,15 @@ internal static class GraphValidation
         (DeclaredDependency Dependency, GraphProblem? Problem)[] dependencies =
             [.. Merged(declared).Select(dependency => (dependency, ProblemWith(dependency, builder)))];
 
-        // A dependency with a problem of its own is left out of the search, so that one mistake is one problem.
-        DeclaredDependency[] sound = [.. dependencies.Where(checkedOne => checkedOne.Problem is null).Select(checkedOne => checkedOne.Dependency)];
+        // A dependency with a problem of its own is left out of the search for cycles, so that one mistake is one problem.
+        DeclaredDependency[] sound = [.. dependencies.Where(each => each.Problem is null).Select(each => each.Dependency)];
 
         return
         [
             .. nodes.Where(node => !NodePath.IsSegment(node.Segment)).Select(InvalidSegment),
             .. scopes.SelectMany(DuplicatePaths),
             .. scopes.SelectMany(SiblingsThatDifferOnlyByCase),
-            .. dependencies.Select(checkedOne => checkedOne.Problem).OfType<GraphProblem>(),
+            .. dependencies.Select(each => each.Problem).OfType<GraphProblem>(),
             .. DependencyCycles.Among(sound).Select(Cycle),
         ];
     }
