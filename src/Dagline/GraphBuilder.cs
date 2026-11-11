@@ -20,6 +20,7 @@ public sealed class GraphBuilder
 {
     private readonly ChildNodes _children;
     private readonly List<DeclaredDependency> _dependencies = [];
+    private bool _isBuilt;
 
     /// <summary>Creates a builder with no nodes.</summary>
     public GraphBuilder()
@@ -44,13 +45,29 @@ public sealed class GraphBuilder
     /// <returns>An immutable graph that can be run any number of times.</returns>
     public Graph Build()
     {
+        ThrowIfBuilt();
+
         var problems = GraphValidation.Problems(this, _children, _dependencies);
         if (problems.Count > 0)
         {
             throw new GraphException(problems);
         }
 
+        _isBuilt = true;
         return new([.. _children.InDeclarationOrder()], _dependencies);
+    }
+
+    /// <summary>
+    /// The single-use rule. Every member of the builder or of a handle that would change the graph calls this
+    /// before it changes anything, once its arguments are known to be valid.
+    /// </summary>
+    internal void ThrowIfBuilt()
+    {
+        if (_isBuilt)
+        {
+            throw new InvalidOperationException(
+                "The graph has been built. A builder is single use: it and its handles cannot change a graph once Build has returned it.");
+        }
     }
 
     internal void Declare(Node dependent, Node upstream, DependencyKind kind)

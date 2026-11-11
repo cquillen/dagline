@@ -53,6 +53,7 @@ public abstract class Node
     private protected void SetTitle(string title)
     {
         ArgumentNullException.ThrowIfNull(title);
+        Builder.ThrowIfBuilt();
 
         TitleText = title;
     }
@@ -60,6 +61,7 @@ public abstract class Node
     private protected void Declare(Node upstream, DependencyKind kind)
     {
         ArgumentNullException.ThrowIfNull(upstream);
+        Builder.ThrowIfBuilt();
 
         Builder.Declare(this, upstream, kind);
     }
@@ -74,6 +76,7 @@ public abstract class Node
             throw new ArgumentException("A handle in the collection is null.", nameof(upstreams));
         }
 
+        Builder.ThrowIfBuilt();
         foreach (var upstream in handles)
         {
             Builder.Declare(this, upstream, kind);

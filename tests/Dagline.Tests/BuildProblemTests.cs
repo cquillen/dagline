@@ -362,6 +362,43 @@ public class BuildProblemTests
         builder.Build().Count.ShouldBe(20_000);
     }
 
+    [Test]
+    public void Problems_of_every_kind_arrive_in_one_exception_whose_message_lists_them_all()
+    {
+        var other = new GraphBuilder().Task("archive", _ => Task.CompletedTask);
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var load = shard.Task("load", _ => Task.CompletedTask);
+        var verify = shard.Task("verify", _ => Task.CompletedTask).Requires(load);
+        var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(verify);
+
+        builder.Task("no good", _ => Task.CompletedTask);
+        builder.Group("shard-1");
+        shard.Task("Load", _ => Task.CompletedTask);
+        publish.After(other);
+        publish.After(publish);
+        verify.After(shard);
+        shard.After(verify);
+        load.Requires(publish);
+
+        var exception = Should.Throw<GraphException>(() => builder.Build());
+
+        string[] messages =
+        [
+            $"'no good' is not a valid segment for a node at the root: {_segmentRule}",
+            "'shard-1' was added 2 times: a path is one node. Adding a group again does not reopen it: keep its handle to add more children.",
+            "'shard-1/load' and 'shard-1/Load' differ only by case: siblings must differ by more than case.",
+            "'publish' runs after 'archive', a handle from another builder.",
+            "'publish' runs after itself.",
+            "'shard-1/verify' runs after 'shard-1', its own ancestor.",
+            "'shard-1' runs after 'shard-1/verify', its own descendant.",
+            "These dependencies form a cycle: 'shard-1/verify' requires 'shard-1/load', 'shard-1/load' requires 'publish', 'publish' requires 'shard-1/verify'.",
+        ];
+        exception.Problems.Select(problem => problem.Message).ShouldBe(messages);
+        exception.Message.ShouldBe(string.Join(Environment.NewLine, ["The graph cannot be built:", .. messages.Select(message => $"  {message}")]));
+        exception.ShouldBeAssignableTo<DaglineException>();
+    }
+
     private static IReadOnlyList<GraphProblem> ProblemsOf(GraphBuilder builder)
         => Should.Throw<GraphException>(() => builder.Build()).Problems;
 }
