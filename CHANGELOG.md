@@ -64,5 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A body that ends with any cancellation exception after a stop is `Cancelled`, keeping its message, detail lines, warnings and frozen progress. A reported failure still wins, and a body that returns or throws anything else keeps its real status. Cancelled never blocks: a task that requires it stays pending, and one after it becomes ready.
 - `Snapshot.Stop` (a `StopState`), `Snapshot.Cancelled` and `Snapshot.NeverReached` (the tasks left pending or ready once the run has ended). The run outcome is `Stopped` when a stop was applied and a task did not succeed, and `Complete` when every task succeeded despite it.
 - Docs: stopping a run in the Running and stopping article, and how a task ends once a stop has been requested in the Writing tasks article.
+- A stop ends the wait for reporters at the end of a run: any request on the signal once the run has ended, the first or a later one, drops each reporter still busy. The token passed to its `OnEventAsync` is cancelled, its remaining events are discarded, `RunResult.ReporterErrors` has its `ReporterError` with an `OperationCanceledException`, and `RunAsync` returns without waiting for its call. The run outcome is unchanged.
+- Docs: a stop ending the wait for reporters in the Reporters article.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main

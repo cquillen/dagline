@@ -86,7 +86,7 @@ A snapshot also answers the questions a summary asks, each in declaration order,
 - **The snapshot matches the event.** The snapshot handed with an event is the run exactly as of that event, even when the reporter is handed the event long after it happened.
 - **The run never waits for a reporter while tasks are running.** Each reporter has a queue of its own. A slow reporter falls behind, and neither the tasks nor the other reporters are held up by it. The queue has no size limit, and the number of events in a run is in proportion to its tasks, so that is all a reporter that falls behind can cost in memory.
 - **A reporter that throws is dropped.** It receives no further call, and the tasks, the run outcome and the other reporters are unaffected. The error is returned with the result of the run and is never thrown at your app: see [When a reporter fails](#when-a-reporter-fails).
-- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound: a call to a reporter that never completes keeps `RunAsync` from returning.
+- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound, but a stop ends it: see [A stop ends the wait for reporters](#a-stop-ends-the-wait-for-reporters). With no stop request, a call to a reporter that never completes keeps `RunAsync` from returning.
 
 The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is never cancelled.
 
@@ -149,6 +149,17 @@ foreach (var error in result.ReporterErrors)
 Each entry names the reporter, the event it was handling and the exception. This holds for every event, the last one included: a reporter that throws while handling `RunEnded` is on the list, and the run still returns its result.
 
 The run outcome says how the work went and is not changed by a reporter's failure. Whether a run whose display broke should exit with an error is your app's decision.
+
+### A stop ends the wait for reporters
+
+A stuck reporter cannot hang your process. Once the run has ended, any request on its <xref:Dagline.StopSignal> ends the wait for reporters: the first request, when every task had already ended, or a later one, when the run had already been stopped. A reporter still busy at that moment is dropped like one that threw:
+
+- the `CancellationToken` passed to its `OnEventAsync` is cancelled. That token is never cancelled otherwise, so a reporter that awaits slow output can pass it on;
+- its remaining events are discarded, and it gets no further call;
+- `ReporterErrors` has a `ReporterError` naming it, the event it was handling and an `OperationCanceledException`;
+- `RunAsync` returns without waiting for its call to come back. Whatever that call does later is ignored.
+
+A reporter that had already handled every event is unaffected and is not on the list. A request made once the tasks have ended never changes the run outcome. A run given no signal waits for its reporters with no time bound.
 
 ## Progress on a timer: the snapshot source
 
