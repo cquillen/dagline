@@ -395,7 +395,7 @@ public class BuildProblemTests
             "These dependencies form a cycle: 'shard-1/verify' requires 'shard-1/load', 'shard-1/load' requires 'publish', 'publish' requires 'shard-1/verify'.",
         ];
         exception.Problems.Select(problem => problem.Message).ShouldBe(messages);
-        exception.Message.ShouldBe(string.Join(Environment.NewLine, ["The graph cannot be built:", .. messages.Select(message => $"  {message}")]));
+        exception.Message.ShouldBe(string.Join(Environment.NewLine, ["The graph cannot be built:", .. messages.Select(message => $"- {message}")]));
         exception.ShouldBeAssignableTo<DaglineException>();
     }
 

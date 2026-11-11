@@ -56,6 +56,7 @@ public sealed class TaskNode : Node
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">The graph has been built.</exception>
     public TaskNode Limit(string name)
     {
         NameLimit(name);

@@ -20,7 +20,7 @@ namespace Dagline;
 public sealed class GraphException : DaglineException
 {
     internal GraphException(IReadOnlyList<GraphProblem> problems)
-        : base(string.Join(Environment.NewLine, problems.Select(problem => $"  {problem.Message}").Prepend("The graph cannot be built:")))
+        : base(string.Join(Environment.NewLine, problems.Select(problem => $"- {problem.Message}").Prepend("The graph cannot be built:")))
     {
         Problems = problems;
     }

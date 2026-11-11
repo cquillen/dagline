@@ -24,6 +24,7 @@ public class SingleUseTests
         builder.Build();
 
         Should.Throw<InvalidOperationException>(() => verify.Title("Verify entities"));
+        Should.Throw<InvalidOperationException>(() => verify.Limit("database"));
         Should.Throw<InvalidOperationException>(() => verify.Requires(load));
         Should.Throw<InvalidOperationException>(() => verify.Requires([load]));
         Should.Throw<InvalidOperationException>(() => verify.After(load));
@@ -42,6 +43,7 @@ public class SingleUseTests
         Should.Throw<InvalidOperationException>(() => shard.Task("verify", _ => Task.CompletedTask));
         Should.Throw<InvalidOperationException>(() => tenant.Group("region-1"));
         Should.Throw<InvalidOperationException>(() => tenant.Title("Tenant A"));
+        Should.Throw<InvalidOperationException>(() => shard.Limit("database"));
         Should.Throw<InvalidOperationException>(() => shard.Requires(load));
         Should.Throw<InvalidOperationException>(() => shard.Requires([load]));
         Should.Throw<InvalidOperationException>(() => tenant.After(load));
@@ -60,12 +62,17 @@ public class SingleUseTests
         Should.Throw<InvalidOperationException>(() => verify.Title("Verify entities").Requires(load));
         Should.Throw<InvalidOperationException>(() => shard.After(load));
         Should.Throw<InvalidOperationException>(() => shard.Task("publish", _ => Task.CompletedTask));
+        Should.Throw<InvalidOperationException>(() => shard.Limit("database"));
+        Should.Throw<InvalidOperationException>(() => verify.Limit("database"));
         var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None });
 
         result.Snapshot.Nodes.Select(node => node.Path).ShouldBe([load.Path, shard.Path, verify.Path]);
         result.Snapshot[verify.Path].Title.ShouldBeNull();
         result.Snapshot[verify.Path].Dependencies.ShouldBeEmpty();
         result.Snapshot[shard.Path].Dependencies.ShouldBeEmpty();
+        result.Snapshot[verify.Path].Limits.ShouldBeEmpty();
+        result.Snapshot[shard.Path].Limits.ShouldBeEmpty();
+        result.Snapshot.Limits.ShouldBeEmpty();
     }
 
     [Test]
@@ -89,6 +96,8 @@ public class SingleUseTests
         Should.Throw<ArgumentNullException>(() => builder.Task(null!, _ => Task.CompletedTask)).ParamName.ShouldBe("segment");
         Should.Throw<ArgumentNullException>(() => shard.Group(null!)).ParamName.ShouldBe("segment");
         Should.Throw<ArgumentNullException>(() => load.Title(null!)).ParamName.ShouldBe("title");
+        Should.Throw<ArgumentNullException>(() => load.Limit(null!)).ParamName.ShouldBe("name");
+        Should.Throw<ArgumentException>(() => shard.Limit(string.Empty)).ParamName.ShouldBe("name");
         Should.Throw<ArgumentNullException>(() => load.Requires((Node)null!)).ParamName.ShouldBe("upstream");
         Should.Throw<ArgumentException>(() => shard.After([load, null!])).ParamName.ShouldBe("upstreams");
     }

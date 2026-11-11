@@ -78,6 +78,7 @@ public abstract class Node
     private protected void NameLimit(string name)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
+        Builder.ThrowIfBuilt();
 
         if (!_limits.Contains(name))
         {
