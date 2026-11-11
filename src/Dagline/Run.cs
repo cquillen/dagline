@@ -62,9 +62,20 @@ internal sealed class Run : ISnapshotSource
         {
             var now = _timeProvider.GetUtcNow();
             Move(task, status, now);
-            Advance(task.Dependents.Select(_graph.TaskAt), now);
+            Advance(WaitingFor(task), now);
         }
     }
+
+    /// <summary>
+    /// The tasks, in declaration order, that wait for a task that has just settled or for a group that settled with it.
+    /// </summary>
+    private IEnumerable<GraphTask> WaitingFor(GraphTask settled)
+        => _settledInThisStep
+            .Prepend<GraphNode>(settled)
+            .SelectMany(node => node.Dependents)
+            .Distinct()
+            .Order()
+            .Select(_graph.TaskAt);
 
     /// <summary>
     /// Applies what follows from one change, causes before effects: the tasks among <paramref name="waiting"/>
@@ -158,7 +169,7 @@ internal sealed class Run : ISnapshotSource
 
     /// <summary>
     /// Counts one task's change of status in a group that holds it, and derives the group's status again.
-    /// A group has no settled task left to move, so one that comes out settled has settled in this step.
+    /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
     /// </summary>
     private void MoveBeneath(GraphGroup group, NodeStatus from, NodeStatus to)
     {

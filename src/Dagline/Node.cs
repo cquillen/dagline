@@ -29,12 +29,6 @@ public abstract class Node
 
     private protected GraphBuilder Builder { get; }
 
-    /// <summary>
-    /// The tasks a dependency against this node covers, in declaration order:
-    /// the task itself, or every task beneath the group at any depth.
-    /// </summary>
-    internal abstract IEnumerable<TaskNode> CoveredTasks();
-
     /// <summary>Every group that holds this node, the nearest first.</summary>
     internal IEnumerable<GroupNode> Ancestors()
     {
