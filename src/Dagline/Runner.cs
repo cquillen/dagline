@@ -44,8 +44,8 @@ public static class Runner
 
         run.Start();
         var outcome = await run.Ended.ConfigureAwait(false);
-        await delivery.Delivered.ConfigureAwait(false);
+        var reporterErrors = await delivery.Delivered.ConfigureAwait(false);
 
-        return new RunResult(outcome, run.Current);
+        return new RunResult(outcome, run.Current, reporterErrors);
     }
 }
