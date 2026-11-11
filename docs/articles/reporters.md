@@ -160,10 +160,10 @@ The run outcome says how the work went and is not changed by a reporter's failur
 
 A stuck reporter cannot hang your process. Once the run has ended, any request on its <xref:Dagline.StopSignal> ends the wait for reporters: the first request, when every task had already ended, or a later one, when the run had already been stopped. A reporter still busy at that moment is dropped like one that threw:
 
-- the `CancellationToken` passed to its `OnEventAsync` is cancelled. That token is never cancelled otherwise, so a reporter that awaits slow output can pass it on;
+- the `CancellationToken` passed to its `OnEventAsync` is cancelled. Each reporter has a token of its own, never cancelled otherwise, so a reporter that awaits slow output can pass it on;
 - its remaining events are discarded, and it gets no further call;
 - `ReporterErrors` has a `ReporterError` naming it, the event it was handling and an `OperationCanceledException`;
-- `RunAsync` returns without waiting for its call to come back. Whatever that call does later is ignored.
+- `RunAsync` returns without waiting for its call to come back, even a call that blocks its thread and never returns a task. Whatever that call does later is ignored.
 
 A reporter that had already handled every event is unaffected and is not on the list. A request made once the tasks have ended never changes the run outcome. A request made just as the run ends is never lost: either the run applies it as a stop, or it ends the wait for reporters. A run given no signal waits for its reporters with no time bound.
 

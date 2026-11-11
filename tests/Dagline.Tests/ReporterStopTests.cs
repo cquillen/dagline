@@ -120,6 +120,60 @@ public class ReporterStopTests
     }
 
     [Test]
+    public async Task The_request_never_cancels_the_token_of_a_reporter_that_had_handled_every_event()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var builder = new GraphBuilder();
+            builder.Task("prepare", _ => Task.CompletedTask);
+            var stuck = new HeldReporter("run ended: complete");
+            var finished = new HeldReporter(holdsOn: "no event has this line");
+            var done = new WatchedReporter(finished);
+            var stop = new StopSignal();
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [done, stuck] }, stop);
+            await stuck.Held;
+            await done.Handled("run ended: complete");
+            stop.Request();
+            await run;
+            stuck.Release();
+            await stuck.Returned;
+
+            finished.Tokens.ShouldNotBeEmpty();
+            finished.Tokens.ShouldAllBe(token => !token.IsCancellationRequested);
+        }
+    }
+
+    [Test]
+    public async Task A_request_ends_the_wait_for_a_reporter_that_blocks_its_thread_inside_a_call()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var builder = new GraphBuilder();
+            builder.Task("prepare", _ => Task.CompletedTask);
+            using var blocking = new BlockingReporter("prepare: ready -> running");
+            var watching = new RecordingReporter();
+            var stop = new StopSignal();
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [blocking, watching] }, stop);
+            await blocking.Blocked;
+            await watching.Ended;
+            stop.Request();
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(30));
+            var blockedToken = blocking.Tokens[^1];
+            blocking.Release();
+            await blocking.Returned;
+
+            var error = result.ReporterErrors.ShouldHaveSingleItem();
+            error.Reporter.ShouldBeSameAs(blocking);
+            error.Event.ShouldBeSameAs(watching.Events[2]);
+            error.Exception.ShouldBeAssignableTo<OperationCanceledException>();
+            blockedToken.IsCancellationRequested.ShouldBeTrue();
+            blocking.Lines.ShouldBe(["run started", "prepare: pending -> ready", "prepare: ready -> running"]);
+        }
+    }
+
+    [Test]
     public async Task A_request_made_as_the_run_ends_is_heard_by_the_run_or_ends_the_wait_for_reporters()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -153,6 +207,71 @@ public class ReporterStopTests
             result.Outcome.ShouldBe(RunOutcome.Complete);
             result.ReporterErrors.ShouldHaveSingleItem().Reporter.ShouldBeSameAs(stuck);
         }
+    }
+
+    /// <summary>
+    /// Keeps a line and the token for every event it is handed, and blocks its thread inside the call for the event whose
+    /// line is <paramref name="blocksOn"/>, before it returns a task at all, until the test releases it.
+    /// </summary>
+    private sealed class BlockingReporter(string blocksOn) : IReporter, IDisposable
+    {
+        private readonly Lock _gate = new();
+        private readonly List<string> _lines = [];
+        private readonly List<CancellationToken> _tokens = [];
+        private readonly ManualResetEventSlim _released = new();
+        private readonly TaskCompletionSource _blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _returned = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Blocked => _blocked.Task;
+
+        /// <summary>Completes once the blocked call has come back, after <see cref="Release"/>.</summary>
+        public Task Returned => _returned.Task;
+
+        public IReadOnlyList<string> Lines
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _lines];
+                }
+            }
+        }
+
+        public IReadOnlyList<CancellationToken> Tokens
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _tokens];
+                }
+            }
+        }
+
+        public void Release() => _released.Set();
+
+        public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
+        {
+            var line = EventLine.Describe(runEvent);
+            lock (_gate)
+            {
+                _lines.Add(line);
+                _tokens.Add(cancellationToken);
+            }
+
+            if (line == blocksOn)
+            {
+                _blocked.TrySetResult();
+                // Ignores its token, as a reporter stuck in blocking code would.
+                _released.Wait(CancellationToken.None);
+                _returned.TrySetResult();
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        public void Dispose() => _released.Dispose();
     }
 
     /// <summary>

@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace Dagline;
 
 /// <summary>
@@ -7,22 +5,17 @@ namespace Dagline;
 /// the same events in the same order, and one that is slow or fails holds up neither the run nor another reporter.
 /// A stop request the run did not apply cuts short the wait for reporters still busy at the end of the run.
 /// </summary>
-[SuppressMessage(
-    "Reliability",
-    "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The source has no timer and no wait handle is ever taken from it, and a reporter call the run has dropped may still hold its token.")]
+
 internal sealed class ReporterDelivery
 {
     private readonly ReporterQueue[] _queues;
     private readonly StopSignal? _signal;
 
-    // Cancelled only by a stop request the run did not apply: that is what drops the reporters still busy at its end.
-    private readonly CancellationTokenSource _dropTheBusyReporters = new();
 
     public ReporterDelivery(IReadOnlyList<IReporter> reporters, StopSignal? signal)
     {
         _signal = signal;
-        _queues = [.. reporters.Select(reporter => new ReporterQueue(reporter, _dropTheBusyReporters.Token))];
+        _queues = [.. reporters.Select(reporter => new ReporterQueue(reporter))];
         Delivered = CollectErrorsAsync();
     }
 
@@ -84,13 +77,9 @@ internal sealed class ReporterDelivery
 
     private void DropTheBusyReporters()
     {
-        try
+        foreach (var queue in _queues)
         {
-            _dropTheBusyReporters.Cancel();
-        }
-        catch (AggregateException)
-        {
-            // A callback a reporter registered on its token threw. That is the reporter's affair, and it is dropped regardless.
+            queue.DropIfBusy();
         }
     }
 

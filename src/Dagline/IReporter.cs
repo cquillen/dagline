@@ -24,7 +24,7 @@ public interface IReporter
     /// The run as it is now is <see cref="ISnapshotSource.Current"/> on the source that <see cref="RunStarted"/> carries.
     /// </param>
     /// <param name="cancellationToken">
-    /// A token for the work of handling the event. It is cancelled only when a request on the run's <see cref="StopSignal"/>
+    /// A token for the work of handling the event. Each reporter is passed a token of its own. It is cancelled only when a request on the run's <see cref="StopSignal"/>
     /// ends the wait for reporters at the end of the run while this reporter is still busy. The reporter is then dropped.
     /// </param>
     /// <returns>A task that completes when the reporter has handled the event.</returns>
@@ -45,7 +45,7 @@ public interface IReporter
     /// <see cref="RunEnded"/> included. A call that never completes keeps <see cref="Runner.RunAsync"/> from returning
     /// until a request on the run's <see cref="StopSignal"/> that the run did not apply ends that wait. Each reporter still busy
     /// is then dropped: the token passed to its call is cancelled, its remaining events are discarded, <see cref="Runner.RunAsync"/>
-    /// returns without waiting for the call to come back, and its <see cref="ReporterError"/> on <see cref="RunResult.ReporterErrors"/>
+    /// returns without waiting for the call to come back, even a call that blocks its thread before it returns a task, and its <see cref="ReporterError"/> on <see cref="RunResult.ReporterErrors"/>
     /// carries an <see cref="OperationCanceledException"/>. A run given no signal waits for its reporters for as long as they take.
     /// </para>
     /// <para>
