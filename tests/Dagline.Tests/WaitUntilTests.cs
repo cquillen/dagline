@@ -5,6 +5,7 @@ namespace Dagline.Tests;
 
 public class WaitUntilTests
 {
+    private const int _repeats = 50;
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
     [Test]
@@ -283,6 +284,140 @@ public class WaitUntilTests
         waiting.StatusText.ShouldBe("job 17 is 40% done");
         waiting.Count.ShouldBe(40);
         waiting.Total.ShouldBe(100);
+    }
+
+    [Test]
+    public async Task A_stop_during_a_delay_ends_the_helper_at_once_and_the_task_is_cancelled_after_its_wait_ends()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var fake = new FakeTimeProvider(_runStart);
+            var clock = new WatchedClock(fake);
+            var checks = 0;
+            var builder = new GraphBuilder();
+            var jobTask = builder.Task("job", context => context.WaitUntil(
+                TimeSpan.FromSeconds(30),
+                _ =>
+                {
+                    checks++;
+                    return Task.FromResult(false);
+                },
+                "job 17 to finish"));
+            var stop = new StopSignal();
+            var reporter = new RecordingReporter();
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] }, stop);
+            await clock.NextTimerAsync();
+            stop.Request();
+            var result = await run;
+
+            checks.ShouldBe(1);
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
+            result.Snapshot[jobTask.Path].Status.ShouldBe(NodeStatus.Cancelled);
+            result.Snapshot[jobTask.Path].Settled.ShouldBe(_runStart);
+            reporter.Lines.ShouldBe(
+            [
+                "run started",
+                "job: pending -> ready",
+                "job: ready -> running",
+                "waiting job: job 17 to finish",
+                "stop requested",
+                "waited job",
+                "job: running -> cancelled",
+                "run ended: stopped",
+            ]);
+        }
+    }
+
+    [Test]
+    public async Task A_helper_entered_after_a_stop_throws_without_calling_the_check_or_waiting()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var checks = 0;
+            var load = new StoppedBody(_ => { });
+            var builder = new GraphBuilder();
+            var jobTask = builder.Task("job", async context =>
+            {
+                await load.Body(context);
+                await context.WaitUntil(
+                    TimeSpan.FromSeconds(30),
+                    _ =>
+                    {
+                        checks++;
+                        return Task.FromResult(true);
+                    },
+                    "job 17 to finish");
+            });
+            var stop = new StopSignal();
+            var reporter = new RecordingReporter();
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+            await load.Started;
+            stop.Request();
+            var result = await run;
+
+            checks.ShouldBe(0);
+            result.Snapshot[jobTask.Path].Status.ShouldBe(NodeStatus.Cancelled);
+            reporter.Events.OfType<WaitingChanged>().ShouldBeEmpty();
+        }
+    }
+
+    [Test]
+    public async Task A_helper_let_go_mid_check_stops_waiting_before_it_is_cancelled_and_nothing_it_does_afterwards_shows()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var checking = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var checkResult = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var builder = new GraphBuilder();
+            var jobTask = builder.Task("job", async context =>
+            {
+                try
+                {
+                    await context.WaitUntil(
+                        TimeSpan.FromSeconds(30),
+                        _ =>
+                        {
+                            checking.TrySetResult();
+                            return checkResult.Task;
+                        },
+                        "job 17 to finish");
+                }
+                finally
+                {
+                    context.Waiting("job 18 to finish").Dispose();
+                    ended.TrySetResult();
+                }
+            });
+            var stop = new StopSignal();
+            var reporter = new RecordingReporter();
+
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero, Reporters = [reporter] },
+                stop);
+            await checking.Task;
+            stop.Request();
+            var result = await run;
+            var source = await reporter.Source;
+            var events = reporter.Events.Count;
+            checkResult.SetResult(false);
+            await ended.Task;
+
+            reporter.Lines.Skip(4).ShouldBe(
+            [
+                "stop requested",
+                "stopped waiting: grace period over",
+                "waited job",
+                "job: running -> cancelled",
+                "run ended: stopped",
+            ]);
+            reporter.Events.Count.ShouldBe(events);
+            source.Current[jobTask.Path].ShouldBe(result.Snapshot[jobTask.Path]);
+            source.Current[jobTask.Path].WaitingSince.ShouldBeNull();
+        }
     }
 
     [Test]
