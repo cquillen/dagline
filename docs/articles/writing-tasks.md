@@ -83,7 +83,7 @@ static async Task CheckAsync(Tenant tenant, EntityStore store, TaskContext conte
 }
 ```
 
-- <xref:Dagline.TaskContext.Status*> replaces the status text. Pass `null` to clear it.
+- <xref:Dagline.TaskContext.Status*> replaces the status text. Pass `null` to clear it. The text is kept as you give it. Keep it to one line: the plain-text reporter prints a line break in it as a space.
 - <xref:Dagline.TaskContext.Count*> replaces the count and its total. The total is optional: leave it out for a running tally. A call without a total clears the last one. A negative count or total throws `ArgumentOutOfRangeException`.
 - The text and the count are independent: setting one leaves the other as it was.
 

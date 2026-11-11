@@ -60,7 +60,8 @@ public sealed class TaskContext
     /// <param name="text">The new status text, which replaces the last one. <see langword="null"/> clears it.</param>
     /// <remarks>
     /// The text shows as <see cref="NodeSnapshot.StatusText"/>. It is independent of the count: setting one leaves the other as it was.
-    /// Progress is never an event, so calling this often costs a reporter nothing. The text is kept as given.
+    /// Progress is never an event, so calling this often costs a reporter nothing. The text is kept as given, line breaks included.
+    /// A reporter decides how to show them: <see cref="PlainTextReporter"/> prints each as a space.
     /// </remarks>
     public void Status(string? text) => _run.Report(_task, task => task.WithStatusText(text));
 

@@ -340,6 +340,33 @@ public class PlainTextReporterTests
     }
 
     [Test]
+    public async Task Status_text_that_holds_line_breaks_is_printed_as_one_progress_line_with_a_space_for_each_break()
+    {
+        const string statusText = "checking entities\r\nof shard-3\nin two passes";
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new StringWriter();
+        var builder = new GraphBuilder();
+        var check = builder.Task("check", context =>
+        {
+            context.Status(statusText);
+            context.Count(17, 40);
+            throw context.Fail("stopped");
+        });
+
+        var result = await Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
+
+        // The snapshot keeps status text as the task gave it, so it is the reporter that keeps its line one line.
+        result.Snapshot[check.Path].StatusText.ShouldBe(statusText);
+        Lines(writer).SkipWhile(line => line != "failed: 1").ShouldBe(
+        [
+            "failed: 1",
+            "  check (reported) at 2026-11-11T04:12:00Z after 0.0s",
+            "    progress: checking entities of shard-3 in two passes, 17 of 40",
+            "    message: stopped",
+        ]);
+    }
+
+    [Test]
     public async Task A_group_that_settles_has_a_line_with_its_counts_and_a_warning_has_a_line_when_it_is_added_and_is_in_the_summary()
     {
         var clock = new FakeTimeProvider(_runStart);

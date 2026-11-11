@@ -132,9 +132,14 @@ internal static class PlainTextLines
             _ => null,
         };
 
-        return task.StatusText is { Length: > 0 } text
-            ? count is null ? text : $"{text}, {count}"
-            : count;
+        if (task.StatusText is not { Length: > 0 } given)
+        {
+            return count;
+        }
+
+        // Status text is kept as the task gave it, line breaks included, and here it has one line to fit on.
+        var text = TaskReportRules.OneLine(given);
+        return count is null ? text : $"{text}, {count}";
     }
 
     private static IEnumerable<string> Warnings(Snapshot snapshot)
