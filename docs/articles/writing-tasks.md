@@ -157,6 +157,8 @@ An unexpected failure is one the task did not declare: its code broke. Any excep
 - the message becomes the exception's message, on one line, replacing any the task had set,
 - the exception's type and then its stack trace are added to the detail lines, after any the task had already added.
 
+An exception type can override `Message` and `StackTrace`, and an override can itself throw. Dagline reads both once, when it catches the exception, and a property that cannot be read never costs the task its outcome: a message that throws or is `null` is replaced by the full name of the exception's type, and a stack trace that throws is left out, so the type is the only detail line added.
+
 The exception is never thrown at your app and fails no other task. A cancellation exception is treated the same way, since a run cannot be stopped.
 
 A `ReportedFailureException` is not special by itself. One that escapes a task whose own context recorded no failure, such as an exception caught from another task's `Fail` and thrown again, is an unexpected failure.

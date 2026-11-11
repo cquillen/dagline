@@ -55,5 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: the plain-text reporter and its line formats in the Reporters article, and the Concepts article.
 - The plain-text reporter prints the progress of a failed task on one line: a line break in the status text the task set becomes a space. `NodeSnapshot.StatusText` still holds the text as the task gave it.
 - The event records `RunStarted`, `TaskStatusChanged`, `WarningAdded` and `GroupSettled`, and `ReporterError`, `BlockedTasks` and `GraphProblem`, reject a null argument with `ArgumentNullException`, both when one is made and when one is copied by a `with` expression.
+- An exception that escapes a task body and whose own `Message` or `StackTrace` throws still fails only its task, and the run still ends. A message that throws or is `null` is replaced by the full name of the exception's type, and a stack trace that throws is left out of the detail lines.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main

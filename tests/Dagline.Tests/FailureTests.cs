@@ -129,6 +129,72 @@ public class FailureTests
         failed.DetailOmitted.ShouldBeGreaterThan(0);
     }
 
+    // A run that cannot settle a task never ends, so this test and the two after it state a shorter timeout than the suite's 30 seconds.
+    [Test]
+    [Timeout(5_000)]
+    public async Task An_exception_whose_message_cannot_be_read_fails_its_task_under_the_name_of_its_type_and_nothing_else(
+        CancellationToken cancellationToken)
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => throw new ExceptionWithNoReadableMessage());
+        var report = builder.Task("report", _ => Task.CompletedTask).After(load);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] })
+            .WaitAsync(cancellationToken);
+
+        result.Outcome.ShouldBe(RunOutcome.Incomplete);
+        reporter.Lines.ShouldBe(
+        [
+            "run started",
+            "load: pending -> ready",
+            "load: ready -> running",
+            "load: running -> failed",
+            "report: pending -> ready",
+            "report: ready -> running",
+            "report: running -> succeeded",
+            "run ended: incomplete",
+        ]);
+        var failed = result.Snapshot[load.Path];
+        failed.Failure.ShouldBe(FailureKind.Unexpected);
+        failed.Message.ShouldBe("Dagline.Tests.FailureTests+ExceptionWithNoReadableMessage");
+        failed.Detail[0].ShouldBe("Dagline.Tests.FailureTests+ExceptionWithNoReadableMessage");
+        result.Snapshot[report.Path].Status.ShouldBe(NodeStatus.Succeeded);
+    }
+
+    [Test]
+    [Timeout(5_000)]
+    public async Task An_exception_whose_stack_trace_cannot_be_read_fails_its_task_with_its_message_and_its_type_alone(
+        CancellationToken cancellationToken)
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => throw new ExceptionWithNoReadableStackTrace("entity 7 has no owner"));
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }).WaitAsync(cancellationToken);
+
+        result.Outcome.ShouldBe(RunOutcome.Incomplete);
+        var failed = result.Snapshot[load.Path];
+        failed.Failure.ShouldBe(FailureKind.Unexpected);
+        failed.Message.ShouldBe("entity 7 has no owner");
+        failed.Detail.ShouldBe(["Dagline.Tests.FailureTests+ExceptionWithNoReadableStackTrace"]);
+    }
+
+    [Test]
+    [Timeout(5_000)]
+    public async Task An_exception_that_gives_no_message_fails_its_task_under_the_name_of_its_type(CancellationToken cancellationToken)
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => throw new ExceptionWithNoMessage());
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }).WaitAsync(cancellationToken);
+
+        result.Outcome.ShouldBe(RunOutcome.Incomplete);
+        var failed = result.Snapshot[load.Path];
+        failed.Failure.ShouldBe(FailureKind.Unexpected);
+        failed.Message.ShouldBe("Dagline.Tests.FailureTests+ExceptionWithNoMessage");
+        failed.Detail[0].ShouldBe("Dagline.Tests.FailureTests+ExceptionWithNoMessage");
+    }
+
     [Test]
     public async Task A_task_that_has_not_failed_has_no_failure_kind_no_message_and_no_detail()
     {
@@ -150,5 +216,20 @@ public class FailureTests
     {
         await Task.Yield();
         throw new InvalidOperationException("entity 7 has no owner");
+    }
+
+    private sealed class ExceptionWithNoReadableMessage : Exception
+    {
+        public override string Message => throw new InvalidOperationException("the message cannot be read");
+    }
+
+    private sealed class ExceptionWithNoReadableStackTrace(string message) : Exception(message)
+    {
+        public override string? StackTrace => throw new InvalidOperationException("the stack trace cannot be read");
+    }
+
+    private sealed class ExceptionWithNoMessage : Exception
+    {
+        public override string Message => null!;
     }
 }
