@@ -1,0 +1,74 @@
+// PROTOTYPE (throwaway, never compiled). Sketch B: tasks are classes, services come from DI, graph built from a plan object.
+// Core depends on Microsoft.Extensions.DependencyInjection.Abstractions only (IServiceProvider), not on Hosting.
+
+using Dagline;
+using Dagline.Spectre;
+
+// ---- tasks are classes; constructor injection ---------------------------
+sealed class ValidateTenant(TenantDirectory dir, Tenant tenant) : ITask       // tenant is a *data* arg, see factory below
+{
+    public async Task<TaskOutcome> RunAsync(TaskContext ctx)
+    {
+        var total = await tenant.CountEntities(ctx.Cancellation);
+        for (var i = 0; i < total; i++)
+        {
+            ctx.Progress.Report(i, total);
+            await tenant.Check(i, ctx.Cancellation);
+        }
+        return tenant.Stale ? TaskOutcome.Succeeded.WithWarning("stale") : TaskOutcome.Succeeded;
+    }
+}
+
+sealed class SubmitJob(IScheduler scheduler) : ITask
+{
+    public async Task<TaskOutcome> RunAsync(TaskContext ctx)
+    {
+        var jobId = ctx.Checkpoint.Read();
+        if (jobId.Length == 0)
+        {
+            jobId = await scheduler.Trigger();
+            await ctx.Checkpoint.SaveAsync(jobId);
+        }
+        using (ctx.Waiting("job running"))                // the scope the helper is built on
+        {
+            while (await scheduler.Status(jobId, ctx.Cancellation) is JobState.Running)
+                await ctx.Delay(TimeSpan.FromSeconds(30)); // TimeProvider-backed
+        }
+        return TaskOutcome.Succeeded;
+    }
+}
+
+// ---- graph is built by an app-owned class that gets DI and a filter -----
+sealed class NightlyPlan(IServiceProvider sp, TenantDirectory tenants, ShardFilter filter) : IGraphPlan
+{
+    public void Build(GraphBuilder g)
+    {
+        foreach (var shard in filter.Apply(Shards.All))
+        {
+            var sg = g.Group(shard.Segment, title: $"Shard {shard.Name}", limits: ["db"]);
+            foreach (var t in tenants.For(shard))
+            {
+                var tg = sg.Group(t.Id);
+                var prep = tg.Add("prepare", sp.Create<PrepareTenant>(t));            // ActivatorUtilities with extra args
+                tg.Add("validate", sp.Create<ValidateTenant>(t)).Requires(prep);      // requires by handle, not path
+            }
+        }
+        g.Add("submit-job", sp.Create<SubmitJob>(), limits: ["scheduler"]).Requires(g.Find("shard-*"));  // glob on groups
+    }
+}
+
+// ---- host + run ----------------------------------------------------------
+var host = Host.CreateApplicationBuilder(args);
+host.Services.AddDagline(o => o.Cap = 16).AddDaglineSpectre();     // registers IDaglineRunner
+host.Services.AddSingleton<IScheduler, FakeScheduler>();
+using var app = host.Build();
+
+var runner = app.Services.GetRequiredService<IDaglineRunner>();
+var run = await runner.RunAsync<NightlyPlan>(new RunOptions
+{
+    Journal = Journals.ContinueOrNew(dir, pick: unfinished => Ask(unfinished) ?? null, description: "nightly"),
+    Limits = { ["db"] = 4, ["scheduler"] = 2 },
+    GracePeriod = TimeSpan.FromSeconds(30),
+    Reporters = { Reporters.Auto() },                    // Spectre display or plain text
+});
+return (int)run.Outcome;                                // enum values 0/1/2

@@ -1,0 +1,83 @@
+// PROTOTYPE (throwaway, never compiled). Sketch A: delegates + one fluent builder. No DI in the core.
+// Reference scenario: shards -> tenants -> validate, gate, then trigger an external job and wait for it.
+
+using Dagline;
+using Dagline.Spectre;
+
+var shardFilter = args.Where(a => a.StartsWith("--shard=")).Select(a => a[8..]).ToHashSet();
+var scheduler = new FakeScheduler();           // app's own services are plain captured variables
+var tenants = TenantDirectory.Load();          // list discovered at startup
+
+// ---- build ------------------------------------------------------------
+var graph = Graph.Create(g =>
+{
+    foreach (var shard in Shards.All.Where(s => shardFilter.Count == 0 || shardFilter.Contains(s)))
+    {
+        g.Group($"shard-{shard}", shardGroup =>
+        {
+            shardGroup.Title($"Shard {shard}");
+            shardGroup.Limit("db", 4);               // limit is named here...
+
+            foreach (var tenant in tenants.For(shard))
+            {
+                shardGroup.Group(tenant.Id, tg =>
+                {
+                    tg.Task("prepare", async ctx => { await Prepare(tenant, ctx.Cancellation); });
+
+                    tg.Task("validate", async ctx =>
+                    {
+                        ctx.Status("checking entities");
+                        var total = await tenant.CountEntities(ctx.Cancellation);
+                        var bad = 0;
+                        for (var i = 0; i < total; i++)
+                        {
+                            ctx.Progress(i, total);                 // count + optional total
+                            if (!await tenant.Check(i, ctx.Cancellation)) bad++;
+                        }
+                        if (bad > 0) return Outcome.Failed($"{bad} bad entities", detail: tenant.BadLines());
+                        if (tenant.Stale) ctx.Warn("directory entry is stale");
+                        return Outcome.Succeeded();                  // or just `return;` from a Task<void> overload
+                    }).Requires("prepare");                          // sibling-relative path
+                });
+            }
+        });
+    }
+
+    g.Group("validations-gate");                                    // empty group, declared up front
+    // (sketch) the gate is a dependency ON the group "shard-*": express with a helper:
+    g.Task("submit-job", async ctx =>
+    {
+        var jobId = ctx.Checkpoint.Value                           // "" when none
+                    ?? await ctx.Checkpoint.Save(await scheduler.Trigger());   // awaited, on disk before return
+        await ctx.WaitUntil(TimeSpan.FromSeconds(30),               // check now, then every 30s
+            async ct => (await scheduler.Status(jobId, ct)) switch
+            {
+                JobState.Done => Wait.Finished,
+                JobState.Error => throw new ReportedFailure("job failed", scheduler.Log(jobId)),
+                _ => Wait.Continue,
+            });
+    })
+    .Requires(g.Groups.Where(n => n.Path.StartsWith("shard-")))      // dep on groups; shrinks with filter
+    .Holds("scheduler");
+
+    g.Limit("scheduler", 2);                                         // ...sized here
+});
+// graph.Build() already ran: every problem reported in one GraphException.
+
+// ---- journal policy (app code) -----------------------------------------
+var dir = "journals/nightly";
+var open = Journals.List(dir).FirstOrDefault(j => !j.Finished);
+var journal = open is not null && Ask($"Continue '{open.Description}'?")
+    ? JournalChoice.Continue(dir, open.Id)
+    : JournalChoice.New(dir, description: $"nightly {DateTime.Today:yyyy-MM-dd} shards={string.Join(',', shardFilter)}");
+
+// ---- run ----------------------------------------------------------------
+using var stop = new ConsoleStop();                                  // Dagline.Spectre: Ctrl+C -> stop, twice -> hard
+var result = await DaglineRun.Create(graph)
+    .Cap(16)
+    .GracePeriod(TimeSpan.FromSeconds(30))
+    .Journal(journal)
+    .Reporter(Spectre.Display())                                      // chooses display vs plain text
+    .RunAsync(stop.Token);                                            // JournalInUseException etc. thrown before any run
+
+return result.Outcome.ToExitCode();                                  // 0 / 1 / 2 default mapping offered

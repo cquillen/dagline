@@ -1,0 +1,62 @@
+// PROTOTYPE (throwaway, never compiled). Sketch C: explicit, immutable-feeling objects; delegates by default, class tasks optional;
+// no DI in the core, a task closure captures what it needs. Reporters are plain interfaces. Everything is a statement, no lambdas around groups.
+
+using Dagline;
+using Dagline.Spectre;
+
+var scheduler = new FakeScheduler();
+var graph = new GraphBuilder();
+
+foreach (var shard in Shards.All.Where(filter.Includes))
+{
+    var sg = graph.AddGroup(Path.Of("shard", shard)) with { Title = $"Shard {shard}", Limits = ["db"] };   // segment "shard-3" from parts
+    foreach (var t in tenants.For(shard))
+    {
+        var prepare  = graph.AddTask(sg / t.Id / "prepare",  ctx => Prepare(t, ctx));                 // path by `/` operator
+        var validate = graph.AddTask(sg / t.Id / "validate", ctx => Validate(t, ctx), requires: [prepare]);
+    }
+}
+
+var validations = graph.Groups.Where(g => g.Path.Segments[0].StartsWith("shard-"));                  // may be empty if filtered to nothing
+graph.AddTask("submit-job", SubmitJob, requires: validations, limits: ["scheduler"]);                // build error if path not in graph
+
+var built = graph.Build();                          // throws GraphValidationException listing all problems; Build() returns the frozen Graph
+
+static async Task<TaskOutcome> Validate(Tenant t, TaskContext ctx)
+{
+    await foreach (var (i, total, ok) in t.CheckAll(ctx.Cancellation))
+    {
+        ctx.Report(status: "checking", current: i, total: total);
+        if (!ok) ctx.Warn($"entity {i} suspicious");
+    }
+    return ctx.Warnings.Count > 100 ? TaskOutcome.Fail("too many") : TaskOutcome.Ok();
+}
+
+async Task<TaskOutcome> SubmitJob(TaskContext ctx)
+{
+    var jobId = ctx.Checkpoint ?? await ctx.SaveCheckpoint(await scheduler.Trigger());
+    return await ctx.Poll(
+        interval: TimeSpan.FromSeconds(30),
+        check: async ct => await scheduler.Status(jobId, ct) switch
+        {
+            JobState.Done  => PollResult.Done(),
+            JobState.Error => PollResult.Fail("job failed", scheduler.LogLines(jobId)),
+            _              => PollResult.KeepWaiting(),
+        });
+}
+
+// ---- journals: three separate static operations -------------------------
+var journals = new JournalDirectory(dir);
+var unfinished = journals.List().Where(j => !j.Finished).ToList();
+RunStart start = unfinished is [var one] && Ask($"Continue {one.Description}?")
+    ? RunStart.Continue(journals, one.Id)
+    : RunStart.NewJournal(journals, description: "nightly …");
+
+// ---- run: options record + events as an async stream --------------------
+var options = new RunOptions { Cap = 16, GracePeriod = TimeSpan.FromSeconds(30), Limits = new() { ["db"] = 4, ["scheduler"] = 2 } };
+await using var spectre = SpectreDisplay.Create(Console.Out, new() { Ascii = args.Contains("--ascii"), Mode = DisplayMode.Auto });
+using var stop = SpectreCtrlC.Hook();                // lives in Dagline.Spectre, first press = stop, second = hard stop
+
+RunResult result = await Runner.RunAsync(built, start, options, [spectre], stop.Requests);
+// result.Outcome, result.Snapshot, result.ReporterErrors
+return result.Outcome.ExitCode();                    // extension offering 0/1/2
