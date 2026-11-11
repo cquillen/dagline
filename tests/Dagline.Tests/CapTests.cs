@@ -20,10 +20,19 @@ public class CapTests
                 builder.Task($"shard-{shard}", bodies.Body);
             }
 
-            var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Cap = cap });
+            var reporter = new RecordingReporter();
+
+            var result = await Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = Journal.None, Cap = cap, Reporters = [reporter] });
 
             result.Outcome.ShouldBe(RunOutcome.Complete);
             bodies.Highest.ShouldBe(cap);
+
+            // A body the run should not have started can begin after the others have left, and then it is not counted above.
+            // The snapshot handed with its start counts it whenever its body gets a thread.
+            reporter.Snapshots.Max(snapshot => snapshot.Counts[NodeStatus.Running]).ShouldBe(cap);
+            reporter.Snapshots.Max(snapshot => snapshot.Cap.InUse).ShouldBe(cap);
         }
     }
 

@@ -6,8 +6,17 @@ namespace Dagline.TestSupport;
 /// and asserts on <see cref="Highest"/> once the run has ended.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Every body stays in flight until <paramref name="expected"/> of them are running at once, so the bound is always reached
 /// and never by luck. A run that lets fewer of them run at once never ends, and the test fails on its timeout.
+/// </para>
+/// <para>
+/// It counts a body once the body has a thread, which is later than the moment the run started the task. A body the run
+/// should not have started can therefore begin after the others have left and not be counted, so <see cref="Highest"/>
+/// shows that a bound was reached but cannot alone show that it was never exceeded. A test asserts as well on the snapshots
+/// a recording reporter was handed: the highest number of tasks running, and the highest number of slots in use,
+/// across them. The snapshot handed with the start of a task counts that task whenever its body runs.
+/// </para>
 /// </remarks>
 /// <param name="expected">How many of the bodies the run is expected to let run at once: the size of the bound under test.</param>
 public sealed class OverlappingBodies(int expected)
