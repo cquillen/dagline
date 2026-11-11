@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Description>A lightweight, in-process library for running directed acyclic graphs (DAGs) of tasks in .NET command-line apps.</Description>
   </PropertyGroup>
 

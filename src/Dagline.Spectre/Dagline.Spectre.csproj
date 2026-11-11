@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Description>Spectre.Console terminal UI for Dagline: live views of queued, running and completed tasks and their progress.</Description>
     <PackageTags>$(PackageTags);spectre-console</PackageTags>
   </PropertyGroup>

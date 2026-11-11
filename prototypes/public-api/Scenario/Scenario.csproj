@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <NoWarn>$(NoWarn);CS1591;CS8321</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Dagline\Dagline.csproj" />
+    <ProjectReference Include="..\..\..\src\Dagline.Spectre\Dagline.Spectre.csproj" />
+    <ProjectReference Include="..\..\..\src\Dagline.Testing\Dagline.Testing.csproj" />
+  </ItemGroup>
+</Project>
