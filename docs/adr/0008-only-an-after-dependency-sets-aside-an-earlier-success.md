@@ -20,7 +20,7 @@ Path equality is the only identity between a graph and a journal (ADR 0001), and
 - **A path that was a task and is now a group, or the reverse,** is treated as not in the graph.
 - **A rename cannot be seen.** It is a removal and an addition.
 
-None of these is an error. The run reports how many journal paths it did not find in the graph, so that a reporter can show it.
+None of these is an error. The run reports two counts, so that a reporter can show them: how many journal paths it did not find in the graph, and how many of those have not succeeded, meaning the journal holds no success for the path or the success was set aside. The second count is the work that stays behind when a run continues a journal with a smaller graph (ADR 0011).
 
 ## Considered options
 
@@ -33,7 +33,7 @@ None of these is an error. The run reports how many journal paths it did not fin
 ## Consequences
 
 - An author who wants finished work to run again after its upstreams changed starts a new journal.
-- Whether a journal is finished is judged against the graph of its latest run. Paths that run did not find do not count.
+- Whether a journal is finished is judged against the graph of its latest run. Paths that run did not find do not count, so a journal can be finished while it holds paths that have not succeeded (ADR 0011).
 - A task that was running when the process died is indistinguishable, to the next run, from one that was never reached, apart from its checkpoint.
 - The warnings of an earlier success are shown again in every continuing run whose graph has its path, so the summary of the last run covers every task in that run's graph. It is not a history of the journal: paths the graph no longer has are left out.
 - A checkpoint whose path has left the graph is kept until the journal is deleted.
