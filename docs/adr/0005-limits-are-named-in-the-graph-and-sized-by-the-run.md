@@ -1,6 +1,6 @@
 # Limits are named in the graph and sized by the run
 
-A task names the limits it needs, and so can a group, which gives every task beneath it a slot of its own to hold. The graph never says how big a limit is. Sizes, and the cap, are options of the run, because they are tuning that may differ between a run and its resume while the graph stays the same work.
+A task names the limits it needs, and so can a group, which gives every task beneath it a slot of its own to hold. The graph never says how big a limit is. Sizes, and the cap, are options of the run, because they are tuning that may differ between a run and a later run that continues its journal while the graph stays the same work.
 
 A task holds exactly one slot of each of its limits, its own and its ancestors', from the moment it starts until it settles. That includes the time it spends waiting on an external system, which may be hours. Releasing a slot during a wait was the alternative. It was not taken because the task would then have to queue a second time to get its slot back before carrying on, and there is one place where a task queues: ready. A consumer with many long waits sets a high cap and puts limits on the heavy work.
 

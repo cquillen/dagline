@@ -85,7 +85,7 @@ The status of a task whose work has started and not ended, including while it wa
 _Avoid_: Active, in progress
 
 **Succeeded**:
-The status of a task that finished its work without a failure, in this run or an earlier one.
+The status of a task that finished its work without a failure, in this run or as an earlier success.
 _Avoid_: Done, passed, completed, skipped
 
 **Failed**:
@@ -137,7 +137,7 @@ How a run ended: complete, incomplete or stopped.
 _Avoid_: Result, exit status
 
 **Complete**:
-The run outcome when every task has succeeded, in this run or an earlier one.
+The run outcome when every task has succeeded, in this run or as an earlier success.
 _Avoid_: Successful, passed, done
 
 **Incomplete**:
@@ -157,5 +157,27 @@ Said of a running task that has told Dagline it is idle until an external system
 _Avoid_: Polling, sleeping, suspended, paused
 
 **Checkpoint**:
-A small piece of text a running task saves so that a later run continuing the same work can carry on from it instead of starting over. Dagline keeps it until the task succeeds.
+A small piece of text a running task saves so that a later run continuing the same journal can carry on from it instead of starting over. Dagline keeps it until the task succeeds.
 _Avoid_: Saved state, bookmark, handle, resume token
+
+### Journals
+
+**Journal**:
+The durable record of a first run and every run that continues it. A run starts a new journal, continues an existing one, or has none.
+_Avoid_: State file, run record, session, log
+
+**Continue**:
+To start a run on an existing journal, so that its earlier successes are kept and its checkpoints are handed back.
+_Avoid_: Resume, restart, rerun
+
+**Earlier success**:
+A task's success recorded by an earlier run of the same journal and kept by the run that continues it.
+_Avoid_: Skipped, cached
+
+**Finished**:
+Said of a journal whose latest run was complete.
+_Avoid_: Done, closed, complete
+
+**Description**:
+Free text the consumer gives a journal when creating it, so that an operator can tell journals apart. It never changes.
+_Avoid_: Label, name, title
