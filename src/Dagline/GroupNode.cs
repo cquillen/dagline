@@ -25,7 +25,7 @@ public sealed class GroupNode : Node
 
     internal ChildNodes Children { get; }
 
-    internal override IEnumerable<TaskNode> Tasks() => Children.InDeclarationOrder().OfType<TaskNode>();
+    internal override IEnumerable<TaskNode> CoveredTasks() => Children.InDeclarationOrder().OfType<TaskNode>();
 
     /// <summary>Gives this group a title: a readable name for people.</summary>
     /// <param name="title">The title. It may hold any text and need not be unique. Calling again replaces it.</param>
@@ -45,7 +45,10 @@ public sealed class GroupNode : Node
     /// Declares that every task beneath this group <em>requires</em> <paramref name="upstream"/>:
     /// each becomes ready only once the upstream has succeeded.
     /// </summary>
-    /// <param name="upstream">The node the tasks beneath this group require.</param>
+    /// <param name="upstream">
+    /// The node the tasks beneath this group require. A group stands for every task beneath it at any depth,
+    /// and an empty group is met at once.
+    /// </param>
     /// <returns>This handle.</returns>
     /// <remarks>
     /// The dependency applies to every task beneath the group at any depth, whether it was added before or after this call.
@@ -79,7 +82,10 @@ public sealed class GroupNode : Node
     /// Declares that every task beneath this group runs <em>after</em> <paramref name="upstream"/>:
     /// each becomes ready once the upstream has settled, whatever the outcome.
     /// </summary>
-    /// <param name="upstream">The node the tasks beneath this group run after.</param>
+    /// <param name="upstream">
+    /// The node the tasks beneath this group run after. A group stands for every task beneath it at any depth,
+    /// and an empty group is met at once.
+    /// </param>
     /// <returns>This handle.</returns>
     /// <remarks>
     /// The dependency applies to every task beneath the group at any depth, whether it was added before or after this call.

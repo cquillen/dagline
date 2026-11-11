@@ -5,6 +5,7 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// Every method returns the same handle, so declarations chain: <c>builder.Task("publish", Publish).Requires(prepare)</c>.
+/// A task also has every dependency declared on a group that holds it.
 /// </remarks>
 public sealed class TaskNode : Node
 {
@@ -16,7 +17,7 @@ public sealed class TaskNode : Node
 
     internal TaskBody Body { get; }
 
-    internal override IEnumerable<TaskNode> Tasks() => [this];
+    internal override IEnumerable<TaskNode> CoveredTasks() => [this];
 
     /// <summary>Gives this task a title: a readable name for people.</summary>
     /// <param name="title">The title. It may hold any text and need not be unique. Calling again replaces it.</param>
@@ -35,8 +36,15 @@ public sealed class TaskNode : Node
     /// <summary>
     /// Declares that this task <em>requires</em> <paramref name="upstream"/>: it becomes ready only once the upstream has succeeded.
     /// </summary>
-    /// <param name="upstream">The node this task requires.</param>
+    /// <param name="upstream">
+    /// The node this task requires. A group stands for every task beneath it at any depth, so all of them must have succeeded.
+    /// An empty group is met at once.
+    /// </param>
     /// <returns>This handle.</returns>
+    /// <remarks>
+    /// Declaring the same dependency twice is the same as declaring it once. A task that ends up with both kinds on one upstream,
+    /// declared on itself or on a group that holds it, <em>requires</em> that upstream.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
     public TaskNode Requires(Node upstream)
     {
@@ -65,8 +73,15 @@ public sealed class TaskNode : Node
     /// Declares that this task runs <em>after</em> <paramref name="upstream"/>: it becomes ready once the upstream has settled,
     /// whatever the outcome.
     /// </summary>
-    /// <param name="upstream">The node this task runs after.</param>
+    /// <param name="upstream">
+    /// The node this task runs after. A group stands for every task beneath it at any depth, so all of them must have settled.
+    /// An empty group is met at once.
+    /// </param>
     /// <returns>This handle.</returns>
+    /// <remarks>
+    /// Declaring the same dependency twice is the same as declaring it once. A task that ends up with both kinds on one upstream,
+    /// declared on itself or on a group that holds it, <em>requires</em> that upstream.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
     public TaskNode After(Node upstream)
     {

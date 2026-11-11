@@ -19,5 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `NodePath`, the identity of a node, with `Parse`, `TryParse`, `Segments` and `Parent`.
 - `TaskContext` gives a task body its `Path` and the run's `TimeProvider`.
 - Docs: the Running and stopping article, the generated API reference in the site nav, and the glossary as a page of the site.
+- Groups: `GraphBuilder.Group` and `GroupNode.Group` return a `GroupNode` that is also the scope for its children, so groups nest to any depth with plain loops. `Title` on a task or group gives it a readable name, carried to `NodeSnapshot.Title`.
+- `After` beside `Requires`, on tasks and on groups, each taking one handle or a collection of handles. A dependency against a group covers every task beneath it, one declared on a group applies to every task beneath it, an empty group is met at once, both kinds on one upstream are treated as *requires*, and exact duplicates collapse.
+- Declaration order is a depth-first walk of the tree with each group's children in the order added to that group. `Graph` is an `IReadOnlyList<Node>` in that order and finds a node by path with `TryGetNode`.
+- `NodeSnapshot.IsGroup`, a derived `Status` for a group, and `NodeSnapshot.Counts`: the tasks per status beneath a group. The `GroupSettled` event is published when the last task beneath a group settles, deepest group first.
+- Docs: the Defining a graph article.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main

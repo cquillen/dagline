@@ -26,7 +26,7 @@ static Task PrepareAsync(TaskContext context) => Task.CompletedTask;
 static Task PublishAsync(TaskContext context) => Task.CompletedTask;
 ```
 
-Every task starts pending. A task becomes ready once every task it requires has succeeded, and every ready task starts, in declaration order: the order in which the tasks were added to the builder. Here `prepare` runs first and `publish` runs once it has succeeded.
+Every task starts pending. A task becomes ready once every dependency it has is met, and every ready task starts, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
 
 Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock.
 
@@ -60,7 +60,7 @@ In a test, pass a fake clock such as `FakeTimeProvider` from the `Microsoft.Exte
 
 ### Reporters
 
-A reporter is something that presents a run to people while it happens. Each reporter in the list receives every event of the run in order: <xref:Dagline.RunStarted> first, a <xref:Dagline.TaskStatusChanged> for every change of a task's status, and <xref:Dagline.RunEnded> last. With each event comes a <xref:Dagline.Snapshot> of the run as of that event.
+A reporter is something that presents a run to people while it happens. Each reporter in the list receives every event of the run in order: <xref:Dagline.RunStarted> first, a <xref:Dagline.TaskStatusChanged> for every change of a task's status, a <xref:Dagline.GroupSettled> when the last task beneath a group settles, and <xref:Dagline.RunEnded> last. With each event comes a <xref:Dagline.Snapshot> of the run as of that event.
 
 The list is read once when the run starts. A reporter cannot change the run, and Dagline itself never writes to the console: what your app prints is up to you and your reporters.
 

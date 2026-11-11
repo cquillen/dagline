@@ -56,7 +56,7 @@ internal sealed class TaskDependencies
             .. task.Ancestors()
                 .Prepend<Node>(task)
                 .SelectMany(node => _declaredOn[node])
-                .SelectMany(dependency => dependency.Upstream.Tasks().Select(upstream => (Position: _positions[upstream], dependency.Kind)))
+                .SelectMany(dependency => dependency.Upstream.CoveredTasks().Select(upstream => (Position: _positions[upstream], dependency.Kind)))
                 .GroupBy(covered => covered.Position, covered => covered.Kind)
                 .Select(kinds => new Upstream(kinds.Key, kinds.Strongest()))
                 .OrderBy(upstream => upstream.Position),

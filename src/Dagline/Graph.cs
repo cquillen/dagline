@@ -9,8 +9,15 @@ namespace Dagline;
 /// A built graph: the nodes a <see cref="GraphBuilder"/> collected and the dependencies between them.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A graph is immutable. It can be run any number of times, one run after another or several at once,
 /// and every run starts with every task pending.
+/// </para>
+/// <para>
+/// As a list it holds the handle of every node, tasks and groups together, in declaration order:
+/// a depth-first walk of the tree, each group before its children, with the children of each group in the order
+/// they were added to it. A snapshot lists the nodes in the same order, and ready tasks start in it.
+/// </para>
 /// </remarks>
 public sealed class Graph : IReadOnlyList<Node>
 {
@@ -44,7 +51,7 @@ public sealed class Graph : IReadOnlyList<Node>
                     node.TitleText,
                     dependencies.DeclaredOn(node),
                     Depth: node.Ancestors().Count(),
-                    TaskCount: node.Tasks().Count());
+                    TaskCount: node.CoveredTasks().Count());
     }
 
     /// <summary>How many nodes the graph has, tasks and groups together.</summary>

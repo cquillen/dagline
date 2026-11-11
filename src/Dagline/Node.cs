@@ -30,9 +30,10 @@ public abstract class Node
     private protected GraphBuilder Builder { get; }
 
     /// <summary>
-    /// The tasks this node stands for, in declaration order: a task is itself, and a group is every task beneath it at any depth.
+    /// The tasks a dependency against this node covers, in declaration order:
+    /// the task itself, or every task beneath the group at any depth.
     /// </summary>
-    internal abstract IEnumerable<TaskNode> Tasks();
+    internal abstract IEnumerable<TaskNode> CoveredTasks();
 
     /// <summary>Every group that holds this node, the nearest first.</summary>
     internal IEnumerable<GroupNode> Ancestors()
