@@ -146,7 +146,7 @@ internal sealed class Run : ISnapshotSource
             _slots.GiveBack(task);
             Move(task, outcome, now);
             var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
-            Advance(WaitingFor([task, .. blocked]), now);
+            Advance(DependentsOf([task, .. blocked]), now);
         }
     }
 
@@ -206,9 +206,9 @@ internal sealed class Run : ISnapshotSource
     private bool IsPending(GraphTask task) => _nodes[task.Position].Status is NodeStatus.Pending;
 
     /// <summary>
-    /// The tasks, in declaration order, that wait for one of the tasks that have just settled or for a group that settled with them.
+    /// The tasks, in declaration order, that depend on one of the tasks that have just settled or on a group that settled with them.
     /// </summary>
-    private IEnumerable<GraphTask> WaitingFor(IEnumerable<GraphTask> settled)
+    private IEnumerable<GraphTask> DependentsOf(IEnumerable<GraphTask> settled)
         => settled
             .Concat<GraphNode>(_settledInThisStep)
             .SelectMany(node => node.Dependents)
@@ -217,13 +217,13 @@ internal sealed class Run : ISnapshotSource
             .Select(_graph.TaskAt);
 
     /// <summary>
-    /// Applies what follows from one change, causes before effects: the tasks among <paramref name="waiting"/>
+    /// Applies what follows from one change, causes before effects: the tasks among <paramref name="candidates"/>
     /// whose dependencies are now met become ready, the groups that the step settled are announced,
     /// the ready tasks that fit start, and the run ends when nothing is left to do.
     /// </summary>
-    private void Advance(IEnumerable<GraphTask> waiting, DateTimeOffset now)
+    private void Advance(IEnumerable<GraphTask> candidates, DateTimeOffset now)
     {
-        MakeReady(waiting, now);
+        MakeReady(candidates, now);
         AnnounceSettledGroups(now);
         StartWhatFits(now);
 
@@ -233,9 +233,9 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private void MakeReady(IEnumerable<GraphTask> waiting, DateTimeOffset now)
+    private void MakeReady(IEnumerable<GraphTask> candidates, DateTimeOffset now)
     {
-        List<GraphTask> ready = [.. waiting.Where(DependenciesAreMet)];
+        List<GraphTask> ready = [.. candidates.Where(DependenciesAreMet)];
         foreach (var task in ready)
         {
             Move(task, NodeStatus.Ready, now);

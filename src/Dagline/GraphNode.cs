@@ -10,7 +10,7 @@ namespace Dagline;
 /// <param name="Title">The title of the node, or <see langword="null"/> when it has none.</param>
 /// <param name="Dependencies">The dependencies declared on this node, as a snapshot shows them.</param>
 /// <param name="Limits">The limits named on this node, as a snapshot shows them.</param>
-/// <param name="Dependents">The positions of the tasks that wait for this node, in declaration order.</param>
+/// <param name="Dependents">The positions of the tasks that depend on this node, in declaration order.</param>
 internal abstract record GraphNode(
     int Position,
     NodePath Path,
@@ -25,10 +25,10 @@ internal abstract record GraphNode(
 /// <param name="Title">The title of the task, or <see langword="null"/> when it has none.</param>
 /// <param name="Dependencies">The dependencies declared on this task, as a snapshot shows them.</param>
 /// <param name="Limits">The limits named on this task, as a snapshot shows them.</param>
-/// <param name="Dependents">The positions of the tasks that wait for this task, in declaration order.</param>
+/// <param name="Dependents">The positions of the tasks that depend on this task, in declaration order.</param>
 /// <param name="Body">The work of the task.</param>
 /// <param name="Groups">The positions of the groups that hold this task, the nearest first.</param>
-/// <param name="Upstreams">Every node this task waits for, whether the dependency was declared on it or on a group that holds it.</param>
+/// <param name="Upstreams">Every node this task depends on, whether the dependency was declared on it or on a group that holds it.</param>
 /// <param name="HeldLimits">
 /// Every limit this task holds, whether it was named on the task or on a group that holds it,
 /// each as its position among <see cref="Graph.LimitNames"/>.
@@ -46,7 +46,7 @@ internal sealed record GraphTask(
     ImmutableArray<int> HeldLimits)
     : GraphNode(Position, Path, Title, Dependencies, Limits, Dependents)
 {
-    /// <summary>Whether this task waits for the node at a position, by either kind of dependency.</summary>
+    /// <summary>Whether this task depends on the node at a position, by either kind of dependency.</summary>
     public bool IsUpstream(int position) => Upstreams.Any(upstream => upstream.Position == position);
 }
 
@@ -56,7 +56,7 @@ internal sealed record GraphTask(
 /// <param name="Title">The title of the group, or <see langword="null"/> when it has none.</param>
 /// <param name="Dependencies">The dependencies declared on this group, as a snapshot shows them.</param>
 /// <param name="Limits">The limits named on this group, as a snapshot shows them.</param>
-/// <param name="Dependents">The positions of the tasks that wait for every task beneath this group, in declaration order.</param>
+/// <param name="Dependents">The positions of the tasks that depend on this group, and so on every task beneath it, in declaration order.</param>
 /// <param name="Depth">How many groups hold this one: zero for a group at the root.</param>
 /// <param name="TaskCount">How many tasks are beneath this group, at any depth.</param>
 internal sealed record GraphGroup(
@@ -71,7 +71,7 @@ internal sealed record GraphGroup(
     : GraphNode(Position, Path, Title, Dependencies, Limits, Dependents);
 
 /// <summary>
-/// One node that a task waits for, and what it must have done for the wait to be over.
+/// One node that a task depends on, and what it must have done for the dependency to be met.
 /// A group has succeeded once every task beneath it has, and has settled once every task beneath it has.
 /// </summary>
 /// <param name="Position">The position of the upstream node among the nodes of the graph.</param>
