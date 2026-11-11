@@ -17,6 +17,7 @@ After a stop the run waits a grace period, 30 seconds by default, for its runnin
 - Only starting is suspended during the wait. Statuses keep moving: a task that fails still blocks its dependents at once, and a task that succeeds still moves its dependents from pending to ready, where they stay.
 - A cancellation exception that escapes a task after a stop makes the task cancelled, whichever token caused it. Before a stop it is a failure.
 - A task left behind may still be executing when the run returns. Dagline has let go of it, not ended it.
+- One thing a task left behind does is not ignored: a checkpoint save throws. A save must never look as though it worked when nothing was written (see ADR 0006). A save made during the grace period, before the task is recorded as cancelled, succeeds.
 - The grace period may be zero, to return at once, or unlimited, to wait until the second stop.
 - A stop that arrives before anything has started starts nothing, and the run outcome is stopped.
 - The core never hooks Ctrl+C or process signals itself. A stop arrives from outside.
