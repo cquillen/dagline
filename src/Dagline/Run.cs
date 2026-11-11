@@ -29,7 +29,7 @@ internal sealed class Run : ISnapshotSource
         _graph = graph;
         _timeProvider = timeProvider;
         _delivery = delivery;
-        _nodes = [.. graph.Nodes.Select(node => new NodeSnapshot(node.Path, node is GraphGroup, node.Dependencies))];
+        _nodes = [.. graph.Nodes.Select(node => new NodeSnapshot(node.Path, node.Title, node is GraphGroup, node.Dependencies))];
         _counts = new StatusCounts(pending: graph.Tasks.Length);
         _startedAt = timeProvider.GetUtcNow();
         _current = TakeSnapshot();

@@ -39,11 +39,12 @@ public sealed class Graph : IReadOnlyList<Node>
                 ? new GraphTask(
                     position,
                     node.Path,
+                    node.TitleText,
                     declared,
                     task.Body,
                     [.. declaredOn[node].Select(dependency => new Upstream(positions[dependency.Upstream], dependency.Kind))],
                     [.. dependentsOf[position].Distinct().Order()])
-                : new GraphGroup(position, node.Path, declared);
+                : new GraphGroup(position, node.Path, node.TitleText, declared);
         }
     }
 

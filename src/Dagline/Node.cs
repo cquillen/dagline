@@ -24,5 +24,15 @@ public abstract class Node
     /// <summary>The group that holds this node, or <see langword="null"/> for a node at the root.</summary>
     internal GroupNode? Parent { get; }
 
+    /// <summary>The title given to this node so far, or <see langword="null"/> when it has none.</summary>
+    internal string? TitleText { get; private set; }
+
     private protected GraphBuilder Builder { get; }
+
+    private protected void SetTitle(string title)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+
+        TitleText = title;
+    }
 }

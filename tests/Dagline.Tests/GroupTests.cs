@@ -8,6 +8,26 @@ public class GroupTests
     private static readonly string[] _tenants = ["tenant-a", "tenant-b"];
 
     [Test]
+    public async Task A_title_is_carried_to_the_snapshot_and_is_separate_from_the_segment()
+    {
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1").Title("Shard one (primary)");
+        var load = shard.Task("load", _ => Task.CompletedTask).Title("Load entities");
+        shard.Task("verify", _ => Task.CompletedTask);
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+
+        result.Snapshot.Nodes.Select(node => (node.Path.ToString(), node.Title)).ShouldBe(
+        [
+            ("shard-1", "Shard one (primary)"),
+            ("shard-1/load", "Load entities"),
+            ("shard-1/verify", null),
+        ]);
+        shard.Path.ShouldBe(NodePath.Parse("shard-1"));
+        load.Path.ShouldBe(NodePath.Parse("shard-1/load"));
+    }
+
+    [Test]
     public async Task Nested_loops_build_groups_to_any_depth_and_every_task_beneath_them_runs()
     {
         var bodiesRun = 0;

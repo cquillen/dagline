@@ -16,6 +16,20 @@ public sealed class TaskNode : Node
 
     internal TaskBody Body { get; }
 
+    /// <summary>Gives this task a title: a readable name for people.</summary>
+    /// <param name="title">The title. It may hold any text and need not be unique. Calling again replaces it.</param>
+    /// <returns>This handle.</returns>
+    /// <remarks>
+    /// A title is separate from the segment and never part of the path, so it can change between runs
+    /// without changing which work the path means. It is carried to <see cref="NodeSnapshot.Title"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="title"/> is <see langword="null"/>.</exception>
+    public TaskNode Title(string title)
+    {
+        SetTitle(title);
+        return this;
+    }
+
     /// <summary>
     /// Declares that this task <em>requires</em> <paramref name="upstream"/>: it becomes ready only once the upstream has succeeded.
     /// </summary>

@@ -25,6 +25,20 @@ public sealed class GroupNode : Node
 
     internal ChildNodes Children { get; }
 
+    /// <summary>Gives this group a title: a readable name for people.</summary>
+    /// <param name="title">The title. It may hold any text and need not be unique. Calling again replaces it.</param>
+    /// <returns>This handle.</returns>
+    /// <remarks>
+    /// A title is separate from the segment and never part of the path, so it can change between runs
+    /// without changing which work the path means. It is carried to <see cref="NodeSnapshot.Title"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="title"/> is <see langword="null"/>.</exception>
+    public GroupNode Title(string title)
+    {
+        SetTitle(title);
+        return this;
+    }
+
     /// <summary>Adds a group beneath this group.</summary>
     /// <param name="segment">The segment that names the new group among the children of this one.</param>
     /// <returns>A handle to the new group, which is also the scope for its own children.</returns>
