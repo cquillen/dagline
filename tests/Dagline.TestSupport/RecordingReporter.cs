@@ -10,12 +10,19 @@ public sealed class RecordingReporter : IReporter
     private readonly List<RunEvent> _events = [];
     private readonly List<Snapshot> _snapshots = [];
     private readonly TaskCompletionSource<ISnapshotSource> _source = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
     /// Completes once the reporter has been handed <see cref="RunStarted"/>, with the snapshot source that event carries.
     /// A test reads <see cref="ISnapshotSource.Current"/> from it while task bodies are paused.
     /// </summary>
     public Task<ISnapshotSource> Source => _source.Task;
+
+    /// <summary>
+    /// Completes once the reporter has been handed <see cref="RunEnded"/>, the last event of a run.
+    /// A test awaits it to know the run has ended while <see cref="Runner.RunAsync"/> has not yet returned.
+    /// </summary>
+    public Task Ended => _ended.Task;
 
     /// <summary>The events received so far, in the order received.</summary>
     public IReadOnlyList<RunEvent> Events
@@ -56,6 +63,11 @@ public sealed class RecordingReporter : IReporter
         if (runEvent is RunStarted started)
         {
             _source.TrySetResult(started.Source);
+        }
+
+        if (runEvent is RunEnded)
+        {
+            _ended.TrySetResult();
         }
 
         return ValueTask.CompletedTask;
