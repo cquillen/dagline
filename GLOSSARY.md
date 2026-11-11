@@ -160,6 +160,20 @@ _Avoid_: Polling, sleeping, suspended, paused
 A small piece of text a running task saves so that a later run continuing the same journal can carry on from it instead of starting over. Dagline keeps it until the task succeeds.
 _Avoid_: Saved state, bookmark, handle, resume token
 
+### Reporters
+
+**Reporter**:
+Something that presents a run to people while it happens. It receives the run's events and can read its snapshot, and nothing it does changes the run.
+_Avoid_: Subscriber, listener, observer, sink
+
+**Event**:
+A record of one thing that happened in a run, with the time it happened. Every reporter receives a run's events in the same order.
+_Avoid_: Notification, message, callback
+
+**Snapshot**:
+Everything Dagline knows about a run at one instant: the graph, and each node's status with the data attached to it.
+_Avoid_: State, view, model
+
 ### Journals
 
 **Journal**:
