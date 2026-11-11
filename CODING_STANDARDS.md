@@ -53,6 +53,20 @@ Design follows the SOLID principles. Each one applies here through a rule a revi
 - **Fail at the boundary.** A public member validates its arguments on entry with the `ThrowIf` helpers and throws the most specific exception type.
 - **Catch what you handle.** A `catch` names the exception it can deal with. A catch-all belongs only where consumer code is invoked, to record an unexpected failure.
 
+## Tests
+
+_Tests use the public surface_ (above) and the test rules in `AGENTS.md` apply as well.
+
+- **A test is a whole run.** A behaviour of the engine is tested by building a small graph, running it, and asserting on what a reporter received and on the final snapshot. A value type with rules of its own, such as a path, is tested directly. No public seam is added only so that a test can reach something.
+- **No test waits on real time.** A test never sleeps, and never asserts that nothing happened within a duration. A task body that must be caught mid-flight pauses until the test releases it. Order is asserted on the recorded events once the run has ended, and a limit or the cap on the highest number of task bodies seen running at once. Real time appears only as the timeout that fails a stuck test: 30 seconds unless the test states another.
+- **Time is faked.** A test that controls time passes Microsoft's `FakeTimeProvider` to the run. That fake cannot say when a timer is pending, so the test advances it in steps until a signal the test owns completes, such as a check having run a second time. A test in which time is not the subject may use the clock in `Dagline.Testing`, on which every delay ends at once. The package is referenced by test projects only: ADR 0013 keeps `Microsoft.Extensions.*` out of `src/Dagline`.
+- **Races are repeated** (judgement). A test of a stop, the grace period, a limit, the cap, or a task body that ends after the run has let go of it repeats 50 times in every run of the suite.
+- **Journals are real files.** A journal test writes to a temporary directory of its own, and there is no file system abstraction. A killed process is simulated by cutting the journal of a real run short, at each line boundary and inside a line, and continuing what is left.
+- **Frames come from the display.** A frame is asserted as lines of text by forcing the display on over a captured output of a fixed size. The snapshot behind it comes from a real run whose task bodies are paused, never from one built by hand.
+- **Shared support is not shipped.** A helper that both test projects use and a consumer would not lives in `tests/Dagline.TestSupport`, which holds no tests and is never packed. A helper a consumer would want belongs in `Dagline.Testing`.
+
+One path is knowingly untested: a journal write that fails during a run. No real file can be made to fail on every platform, and a seam for it would be public surface that no consumer needs. Keep that path short enough to review by eye.
+
 ## Endorsed patterns
 
 These are deliberate here and override general code-smell heuristics:
