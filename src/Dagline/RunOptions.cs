@@ -80,8 +80,9 @@ public sealed record RunOptions
     /// <para>
     /// <see cref="TimeSpan.Zero"/> lets go of the running tasks at once, in the step that applies the stop.
     /// <see cref="Timeout.InfiniteTimeSpan"/> waits until the running tasks have ended, or until a second request.
-    /// Any other value below zero is refused by <see cref="Runner.RunAsync"/> with <see cref="RunConfigurationException"/>
-    /// before the run exists.
+    /// A limited grace period is at most <see cref="uint.MaxValue"/> - 1 milliseconds, about 49.7 days: the longest timer
+    /// a <see cref="System.TimeProvider"/> can create. Any other value below zero, and any value above that limit, is refused by
+    /// <see cref="Runner.RunAsync"/> with <see cref="RunConfigurationException"/> before the run exists.
     /// </para>
     /// </remarks>
     public TimeSpan GracePeriod { get; init; } = TimeSpan.FromSeconds(30);

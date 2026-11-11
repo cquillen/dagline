@@ -34,7 +34,8 @@ public static class Runner
     /// <para>
     /// The options are checked before anything else happens: <see cref="RunOptions.Cap"/> and every size in
     /// <see cref="RunOptions.Limits"/> must be at least 1, every limit the graph names must have a size, and
-    /// <see cref="RunOptions.GracePeriod"/> must be zero or more, or <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// <see cref="RunOptions.GracePeriod"/> must be from zero up to <see cref="uint.MaxValue"/> - 1 milliseconds (about 49.7 days),
+    /// or <see cref="Timeout.InfiniteTimeSpan"/>.
     /// A size for a limit the graph does not name is ignored.
     /// </para>
     /// <para>
@@ -68,7 +69,7 @@ public static class Runner
     /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="RunConfigurationException">
     /// The cap or a size is below 1, the graph names a limit that the options give no size, or the grace period is below zero
-    /// and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
+    /// or above <see cref="uint.MaxValue"/> - 1 milliseconds and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
     /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
     /// </exception>
     public static Task<RunResult> RunAsync(Graph graph, RunOptions options, StopSignal? stop = null)

@@ -328,6 +328,55 @@ public class GracePeriodTests
     }
 
     [Test]
+    [Arguments(42_949_672_940_001L)]
+    [Arguments(long.MaxValue)]
+    public void A_grace_period_beyond_the_timer_maximum_is_one_more_problem_refused_before_the_run_exists(long ticks)
+    {
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+        var gracePeriod = TimeSpan.FromTicks(ticks);
+        var options = new RunOptions { Journal = Journal.None, Cap = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
+
+        var exception = Should.Throw<RunConfigurationException>(() => { _ = Runner.RunAsync(builder.Build(), options); });
+
+        exception.Message.Split(Environment.NewLine).ShouldBe(
+        [
+            "The options cannot be used to run the graph:",
+            "- The cap is 0. It must be at least 1.",
+            $"- The grace period is {gracePeriod}. It must be at most 49.17:02:47.2940000, about 49.7 days, or Timeout.InfiniteTimeSpan to wait with no limit.",
+        ]);
+        reporter.Events.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task A_grace_period_at_the_timer_maximum_is_allowed_on_the_system_clock()
+    {
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("load", load.Body);
+        var stop = new StopSignal();
+        var reporter = new RecordingReporter();
+        var watched = new WatchedReporter(reporter);
+        var gracePeriod = TimeSpan.FromMilliseconds(4_294_967_294L);
+
+        var run = Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, GracePeriod = gracePeriod, Reporters = [watched] },
+            stop);
+        await load.Started;
+        stop.Request();
+        await watched.Handled("stop requested");
+        stop.Request();
+        var result = await run;
+
+        result.Outcome.ShouldBe(RunOutcome.Stopped);
+        result.Snapshot.Stop!.GracePeriod.ShouldBe(gracePeriod);
+        reporter.Lines.ShouldContain("stopped waiting: second stop");
+        load.Release();
+    }
+
+    [Test]
     public async Task A_task_left_behind_keeps_its_warnings_detail_and_frozen_progress_and_its_message_is_replaced()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)

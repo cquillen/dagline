@@ -41,6 +41,7 @@ The graph is not changed by a run. You can run the same built graph again, and e
 | `Cap` | 16 | The most tasks that may be running at once. |
 | `Limits` | no sizes | The size of each limit the graph names. |
 | `TimeProvider` | `TimeProvider.System` | The clock of the run. |
+| `GracePeriod` | 30 seconds | How long a stopped run waits for its running tasks. See [the grace period](#the-grace-period). |
 | `Reporters` | no reporters | What watches the run. |
 
 ### Journal
@@ -223,6 +224,8 @@ new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero };
 new RunOptions { Journal = Journal.None, GracePeriod = Timeout.InfiniteTimeSpan };
 ```
 
+A limited grace period is at most `uint.MaxValue - 1` milliseconds, about 49.7 days: the longest timer a `TimeProvider` can create. A longer one is refused before the run starts; use `Timeout.InfiniteTimeSpan` to wait with no limit.
+
 A signal requested twice before the run starts gives the same result as one requested once: nothing starts, so there is nothing to wait for.
 
 ### Cancelled and never reached
@@ -266,7 +269,7 @@ Dagline never sets the exit code of your process. <xref:Dagline.RunOutcomeExtens
 - the cap is below 1,
 - a size in `Limits` is below 1,
 - the graph names a limit that `Limits` gives no size,
-- the grace period is below zero and is not `Timeout.InfiniteTimeSpan`.
+- the grace period is below zero or above about 49.7 days (`uint.MaxValue - 1` milliseconds), and is not `Timeout.InfiniteTimeSpan`.
 
 Its message lists every problem, one to a line, so you can fix them all in one pass:
 
