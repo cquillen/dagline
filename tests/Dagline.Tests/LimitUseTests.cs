@@ -4,6 +4,10 @@ namespace Dagline.Tests;
 
 public class LimitUseTests
 {
+    // None of these tests is repeated, because none has a race. In each, either the test pauses the bodies and reads the snapshot
+    // while nothing can change, or the cap or a limit of size 1 lets one body run at a time, so the events can come in one order only.
+    // The last two assert on what a snapshot names, not on what ran at once.
+
     [Test]
     public async Task The_snapshot_shows_the_cap_and_each_limit_the_graph_names_with_its_size_and_slots_in_use()
     {
