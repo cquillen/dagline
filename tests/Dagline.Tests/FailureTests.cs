@@ -90,6 +90,46 @@ public class FailureTests
     }
 
     [Test]
+    public async Task An_unexpected_failure_replaces_the_message_and_adds_its_type_and_stack_trace_after_the_detail_lines_already_set()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", async context =>
+        {
+            context.Message("loading entities");
+            context.Detail("tenant-a: 25 entities", "tenant-b: 15 entities");
+            await BreakAfterAnAwaitAsync(context);
+        });
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+
+        var failed = result.Snapshot[load.Path];
+        failed.Failure.ShouldBe(FailureKind.Unexpected);
+        failed.Message.ShouldBe("entity 7 has no owner");
+        failed.Detail.Take(3).ShouldBe(["tenant-a: 25 entities", "tenant-b: 15 entities", "System.InvalidOperationException"]);
+        failed.Detail.Skip(3).ShouldContain(line => line.Contains(nameof(BreakAfterAnAwaitAsync)));
+        failed.DetailOmitted.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task The_type_and_stack_trace_of_an_unexpected_failure_count_towards_the_hundred_detail_lines_kept()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", async context =>
+        {
+            context.Detail([.. Enumerable.Range(1, 99).Select(entity => $"entity {entity}: loaded")]);
+            await BreakAfterAnAwaitAsync(context);
+        });
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+
+        var failed = result.Snapshot[load.Path];
+        failed.Detail.Count.ShouldBe(100);
+        failed.Detail[98].ShouldBe("entity 99: loaded");
+        failed.Detail[99].ShouldBe("System.InvalidOperationException");
+        failed.DetailOmitted.ShouldBeGreaterThan(0);
+    }
+
+    [Test]
     public async Task A_task_that_has_not_failed_has_no_failure_kind_no_message_and_no_detail()
     {
         var builder = new GraphBuilder();

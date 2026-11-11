@@ -11,6 +11,11 @@ internal sealed record TaskOutcome
     /// <summary>The outcome of a task whose body ended without a failure.</summary>
     public static TaskOutcome Succeeded { get; } = new(NodeStatus.Succeeded);
 
+    /// <summary>
+    /// The outcome of a task that recorded a reported failure. Its message and detail lines are those the task reported.
+    /// </summary>
+    public static TaskOutcome ReportedFailure { get; } = new(NodeStatus.Failed) { Failure = FailureKind.Reported };
+
     public NodeStatus Status { get; }
 
     public FailureKind? Failure { get; private init; }

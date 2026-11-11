@@ -40,8 +40,8 @@ internal static class TaskReportRules
         => task with { Count = current, Total = total };
 
     /// <summary>A message or a warning is one line: each line break in the text is replaced by a space.</summary>
-    private static string OneLine(string text) => text.ReplaceLineEndings(" ");
+    public static string OneLine(string text) => text.ReplaceLineEndings(" ");
 
     /// <summary>Text given as detail is one detail line for each line of it: it is split at every line break.</summary>
-    private static string[] Lines(string text) => text.ReplaceLineEndings("\n").Split('\n');
+    public static string[] Lines(string text) => text.ReplaceLineEndings("\n").Split('\n');
 }

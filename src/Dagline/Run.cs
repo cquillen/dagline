@@ -23,6 +23,7 @@ internal sealed class Run : ISnapshotSource
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
     private readonly List<GraphGroup> _settledInThisStep = [];
     private readonly SortedSet<int> _ready = [];
+    private readonly HashSet<int> _reportedFailures = [];
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
@@ -67,29 +68,55 @@ internal sealed class Run : ISnapshotSource
     {
         lock (_gate)
         {
-            var before = _nodes[task.Position];
-            if (before.Status is not NodeStatus.Running)
-            {
-                return;
-            }
+            Apply(task, report);
+        }
+    }
 
-            var after = report(before);
-            _nodes[task.Position] = after;
-            _current = null;
-
-            // A warning that was kept is the one report that is also an event.
-            foreach (var warning in after.Warnings.Skip(before.Warnings.Count))
+    /// <summary>
+    /// Applies a report that is a reported failure: from then on the task settles failed as a reported failure, however its body ends.
+    /// </summary>
+    /// <param name="task">The task that reports.</param>
+    /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
+    public void ReportFailure(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    {
+        lock (_gate)
+        {
+            if (Apply(task, report))
             {
-                Publish(new WarningAdded(_timeProvider.GetUtcNow(), task.Path, warning));
+                _reportedFailures.Add(task.Position);
             }
         }
     }
 
-    private void Settle(GraphTask task, TaskOutcome outcome)
+    /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
+    private bool Apply(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    {
+        var before = _nodes[task.Position];
+        if (before.Status is not NodeStatus.Running)
+        {
+            return false;
+        }
+
+        var after = report(before);
+        _nodes[task.Position] = after;
+        _current = null;
+
+        // A warning that was kept is the one report that is also an event.
+        foreach (var warning in after.Warnings.Skip(before.Warnings.Count))
+        {
+            Publish(new WarningAdded(_timeProvider.GetUtcNow(), task.Path, warning));
+        }
+
+        return true;
+    }
+
+    /// <summary>Settles a task whose body has ended. A reported failure the task recorded wins over the way the body ended.</summary>
+    private void Settle(GraphTask task, TaskOutcome ended)
     {
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
+            var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure : ended;
             _slots.GiveBack(task);
             Move(task, outcome, now);
             var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];

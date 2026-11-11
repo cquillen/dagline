@@ -80,6 +80,22 @@ public sealed class TaskContext
         _run.Report(_task, task => task.WithDetail(lines));
     }
 
+    /// <summary>Records a reported failure of the task and returns the exception for the body to throw.</summary>
+    /// <param name="message">The message of the failure, which replaces the task's message. Each line break in it is replaced by a space.</param>
+    /// <param name="detail">Detail lines to add after those already there. Text that holds line breaks is split into one line for each.</param>
+    /// <returns>An exception to throw from the body: <c>throw context.Fail("2 bad entities");</c>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="message"/> or <paramref name="detail"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A line in <paramref name="detail"/> is <see langword="null"/>. Nothing is recorded.</exception>
+    public ReportedFailureException Fail(string message, params string[] detail)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ThrowIfAnyNull(detail, nameof(detail));
+
+        _run.ReportFailure(_task, task => task.WithMessage(message).WithDetail(detail));
+
+        return new ReportedFailureException(TaskReportRules.OneLine(message), [.. detail.SelectMany(TaskReportRules.Lines)]);
+    }
+
     private static void ThrowIfAnyNull(string[] lines, string paramName)
     {
         ArgumentNullException.ThrowIfNull(lines, paramName);
