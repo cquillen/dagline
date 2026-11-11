@@ -10,8 +10,8 @@ namespace Dagline;
 /// <see cref="InvalidOperationException"/>, since only a fault in Dagline can ask for one.
 /// </para>
 /// <para>
-/// A report, an opened wait and a closed wait apply only while the task is running. On a task that is not running, such as one
-/// the run has let go of, each is ignored and gives <see langword="null"/>.
+/// A report, an opened waiting scope and a closed waiting scope apply only while the task is running. On a task that is not running,
+/// such as one the run has let go of, each is ignored and gives <see langword="null"/>.
 /// </para>
 /// <para>It is not thread-safe: the run calls it under its lock.</para>
 /// </remarks>
@@ -61,7 +61,7 @@ internal sealed class TaskInstance
             return [];
         }
 
-        var outcome = ReferenceEquals(ended, TaskOutcome.LeftBehind) ? ended
+        var outcome = ended.IsLeftBehind ? ended
             : _failureReported ? TaskOutcome.ReportedFailure
             : runHasStopped ? ended.OnceStopped()
             : ended;
@@ -73,7 +73,7 @@ internal sealed class TaskInstance
         }
 
         _openWaitingScopes = 0;
-        return [EndWait(now), Move(Settled(outcome, now), now)];
+        return [EndWaiting(now), Move(Settled(outcome, now), now)];
     }
 
     /// <summary>Sets the status text of the task's progress. Progress is never an event.</summary>
@@ -86,13 +86,8 @@ internal sealed class TaskInstance
     /// Adds a warning, as one line, while the task has fewer than the number kept, and produces <see cref="WarningAdded"/>.
     /// A warning beyond the number kept is only counted, and produces nothing.
     /// </summary>
-    public TaskChange? Warn(string warning, DateTimeOffset now)
+    public TaskChange? Warn(string warning, DateTimeOffset now) => WhileRunning(() =>
     {
-        if (!IsRunning)
-        {
-            return null;
-        }
-
         if (Snapshot.Warnings.Count >= _kept)
         {
             Snapshot = Snapshot with { WarningsOmitted = Snapshot.WarningsOmitted + 1 };
@@ -102,7 +97,7 @@ internal sealed class TaskInstance
         var kept = LineBreaks.OneLine(warning);
         Snapshot = Snapshot with { Warnings = [.. Snapshot.Warnings, kept] };
         return new TaskChange(Snapshot, new WarningAdded(now, Snapshot.Path, kept));
-    }
+    });
 
     /// <summary>Sets the message, as one line. It is never an event.</summary>
     public TaskChange? SetMessage(string message) => Change(task => WithMessage(task, message));
@@ -125,13 +120,8 @@ internal sealed class TaskInstance
     /// Opens one waiting scope. The first open scope begins the wait, with its text and <paramref name="now"/>,
     /// and produces <see cref="WaitingChanged"/>. A scope that overlaps one already open produces nothing.
     /// </summary>
-    public TaskChange? OpenWait(string? text, DateTimeOffset now)
+    public TaskChange? OpenWaitingScope(string? text, DateTimeOffset now) => WhileRunning(() =>
     {
-        if (!IsRunning)
-        {
-            return null;
-        }
-
         _openWaitingScopes++;
         if (_openWaitingScopes > 1)
         {
@@ -140,41 +130,42 @@ internal sealed class TaskInstance
 
         Snapshot = Snapshot with { WaitingSince = now, WaitingText = text };
         return new TaskChange(Snapshot, new WaitingChanged(now, Snapshot.Path, Waiting: true, text, Since: now));
-    }
+    });
 
     /// <summary>
     /// Closes one waiting scope. The last open scope ends the wait and produces <see cref="WaitingChanged"/>.
     /// Closing a scope that leaves another open produces nothing.
     /// </summary>
-    public TaskChange? CloseWait(DateTimeOffset now)
+    public TaskChange? CloseWaitingScope(DateTimeOffset now) => WhileRunning(() =>
     {
-        if (!IsRunning || _openWaitingScopes == 0)
+        if (_openWaitingScopes == 0)
         {
             return null;
         }
 
         _openWaitingScopes--;
-        return _openWaitingScopes > 0 ? new TaskChange(Snapshot, Event: null) : EndWait(now);
-    }
+        return _openWaitingScopes > 0 ? new TaskChange(Snapshot, Event: null) : EndWaiting(now);
+    });
 
-    private TaskChange EndWait(DateTimeOffset now)
+    private TaskChange EndWaiting(DateTimeOffset now)
     {
         var waiting = Snapshot;
         Snapshot = Snapshot with { WaitingSince = null, WaitingText = null };
         return new TaskChange(Snapshot, new WaitingChanged(now, Snapshot.Path, Waiting: false, waiting.WaitingText, waiting.WaitingSince!.Value));
     }
 
-    /// <summary>Applies a report to a running task. A report on a task that is not running is ignored.</summary>
-    private TaskChange? Change(Func<NodeSnapshot, NodeSnapshot> report)
+    /// <summary>Applies a report that is never an event to a running task.</summary>
+    private TaskChange? Change(Func<NodeSnapshot, NodeSnapshot> report) => WhileRunning(() =>
     {
-        if (!IsRunning)
-        {
-            return null;
-        }
-
         Snapshot = report(Snapshot);
         return new TaskChange(Snapshot, Event: null);
-    }
+    });
+
+    /// <summary>
+    /// Carries out an operation on the task while it is running. On a task that is not running it is ignored, and gives
+    /// <see langword="null"/>.
+    /// </summary>
+    private TaskChange? WhileRunning(Func<TaskChange?> operation) => IsRunning ? operation() : null;
 
     /// <summary>
     /// The task as it is once it has settled with an outcome. What it reported while it ran stays, except that an outcome

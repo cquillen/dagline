@@ -16,7 +16,8 @@ namespace Dagline;
 /// </para>
 /// <para>
 /// Each step is carried out under the lock, in this order: the tasks' token is signalled, if the step asks; if the step ends the run,
-/// the registration on the signal and the timer are released; the events are published, each with its snapshot; the bodies of the
+/// the registration on the signal and the timer are released; the events are published in order, each with its snapshot, which is
+/// taken then and made the current snapshot before the event is handed to reporters; the bodies of the
 /// tasks the step starts are started; the grace-period timer is started, if the step asks; and if the step ends the run, the wait for
 /// reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
 /// So the token is signalled before the run can end, and the wait for reporters listens before the run's end is set.
@@ -47,7 +48,7 @@ internal sealed class Run : ISnapshotSource
         _graph = graph;
         _timeProvider = settings.TimeProvider;
         _delivery = delivery;
-        _steps = new RunSteps(graph, settings, this);
+        _steps = new RunSteps(graph, settings);
     }
 
     public Snapshot Current => _current ?? TakeCurrent();
@@ -61,11 +62,7 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     public void Start()
     {
-        lock (_gate)
-        {
-            CarryOut(_steps.Start(_timeProvider.GetUtcNow(), _signal?.Requests ?? 0));
-        }
-
+        Give((steps, now) => steps.Start(now, _signal?.Requests ?? 0, this));
         HearTheSignal();
     }
 
@@ -95,21 +92,9 @@ internal sealed class Run : ISnapshotSource
         hearing.Dispose();
     }
 
-    private void Hear()
-    {
-        lock (_gate)
-        {
-            CarryOut(_steps.StopHeard(_signal!.Requests, _timeProvider.GetUtcNow()));
-        }
-    }
+    private void Hear() => Give((steps, now) => steps.StopHeard(_signal!.Requests, now));
 
-    private void GracePeriodOver()
-    {
-        lock (_gate)
-        {
-            CarryOut(_steps.GracePeriodOver(_timeProvider.GetUtcNow()));
-        }
-    }
+    private void GracePeriodOver() => Give(static (steps, now) => steps.GracePeriodOver(now));
 
     /// <summary>Sets the status text of a task's progress.</summary>
     public void SetStatusText(BuiltTask task, string? text) => Report(task, (instance, _) => instance.SetStatusText(text));
@@ -136,25 +121,18 @@ internal sealed class Run : ISnapshotSource
     /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
     /// </summary>
     /// <returns><see langword="true"/> when the scope was opened: the task is running.</returns>
-    public bool OpenWaitingScope(BuiltTask task, string? text) => Report(task, (instance, now) => instance.OpenWait(text, now));
+    public bool OpenWaitingScope(BuiltTask task, string? text) => Report(task, (instance, now) => instance.OpenWaitingScope(text, now));
 
     /// <summary>
     /// Closes one waiting scope of a task. Its last open scope ends the marker. Once the task has settled this changes nothing,
     /// since settling ended the marker.
     /// </summary>
-    public void CloseWaitingScope(BuiltTask task) => Report(task, (instance, now) => instance.CloseWait(now));
+    public void CloseWaitingScope(BuiltTask task) => Report(task, (instance, now) => instance.CloseWaitingScope(now));
 
     /// <summary>Gives the steps what a running task reports about itself, and carries out the step it caused, if any.</summary>
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
     private bool Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
-    {
-        lock (_gate)
-        {
-            var steps = _steps.Report(task, report, _timeProvider.GetUtcNow());
-            CarryOut(steps);
-            return steps.Count > 0;
-        }
-    }
+        => Give((steps, now) => steps.Report(task, report, now)).Count > 0;
 
     /// <summary>
     /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
@@ -176,11 +154,21 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private void CarryOut(IReadOnlyList<Step> steps)
+    /// <summary>
+    /// Gives the steps one input, under the lock and with the time read once for it, and carries out the steps it caused, in order.
+    /// </summary>
+    /// <returns>The steps the input caused.</returns>
+    private IReadOnlyList<Step> Give(Func<RunSteps, DateTimeOffset, IReadOnlyList<Step>> input)
     {
-        foreach (var step in steps)
+        lock (_gate)
         {
-            CarryOut(step);
+            var steps = input(_steps, _timeProvider.GetUtcNow());
+            foreach (var step in steps)
+            {
+                CarryOut(step);
+            }
+
+            return steps;
         }
     }
 
@@ -239,8 +227,9 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Publishes a step's events, each with its snapshot, and keeps the last snapshot as the current one. A step with no events
-    /// changed only the snapshot, so it only marks the current snapshot as out of date.
+    /// Publishes a step's events in order. Each event's snapshot is taken as it is published, and is the current one before the
+    /// event is handed to reporters, so a reporter never reads a current snapshot older than an event it holds.
+    /// A step with no events changed only the snapshot, so it only marks the current snapshot as out of date.
     /// </summary>
     private void Publish(IReadOnlyList<StepEvent> events)
     {
@@ -250,29 +239,27 @@ internal sealed class Run : ISnapshotSource
             return;
         }
 
-        foreach (var (runEvent, snapshot) in events)
+        // Indexed, not enumerated, so that no enumerator is allocated for each step.
+        for (var i = 0; i < events.Count; i++)
         {
-            _delivery.Publish(runEvent, snapshot);
+            var snapshot = _steps.SnapshotAfter(events[i]);
+            _current = snapshot;
+            _delivery.Publish(events[i].Event, snapshot);
         }
-
-        _current = events[^1].Snapshot;
     }
 
     // No token: a run is stopped through its signal, and a task body takes none.
     private async Task RunBodyAsync(BuiltTask task)
     {
         var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
-        lock (_gate)
-        {
-            CarryOut(_steps.BodyEnded(task, outcome, _timeProvider.GetUtcNow()));
-        }
+        Give((steps, now) => steps.BodyEnded(task, outcome, now));
     }
 
     /// <summary>
     /// Invokes the body of a task and says how it ended. This is the one place a task body is invoked,
     /// and so the one catch-all for it: whatever escapes the body is a failure of that task and of nothing else,
-    /// or its cancellation when it is a cancellation exception and the run has been stopped by the time the task settles. The exception is read here, outside the lock and before the task settles,
-    /// because its members are consumer code too.
+    /// or its cancellation when it is a cancellation exception and the run has been stopped by the time the task settles.
+    /// The exception is read here, outside the lock and before the task settles, because its members are consumer code too.
     /// </summary>
     private async Task<TaskOutcome> InvokeBodyAsync(BuiltTask task)
     {

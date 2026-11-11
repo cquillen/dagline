@@ -34,6 +34,7 @@ internal sealed class StatusCounts
         _counts[(int)NodeStatus.Pending] = pending;
     }
 
+
     public int this[NodeStatus status] => _counts[(int)status];
 
     /// <summary>
@@ -67,7 +68,27 @@ internal sealed class StatusCounts
         _counts[(int)to]++;
     }
 
+    /// <summary>How many numbers a tally of the counts takes: one for each status.</summary>
+    public static int TallyLength => _statuses.Length;
+
+    /// <summary>Writes the counts as they are now to the start of <paramref name="tally"/>, one number for each status.</summary>
+    public void CopyTo(Span<int> tally) => _counts.CopyTo(tally);
+
     /// <summary>The counts as they are now, with every status present, in lifecycle order.</summary>
-    public ReadOnlyDictionary<NodeStatus, int> ToDictionary()
-        => new(_statuses.ToDictionary(status => status, status => this[status]));
+    public ReadOnlyDictionary<NodeStatus, int> ToDictionary() => ToDictionary(_counts);
+
+    /// <summary>
+    /// The counts that <see cref="CopyTo"/> wrote to the start of <paramref name="tally"/>, as <see cref="ToDictionary()"/> gives them.
+    /// </summary>
+    public static ReadOnlyDictionary<NodeStatus, int> ToDictionary(ReadOnlySpan<int> tally)
+    {
+        // A loop, not LINQ: a run takes one of these for every event, and LINQ's delegate and iterator cost more than the dictionary.
+        var counts = new Dictionary<NodeStatus, int>(_statuses.Length);
+        foreach (var status in _statuses)
+        {
+            counts.Add(status, tally[(int)status]);
+        }
+
+        return new(counts);
+    }
 }

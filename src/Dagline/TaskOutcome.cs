@@ -24,13 +24,18 @@ internal sealed record TaskOutcome
     /// in place of any message the task set.
     /// </summary>
     public static TaskOutcome LeftBehind { get; }
-        = new(NodeStatus.Cancelled) { ReplacingMessage = "still running when the run stopped waiting" };
+        = new(NodeStatus.Cancelled) { ReplacingMessage = "still running when the run stopped waiting", IsLeftBehind = true };
 
     public NodeStatus Status { get; }
 
     public FailureKind? Failure { get; private init; }
 
     public NodePath? BlockedBy { get; private init; }
+
+    /// <summary>
+    /// <see langword="true"/> for <see cref="LeftBehind"/>: the run let go of the task, which records that over anything it reported.
+    /// </summary>
+    public bool IsLeftBehind { get; private init; }
 
     /// <summary><see langword="true"/> when the body ended with an <see cref="OperationCanceledException"/>, whichever token caused it.</summary>
     private bool EndedByCancellation { get; init; }

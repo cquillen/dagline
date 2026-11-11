@@ -17,19 +17,39 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     private readonly int[] _inUse = new int[sizes.Limits.Length];
     private int _running;
 
-    /// <summary>The cap with its size and how many tasks are running now.</summary>
-    public LimitUse Cap => new(sizes.Cap, _running);
-
-    /// <summary>
-    /// Each limit the graph names with its size and the slots in use now, in the order the graph first names them.
-    /// </summary>
-    public ReadOnlyDictionary<string, LimitUse> Limits
-        => new(limitNames.Index().ToDictionary(
-            limit => limit.Item.Text,
-            limit => new LimitUse(sizes.Limits[limit.Index], _inUse[limit.Index]),
-            LimitName.TextComparer));
+    /// <summary>How many numbers a tally of the slots in use takes: one for the cap, then one for each limit.</summary>
+    public int TallyLength => 1 + _inUse.Length;
 
     private bool CapIsFull => _running == sizes.Cap;
+
+    /// <summary>
+    /// Writes the slots in use now to the start of <paramref name="tally"/>: the cap's, then each limit's,
+    /// in the order the graph first names them.
+    /// </summary>
+    public void CopyTo(Span<int> tally)
+    {
+        tally[0] = _running;
+        _inUse.CopyTo(tally[1..]);
+    }
+
+    /// <summary>The cap with its size and the slots in use that <see cref="CopyTo"/> wrote to <paramref name="tally"/>.</summary>
+    public LimitUse CapIn(ReadOnlySpan<int> tally) => new(sizes.Cap, tally[0]);
+
+    /// <summary>
+    /// Each limit the graph names with its size and the slots in use that <see cref="CopyTo"/> wrote to <paramref name="tally"/>,
+    /// in the order the graph first names them.
+    /// </summary>
+    public ReadOnlyDictionary<string, LimitUse> LimitsIn(ReadOnlySpan<int> tally)
+    {
+        // A loop, not LINQ: a run takes one of these for every event, and LINQ's delegate and iterator cost more than the dictionary.
+        var limits = new Dictionary<string, LimitUse>(limitNames.Length, LimitName.TextComparer);
+        for (var limit = 0; limit < limitNames.Length; limit++)
+        {
+            limits.Add(limitNames[limit].Text, new LimitUse(sizes.Limits[limit], tally[1 + limit]));
+        }
+
+        return new(limits);
+    }
 
     /// <summary>
     /// Takes one slot of the cap and of every limit a task holds, if each has one free.

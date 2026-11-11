@@ -4,14 +4,19 @@ namespace Dagline;
 
 /// <summary>
 /// Every scheduling decision of one run. It takes one input for each thing that can happen to a run and answers with the steps
-/// that input caused, in order: each step's events with their snapshots, the tasks it starts and the effects it asks for.
-/// <see cref="Run"/> carries the steps out.
+/// that input caused, in order: each step's events with what each changed in the snapshot, the tasks it starts and the effects
+/// it asks for. <see cref="Run"/> carries the steps out.
 /// </summary>
 /// <remarks>
 /// <para>
 /// It owns the task instances, the ready set, the slots, the counts by status, the stop and the end rule. It holds no lock,
 /// no disposable object and no thread, and never reads a clock: each input carries the time, which every event of its steps shares.
 /// It is not thread-safe: the run gives it one input at a time, under its lock.
+/// </para>
+/// <para>
+/// The snapshot just after each event is taken only when the run publishes the event, from what the event changed. A step that
+/// makes many tasks ready therefore holds one small change for each, and not a snapshot of the whole run for each, until it is
+/// carried out: holding those snapshots made a large run slow.
 /// </para>
 /// <para>
 /// One input may cause several steps. A stop with a grace period of zero gives three: the stop, letting go of the running tasks,
@@ -21,7 +26,6 @@ namespace Dagline;
 internal sealed class RunSteps
 {
     private readonly Graph _graph;
-    private readonly ISnapshotSource _source;
     private readonly TimeSpan _gracePeriod;
     private readonly StatusCounts _counts;
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
@@ -30,22 +34,18 @@ internal sealed class RunSteps
     private readonly TaskInstance?[] _instances;
     private readonly Slots _slots;
     private readonly List<Step> _decided = [];
+    private readonly NodeSnapshot[] _nodes;
+    private readonly SnapshotTaker _snapshots;
 
     private StepUnderWay? _step;
-    private ChunkedList<NodeSnapshot> _nodes;
-    private DateTimeOffset _startedAt;
+    private RunMilestones _milestones = new(Started: default, Stop: null, Ended: null, Outcome: null);
     private int _requestsApplied;
-    private StopState? _stop;
-    private DateTimeOffset? _endedAt;
-    private RunOutcome? _outcome;
 
     /// <param name="graph">The graph the run runs.</param>
     /// <param name="settings">The settings of the run: the sizes of its slots and its grace period.</param>
-    /// <param name="source">The run as reporters read it, which <see cref="RunStarted"/> carries.</param>
-    public RunSteps(Graph graph, RunSettings settings, ISnapshotSource source)
+    public RunSteps(Graph graph, RunSettings settings)
     {
         _graph = graph;
-        _source = source;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
         _counts = new StatusCounts(pending: graph.Tasks.Length);
@@ -58,7 +58,8 @@ internal sealed class RunSteps
             _instances[task.Position] = new TaskInstance(task);
         }
 
-        _nodes = ChunkedList<NodeSnapshot>.From(graph.Nodes.Select(AtTheStart));
+        _nodes = [.. graph.Nodes.Select(AtTheStart)];
+        _snapshots = new SnapshotTaker(_nodes, graph.Positions, _slots);
     }
 
     /// <summary>
@@ -67,11 +68,12 @@ internal sealed class RunSteps
     /// </summary>
     /// <param name="now">When the run starts.</param>
     /// <param name="stopRequests">How many requests the run's signal has had so far.</param>
-    public IReadOnlyList<Step> Start(DateTimeOffset now, int stopRequests)
+    /// <param name="source">The run as reporters read it, which <see cref="RunStarted"/> carries.</param>
+    public IReadOnlyList<Step> Start(DateTimeOffset now, int stopRequests, ISnapshotSource source)
     {
-        _startedAt = now;
+        _milestones = _milestones with { Started = now };
         Begin();
-        Publish(new RunStarted(now, _source));
+        Publish(new RunStarted(now, source));
         MakeReady(_graph.Tasks, now);
         AnnounceSettledGroups(now);
 
@@ -93,7 +95,7 @@ internal sealed class RunSteps
     /// </summary>
     public IReadOnlyList<Step> BodyEnded(BuiltTask task, TaskOutcome ended, DateTimeOffset now)
     {
-        var changes = InstanceOf(task).Settle(ended, runHasStopped: _stop is not null, now);
+        var changes = InstanceOf(task).Settle(ended, runHasStopped: HasStopped, now);
         if (changes.Count == 0)
         {
             return [];
@@ -133,13 +135,13 @@ internal sealed class RunSteps
     /// </summary>
     public IReadOnlyList<Step> StopHeard(int requests, DateTimeOffset now)
     {
-        if (_outcome is not null)
+        if (HasEnded)
         {
             return [];
         }
 
         _requestsApplied = requests;
-        if (_stop is null)
+        if (!HasStopped)
         {
             Begin();
             ApplyStop(now);
@@ -165,9 +167,24 @@ internal sealed class RunSteps
     /// <summary>The status, as it is now, of the node at <paramref name="position"/>.</summary>
     public NodeStatus StatusAt(int position) => _nodes[position].Status;
 
-    /// <summary>The run as it is now.</summary>
-    public Snapshot TakeSnapshot()
-        => new(_startedAt, _endedAt, _outcome, _stop, _nodes, _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
+    /// <summary>
+    /// The snapshot of the run just after an event of a decided step: as it was then, however far the run has got since.
+    /// The run takes the snapshot of every event, as it publishes it, in the order the steps give the events,
+    /// and before it gives the next input, since each snapshot is built on the one before.
+    /// </summary>
+    public Snapshot SnapshotAfter(StepEvent stepEvent) => _snapshots.Take(stepEvent.Change);
+
+    /// <summary>
+    /// The run as it is now. The snapshot of every event decided so far must have been taken first, as
+    /// <see cref="SnapshotAfter"/> says.
+    /// </summary>
+    public Snapshot TakeSnapshot() => _snapshots.Take(ChangeSinceLastEvent());
+
+    private bool HasStopped => _milestones.Stop is not null;
+
+    private bool HasEnded => _milestones.Outcome is not null;
+
+    private bool NothingIsRunning => _counts[NodeStatus.Running] == 0;
 
     /// <summary>
     /// Applies the first request: from this step on nothing starts. The step signals the token every task sees,
@@ -175,7 +192,7 @@ internal sealed class RunSteps
     /// </summary>
     private void ApplyStop(DateTimeOffset now)
     {
-        _stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod));
+        _milestones = _milestones with { Stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod)) };
         _step!.SignalsTheTasks = true;
         Publish(new StopRequested(now, _gracePeriod));
     }
@@ -186,7 +203,7 @@ internal sealed class RunSteps
     /// </summary>
     private void BoundTheGracePeriod(DateTimeOffset now)
     {
-        if (_outcome is not null || GracePeriodRules.IsUnlimited(_gracePeriod))
+        if (HasEnded || GracePeriodRules.IsUnlimited(_gracePeriod))
         {
             return;
         }
@@ -207,7 +224,7 @@ internal sealed class RunSteps
     /// </summary>
     private void LetGo(StoppedWaitingReason reason, DateTimeOffset now)
     {
-        if (_outcome is not null || _counts[NodeStatus.Running] == 0)
+        if (HasEnded || NothingIsRunning)
         {
             return;
         }
@@ -319,12 +336,12 @@ internal sealed class RunSteps
     /// </summary>
     private void StartWhatFitsOrEnd(DateTimeOffset now)
     {
-        if (_stop is null)
+        if (!HasStopped)
         {
             StartWhatFits(now);
         }
 
-        if (_counts[NodeStatus.Running] == 0 && (_stop is not null || _counts[NodeStatus.Ready] == 0))
+        if (NothingIsRunning && (HasStopped || _counts[NodeStatus.Ready] == 0))
         {
             End(now);
         }
@@ -389,12 +406,11 @@ internal sealed class RunSteps
     private void End(DateTimeOffset now)
     {
         var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete
-            : _stop is not null ? RunOutcome.Stopped
+            : HasStopped ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
 
         Begin();
-        _endedAt = now;
-        _outcome = outcome;
+        _milestones = _milestones with { Ended = now, Outcome = outcome };
         _step!.Ends = new RunEnd(outcome, _requestsApplied);
         Publish(new RunEnded(now, outcome));
     }
@@ -405,7 +421,7 @@ internal sealed class RunSteps
     /// </summary>
     private void Apply(BuiltTask task, TaskChange change)
     {
-        _nodes = _nodes.With(task.Position, change.Task);
+        Record(task.Position, change.Task);
         if (change.Event is TaskStatusChanged moved)
         {
             _counts.Move(moved.From, moved.To);
@@ -430,7 +446,7 @@ internal sealed class RunSteps
         var counts = _groupCounts[group.Position];
         counts.Move(from, to);
         var status = counts.GroupStatus;
-        _nodes = _nodes.With(group.Position, _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() });
+        Record(group.Position, _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() });
 
         if (status.IsSettled())
         {
@@ -446,7 +462,17 @@ internal sealed class RunSteps
     // Indexed by position among the nodes, so a group's place is empty.
     private TaskInstance InstanceOf(BuiltTask task) => _instances[task.Position]!;
 
-    private void Publish(RunEvent runEvent) => _step!.Events.Add(new StepEvent(runEvent, TakeSnapshot()));
+    /// <summary>Puts a node as it is after a change in place of the node as it was, and records the change for the next snapshot.</summary>
+    private void Record(int position, NodeSnapshot node)
+    {
+        _nodes[position] = node;
+        _snapshots.Record(position, node);
+    }
+
+    private void Publish(RunEvent runEvent) => _step!.Events.Add(new StepEvent(runEvent, ChangeSinceLastEvent()));
+
+    /// <summary>What has changed in the snapshot since the last event, which from now on is part of the snapshot taken next.</summary>
+    private SnapshotChange ChangeSinceLastEvent() => _snapshots.Close(_milestones, _counts);
 
     /// <summary>Begins a new step, once the step under way, if any, is decided.</summary>
     private void Begin()
