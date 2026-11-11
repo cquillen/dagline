@@ -4,4 +4,9 @@
     <Description>A lightweight, in-process library for running directed acyclic graphs (DAGs) of tasks in .NET command-line apps.</Description>
   </PropertyGroup>
 
+  <!-- The core package never writes to the console: what an app prints is its own business. -->
+  <ItemGroup>
+    <AdditionalFiles Include="BannedSymbols.Console.txt" />
+  </ItemGroup>
+
 </Project>

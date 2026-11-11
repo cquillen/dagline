@@ -22,5 +22,6 @@ dotnet add package Dagline.Spectre   # optional terminal UI
 
 - [Getting started](articles/getting-started.md)
 - [Concepts](articles/concepts.md)
+- [Running and stopping](articles/running-and-stopping.md)
 - [Terminal UI](articles/terminal-ui.md)
 - [API reference](api/index.md)

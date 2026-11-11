@@ -2,7 +2,17 @@
   href: getting-started.md
 - name: Concepts
   href: concepts.md
+- name: Defining a graph
+  href: defining-a-graph.md
+- name: Writing tasks
+  href: writing-tasks.md
+- name: Running and stopping
+  href: running-and-stopping.md
 - name: Terminal UI
   href: terminal-ui.md
+- name: Reporters
+  href: reporters.md
 - name: Contributing
   href: contributing.md
+- name: Glossary
+  href: ../../GLOSSARY.md

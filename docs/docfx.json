@@ -19,6 +19,11 @@
       {
         "files": ["**/*.{md,yml}"],
         "exclude": ["_site/**", "agents/**", "adr/**"]
+      },
+      {
+        "files": ["GLOSSARY.md"],
+        "src": "..",
+        "dest": "articles"
       }
     ],
     "output": "_site",
