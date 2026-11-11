@@ -19,6 +19,13 @@ internal sealed record TaskOutcome
     /// <summary>The outcome of a task whose body ended with a cancellation exception after the run was stopped.</summary>
     public static TaskOutcome Cancelled { get; } = new(NodeStatus.Cancelled);
 
+    /// <summary>
+    /// The outcome of a task still running when the run stopped waiting for it after a stop: cancelled, with a message that says so
+    /// in place of any message the task set.
+    /// </summary>
+    public static TaskOutcome LeftBehind { get; }
+        = new(NodeStatus.Cancelled) { ReplacingMessage = "still running when the run stopped waiting" };
+
     public NodeStatus Status { get; }
 
     public FailureKind? Failure { get; private init; }
@@ -28,9 +35,10 @@ internal sealed record TaskOutcome
     /// <summary><see langword="true"/> when the body ended with an <see cref="OperationCanceledException"/>, whichever token caused it.</summary>
     private bool EndedByCancellation { get; init; }
 
-    private string? EscapedMessage { get; init; }
+    /// <summary>The message that replaces the task's own, or <see langword="null"/> to keep the task's.</summary>
+    private string? ReplacingMessage { get; init; }
 
-    private IReadOnlyList<string> EscapedDetail { get; init; } = [];
+    private IReadOnlyList<string> AddedDetail { get; init; } = [];
 
     /// <summary>
     /// The outcome of a task whose body let an exception escape: the exception's message becomes the task's message,
@@ -48,8 +56,8 @@ internal sealed record TaskOutcome
         {
             Failure = FailureKind.Unexpected,
             EndedByCancellation = exception is OperationCanceledException,
-            EscapedMessage = Read(exception, static escaped => escaped.Message) ?? type,
-            EscapedDetail = Read(exception, static escaped => escaped.StackTrace) is { } trace ? [type, trace] : [type],
+            ReplacingMessage = Read(exception, static escaped => escaped.Message) ?? type,
+            AddedDetail = Read(exception, static escaped => escaped.StackTrace) is { } trace ? [type, trace] : [type],
         };
     }
 
@@ -72,9 +80,9 @@ internal sealed record TaskOutcome
     {
         var settled = task with { Status = Status, Settled = now, Failure = Failure, BlockedBy = BlockedBy };
 
-        return EscapedMessage is null
+        return ReplacingMessage is null
             ? settled
-            : settled.WithMessage(EscapedMessage).WithDetail(EscapedDetail);
+            : settled.WithMessage(ReplacingMessage).WithDetail(AddedDetail);
     }
 
     /// <returns>What the member gave, or <see langword="null"/> when it gave nothing or threw.</returns>

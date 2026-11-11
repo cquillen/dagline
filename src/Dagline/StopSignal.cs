@@ -12,7 +12,8 @@ namespace Dagline;
 /// </para>
 /// <para>
 /// The first request is a stop: from then on the run starts nothing, signals <see cref="TaskContext.CancellationToken"/>
-/// on every running task, and waits for the running tasks to end. Later requests are counted in <see cref="Requests"/>.
+/// on every running task, and waits for the running tasks to end, for at most <see cref="RunOptions.GracePeriod"/>.
+/// The second request ends that wait at once. Later requests are counted in <see cref="Requests"/> and change nothing.
 /// </para>
 /// <para>
 /// A signal is not tied to one run. A run reads the requests made up to its end and ignores later ones,
@@ -26,11 +27,12 @@ namespace Dagline;
 [SuppressMessage(
     "Reliability",
     "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The source has no timer and no wait handle is ever taken from it, so it holds nothing to free, and a signal an app forgets to dispose must still work.")]
+    Justification = "The sources have no timer and no wait handle is ever taken from them, so they hold nothing to free, and a signal an app forgets to dispose must still work.")]
 public class StopSignal
 {
-    // Cancelled on the first request. It is never disposed, so cancelling it cannot throw.
+    // Cancelled on the first and the second request. They are never disposed, so cancelling them cannot throw.
     private readonly CancellationTokenSource _firstRequest = new();
+    private readonly CancellationTokenSource _secondRequest = new();
     private int _requests;
 
     /// <summary><see langword="true"/> once <see cref="Request"/> has been called at least once.</summary>
@@ -42,6 +44,9 @@ public class StopSignal
     /// <summary>A token cancelled on the first request, through which a run hears of it.</summary>
     internal CancellationToken FirstRequest => _firstRequest.Token;
 
+    /// <summary>A token cancelled on the second request, through which a run hears that it should stop waiting.</summary>
+    internal CancellationToken SecondRequest => _secondRequest.Token;
+
     /// <summary>Requests a stop, or counts one more request.</summary>
     /// <remarks>
     /// It is safe to call from any thread, including a console's cancel handler, and from several threads at once:
@@ -50,11 +55,13 @@ public class StopSignal
     /// </remarks>
     public void Request()
     {
-        if (CountOneMore() == 1)
+        // Cancelled asynchronously, so a run's work in hearing of a request never runs on the caller's thread.
+        _ = CountOneMore() switch
         {
-            // Cancelled asynchronously, so a run's work in hearing of the stop never runs on the caller's thread.
-            _ = _firstRequest.CancelAsync();
-        }
+            1 => _firstRequest.CancelAsync(),
+            2 => _secondRequest.CancelAsync(),
+            _ => Task.CompletedTask,
+        };
     }
 
     // Saturates instead of wrapping, so the count never goes down and never reads as no request.

@@ -5,8 +5,9 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The problems are a cap below 1, a size below 1 in <see cref="RunOptions.Limits"/>, and a limit the graph names
-/// that the options give no size. <see cref="Exception.Message"/> lists every problem found, one to a line,
+/// The problems are a cap below 1, a size below 1 in <see cref="RunOptions.Limits"/>, a limit the graph names
+/// that the options give no size, and a <see cref="RunOptions.GracePeriod"/> below zero that is not
+/// <see cref="Timeout.InfiniteTimeSpan"/>. <see cref="Exception.Message"/> lists every problem found, one to a line,
 /// so that all of them can be fixed in one pass.
 /// </para>
 /// <para>
