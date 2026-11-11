@@ -8,29 +8,28 @@ namespace Dagline;
 /// <remarks>
 /// A dependency against a group covers every task beneath that group at any depth, so one against an empty group covers nothing.
 /// A dependency declared on a group applies to every task beneath that group.
+/// Where that gives one task several dependencies on one upstream task, they are one dependency, and requires wins.
 /// </remarks>
 internal sealed class TaskDependencies
 {
-    private readonly Dictionary<Node, int> _positions;
+    private readonly IReadOnlyDictionary<Node, int> _positions;
     private readonly ILookup<Node, DeclaredDependency> _declaredOn;
-    private readonly ILookup<Node, int> _tasksBeneath;
     private readonly Dictionary<TaskNode, ImmutableArray<Upstream>> _upstreams;
     private readonly ILookup<int, int> _dependents;
 
-    /// <param name="nodes">Every node of the graph, in declaration order.</param>
+    /// <param name="tasks">Every task of the graph, in declaration order.</param>
+    /// <param name="positions">Where each node of the graph is in declaration order.</param>
     /// <param name="declared">Every dependency, in the order declared.</param>
-    public TaskDependencies(ImmutableArray<Node> nodes, IReadOnlyList<DeclaredDependency> declared)
+    public TaskDependencies(
+        IReadOnlyList<TaskNode> tasks,
+        IReadOnlyDictionary<Node, int> positions,
+        IReadOnlyList<DeclaredDependency> declared)
     {
-        List<TaskNode> tasks = [.. nodes.OfType<TaskNode>()];
-
-        _positions = nodes.Index().ToDictionary(node => node.Item, node => node.Index);
+        _positions = positions;
         _declaredOn = declared.ToLookup(dependency => dependency.Dependent);
-        _tasksBeneath = tasks
-            .SelectMany(task => task.Ancestors().Select(group => (Group: (Node)group, Task: _positions[task])))
-            .ToLookup(beneath => beneath.Group, beneath => beneath.Task);
         _upstreams = tasks.ToDictionary(task => task, ResolveUpstreams);
         _dependents = tasks
-            .SelectMany(task => _upstreams[task].Select(upstream => (Upstream: upstream.Position, Dependent: _positions[task])))
+            .SelectMany(task => _upstreams[task].Select(upstream => (Upstream: upstream.Position, Dependent: positions[task])))
             .ToLookup(wait => wait.Upstream, wait => wait.Dependent);
     }
 
@@ -57,11 +56,9 @@ internal sealed class TaskDependencies
             .. task.Ancestors()
                 .Prepend<Node>(task)
                 .SelectMany(node => _declaredOn[node])
-                .SelectMany(dependency => TasksCoveredBy(dependency.Upstream).Select(position => (Position: position, dependency.Kind)))
+                .SelectMany(dependency => dependency.Upstream.Tasks().Select(upstream => (Position: _positions[upstream], dependency.Kind)))
                 .GroupBy(covered => covered.Position, covered => covered.Kind)
                 .Select(kinds => new Upstream(kinds.Key, kinds.Strongest()))
                 .OrderBy(upstream => upstream.Position),
         ];
-
-    private IEnumerable<int> TasksCoveredBy(Node node) => node is TaskNode ? [_positions[node]] : _tasksBeneath[node];
 }

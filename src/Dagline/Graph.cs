@@ -20,7 +20,8 @@ public sealed class Graph : IReadOnlyList<Node>
     {
         _handles = nodes;
 
-        var dependencies = new TaskDependencies(nodes, declared);
+        var positions = nodes.Index().ToDictionary(node => node.Item, node => node.Index);
+        var dependencies = new TaskDependencies([.. nodes.OfType<TaskNode>()], positions, declared);
 
         Nodes = [.. nodes.Select(ToGraphNode)];
         Tasks = [.. Nodes.OfType<GraphTask>()];
@@ -34,9 +35,16 @@ public sealed class Graph : IReadOnlyList<Node>
                     node.TitleText,
                     dependencies.DeclaredOn(node),
                     task.Body,
+                    [.. node.Ancestors().Select(group => positions[group])],
                     dependencies.UpstreamsOf(task),
                     dependencies.DependentsOf(task))
-                : new GraphGroup(position, node.Path, node.TitleText, dependencies.DeclaredOn(node));
+                : new GraphGroup(
+                    position,
+                    node.Path,
+                    node.TitleText,
+                    dependencies.DeclaredOn(node),
+                    Depth: node.Ancestors().Count(),
+                    TaskCount: node.Tasks().Count());
     }
 
     /// <summary>How many nodes the graph has, tasks and groups together.</summary>

@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace Dagline;
 
 /// <summary>
@@ -18,6 +20,7 @@ internal sealed class Run : ISnapshotSource
     private readonly ReporterDelivery _delivery;
     private readonly NodeSnapshot[] _nodes;
     private readonly StatusCounts _counts;
+    private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
     private DateTimeOffset? _endedAt;
@@ -29,8 +32,11 @@ internal sealed class Run : ISnapshotSource
         _graph = graph;
         _timeProvider = timeProvider;
         _delivery = delivery;
-        _nodes = [.. graph.Nodes.Select(node => new NodeSnapshot(node.Path, node.Title, node is GraphGroup, node.Dependencies))];
         _counts = new StatusCounts(pending: graph.Tasks.Length);
+        _groupCounts = graph.Nodes.OfType<GraphGroup>().ToFrozenDictionary(
+            group => group.Position,
+            group => new StatusCounts(pending: group.TaskCount));
+        _nodes = [.. graph.Nodes.Select(AtTheStart)];
         _startedAt = timeProvider.GetUtcNow();
         _current = TakeSnapshot();
     }
@@ -120,14 +126,33 @@ internal sealed class Run : ISnapshotSource
         var after = before with
         {
             Status = to,
+            Counts = StatusCounts.OfOneTask(to),
             Started = to is NodeStatus.Running ? now : before.Started,
             Settled = to.IsSettled() ? now : before.Settled,
         };
 
         _nodes[task.Position] = after;
         _counts.Move(before.Status, to);
+        foreach (var group in task.Groups)
+        {
+            MoveBeneath(group, before.Status, to);
+        }
+
         Publish(new TaskStatusChanged(now, after, before.Status, to));
     }
+
+    /// <summary>Counts one task's change of status in a group that holds it, and derives the group's status again.</summary>
+    private void MoveBeneath(int group, NodeStatus from, NodeStatus to)
+    {
+        var counts = _groupCounts[group];
+        counts.Move(from, to);
+        _nodes[group] = _nodes[group] with { Status = counts.GroupStatus, Counts = counts.ToDictionary() };
+    }
+
+    private NodeSnapshot AtTheStart(GraphNode node)
+        => _groupCounts.TryGetValue(node.Position, out var counts)
+            ? new NodeSnapshot(node, counts.GroupStatus, counts.ToDictionary())
+            : new NodeSnapshot(node, NodeStatus.Pending, StatusCounts.OfOneTask(NodeStatus.Pending));
 
     private void Publish(RunEvent runEvent)
     {

@@ -17,7 +17,8 @@ internal abstract record GraphNode(int Position, NodePath Path, string? Title, I
 /// <param name="Title">The title of the task, or <see langword="null"/> when it has none.</param>
 /// <param name="Dependencies">The dependencies declared on this task, as a snapshot shows them.</param>
 /// <param name="Body">The work of the task.</param>
-/// <param name="Upstreams">Every task this one waits for.</param>
+/// <param name="Groups">The positions of the groups that hold this task, the nearest first.</param>
+/// <param name="Upstreams">Every task this one waits for, whether the dependency was declared on it or on a group that holds it.</param>
 /// <param name="Dependents">The positions of the tasks that wait for this one, in declaration order.</param>
 internal sealed record GraphTask(
     int Position,
@@ -25,6 +26,7 @@ internal sealed record GraphTask(
     string? Title,
     IReadOnlyList<Dependency> Dependencies,
     TaskBody Body,
+    ImmutableArray<int> Groups,
     ImmutableArray<Upstream> Upstreams,
     ImmutableArray<int> Dependents)
     : GraphNode(Position, Path, Title, Dependencies);
@@ -34,7 +36,15 @@ internal sealed record GraphTask(
 /// <param name="Path">The identity of the group.</param>
 /// <param name="Title">The title of the group, or <see langword="null"/> when it has none.</param>
 /// <param name="Dependencies">The dependencies declared on this group, as a snapshot shows them.</param>
-internal sealed record GraphGroup(int Position, NodePath Path, string? Title, IReadOnlyList<Dependency> Dependencies)
+/// <param name="Depth">How many groups hold this one: zero for a group at the root.</param>
+/// <param name="TaskCount">How many tasks are beneath this group, at any depth.</param>
+internal sealed record GraphGroup(
+    int Position,
+    NodePath Path,
+    string? Title,
+    IReadOnlyList<Dependency> Dependencies,
+    int Depth,
+    int TaskCount)
     : GraphNode(Position, Path, Title, Dependencies);
 
 /// <summary>One task that another waits for, and what it must have done for the wait to be over.</summary>
