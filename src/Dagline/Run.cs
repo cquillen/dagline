@@ -62,16 +62,69 @@ internal sealed class Run : ISnapshotSource
         {
             var now = _timeProvider.GetUtcNow();
             Move(task, outcome, now);
-            Advance(WaitingFor(task), now);
+            var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
+            Advance(WaitingFor([task, .. blocked]), now);
         }
     }
 
     /// <summary>
+    /// Blocks every pending task that requires a task that has just failed: directly, through a group that holds it,
+    /// or through a task that this blocks. Each records the failed task as its cause.
+    /// </summary>
+    /// <returns>The tasks blocked, in declaration order.</returns>
+    private List<GraphTask> Block(GraphTask failed, DateTimeOffset now)
+    {
+        List<GraphTask> blocked = [.. PendingTasksThatRequire(failed).Order().Select(_graph.TaskAt)];
+        var outcome = TaskOutcome.Blocked(failed.Path);
+        foreach (var task in blocked)
+        {
+            Move(task, outcome, now);
+        }
+
+        return blocked;
+    }
+
+    /// <summary>
+    /// The positions of the pending tasks that cannot run now that a task has failed. A task that is already blocked is passed over,
+    /// with everything that requires it: an earlier failure reached it first.
+    /// </summary>
+    private HashSet<int> PendingTasksThatRequire(GraphTask failed)
+    {
+        HashSet<int> found = [];
+        HashSet<int> unmet = [];
+        Queue<GraphNode> unvisited = new();
+        MarkUnmet(failed);
+        while (unvisited.TryDequeue(out var node))
+        {
+            foreach (var dependent in _graph.Requiring(node).Where(IsPending))
+            {
+                if (found.Add(dependent.Position))
+                {
+                    MarkUnmet(dependent);
+                }
+            }
+        }
+
+        return found;
+
+        // A group is looked at once, however many of the tasks beneath it the failure reaches.
+        void MarkUnmet(GraphTask task)
+        {
+            foreach (var cannotSucceed in _graph.WithItsGroups(task).Where(node => unmet.Add(node.Position)))
+            {
+                unvisited.Enqueue(cannotSucceed);
+            }
+        }
+    }
+
+    private bool IsPending(GraphTask task) => _nodes[task.Position].Status is NodeStatus.Pending;
+
+    /// <summary>
     /// The tasks, in declaration order, that wait for a task that has just settled or for a group that settled with it.
     /// </summary>
-    private IEnumerable<GraphTask> WaitingFor(GraphTask settled)
-        => _settledInThisStep
-            .Prepend<GraphNode>(settled)
+    private IEnumerable<GraphTask> WaitingFor(IEnumerable<GraphTask> settled)
+        => settled
+            .Concat<GraphNode>(_settledInThisStep)
             .SelectMany(node => node.Dependents)
             .Distinct()
             .Order()
@@ -179,6 +232,7 @@ internal sealed class Run : ISnapshotSource
             Status = outcome.Status,
             Settled = now,
             Failure = outcome.Failure,
+            BlockedBy = outcome.BlockedBy,
             Message = outcome.Message,
             Detail = outcome.Detail,
         };

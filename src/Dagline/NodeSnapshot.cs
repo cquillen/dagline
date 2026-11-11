@@ -62,6 +62,15 @@ public sealed record NodeSnapshot
     public FailureKind? Failure { get; internal init; }
 
     /// <summary>
+    /// The path of the failed task that blocked this task, or <see langword="null"/> for a task that is not blocked and for a group.
+    /// </summary>
+    /// <remarks>
+    /// It is always a failed task, never a blocked one: a task blocked through a chain of blocked tasks names the one failure
+    /// that started the cascade. It is the first failure to reach the task, and a later failure of another upstream does not change it.
+    /// </remarks>
+    public NodePath? BlockedBy { get; internal init; }
+
+    /// <summary>
     /// The one-line message of the task's outcome, or <see langword="null"/> when it has none and for a group.
     /// For an unexpected failure it is the message of the exception that escaped the task body.
     /// </summary>
@@ -70,7 +79,7 @@ public sealed record NodeSnapshot
     /// <summary>
     /// The detail lines of the task's outcome, in the order added. Empty when it has none and for a group.
     /// For an unexpected failure they are the full name of the exception's type, then each line of its stack trace
-    /// as the runtime wrote it. An exception that was never thrown has no stack trace, and then the type is the only line.
+    /// as the runtime wrote it.
     /// </summary>
     public IReadOnlyList<string> Detail { get; internal init; } = [];
 

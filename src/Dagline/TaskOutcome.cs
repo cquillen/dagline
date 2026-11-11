@@ -14,6 +14,8 @@ internal sealed record TaskOutcome
 
     public FailureKind? Failure { get; private init; }
 
+    public NodePath? BlockedBy { get; private init; }
+
     public string? Message { get; private init; }
 
     public IReadOnlyList<string> Detail { get; private init; } = [];
@@ -29,7 +31,9 @@ internal sealed record TaskOutcome
         Detail = [exception.GetType().ToString(), .. StackTraceLines(exception)],
     };
 
-    // An exception that was never thrown, such as one a body returned in a faulted task, has no stack trace.
+    /// <summary>The outcome of a task that will not run because <paramref name="cause"/>, a task it requires, failed.</summary>
+    public static TaskOutcome Blocked(NodePath cause) => new(NodeStatus.Blocked) { BlockedBy = cause };
+
     private static string[] StackTraceLines(Exception exception)
         => exception.StackTrace?.ReplaceLineEndings("\n").Split('\n') ?? [];
 }
