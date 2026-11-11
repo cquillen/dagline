@@ -4,7 +4,8 @@ namespace Dagline;
 
 /// <summary>
 /// One reporter's own unbounded queue of events, and the loop that hands them to it in the order published, one call at a time.
-/// A reporter that fails is dropped: it is handed nothing more, and its error is the result of <see cref="Delivered"/>.
+/// A reporter that fails is dropped: it is handed nothing more, the events still queued for it are let go,
+/// and its error is the result of <see cref="Delivered"/>.
 /// </summary>
 internal sealed class ReporterQueue
 {
@@ -46,10 +47,22 @@ internal sealed class ReporterQueue
                 // A reporter is consumer code, so whatever it throws is recorded and never reaches the run.
                 // Closing the queue is what drops it: nothing published from here on is kept for it.
                 Complete();
+                Discard();
                 return new ReporterError(_reporter, runEvent, exception);
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Lets go of the events a dropped reporter had not been handed yet. The queue lives as long as the run does,
+    /// and a reporter that keeps the snapshot source keeps the run, so they would otherwise stay in memory with their snapshots.
+    /// </summary>
+    private void Discard()
+    {
+        while (_queue.Reader.TryRead(out _))
+        {
+        }
     }
 }
