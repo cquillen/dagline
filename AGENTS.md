@@ -28,3 +28,17 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 - Any change to public API or behaviour updates `docs/` and `CHANGELOG.md` (`[Unreleased]`) in the same PR.
 - Keep the GitHub Pages docs site current: each new feature gets user-facing docs in `docs/articles/` (new page or section, added to `toc.yml`), and replace TODO stubs as the features they describe land.
 - Never commit to `main`. Use a branch and PR. Versions come from git tags (MinVer); never set `<Version>`.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `cquillen/dagline`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` plus `docs/adr/`, created lazily. See `docs/agents/domain.md`.
