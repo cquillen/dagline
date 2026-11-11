@@ -96,6 +96,18 @@ public sealed class TaskContext
         return new ReportedFailureException(TaskReportRules.OneLine(message), [.. detail.SelectMany(TaskReportRules.Lines)]);
     }
 
+    /// <summary>Reads the status of a node this task depends on.</summary>
+    /// <param name="dependency">The handle of the node, as the builder returned it.</param>
+    /// <returns>The status of the node as it is now.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="dependency"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">This task does not depend on <paramref name="dependency"/>.</exception>
+    public NodeStatus StatusOf(Node dependency)
+    {
+        ArgumentNullException.ThrowIfNull(dependency);
+
+        return _run.StatusOf(_task, dependency);
+    }
+
     private static void ThrowIfAnyNull(string[] lines, string paramName)
     {
         ArgumentNullException.ThrowIfNull(lines, paramName);

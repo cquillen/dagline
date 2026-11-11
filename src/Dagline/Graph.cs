@@ -131,6 +131,21 @@ public sealed class Graph : IReadOnlyList<Node>
         return node.Dependents.Select(TaskAt).Where(dependent => dependent.Upstreams.Contains(requires));
     }
 
+    /// <summary>
+    /// Finds a node that a task depends on: an upstream declared on the task or on a group that holds it,
+    /// or a node beneath such an upstream at any depth.
+    /// </summary>
+    /// <param name="task">The task that depends.</param>
+    /// <param name="handle">A handle to the node, which may be of another graph.</param>
+    /// <param name="position">The position of the node among the nodes of this graph, when the method returns <see langword="true"/>.</param>
+    internal bool TryGetDependency(GraphTask task, Node handle, out int position)
+        => TryGetPosition(handle, out position)
+            && handle.Ancestors().Prepend(handle).Select(node => Positions[node.Path]).Any(task.IsUpstream);
+
+    /// <summary>Finds where a handle is in declaration order. A handle of another graph is not found, whatever its path.</summary>
+    private bool TryGetPosition(Node handle, out int position)
+        => Positions.TryGetValue(handle.Path, out position) && ReferenceEquals(_handles[position], handle);
+
     /// <summary>The limits a task holds: those named on it and those named on every group that holds it, each once.</summary>
     private static IEnumerable<string> HeldBy(TaskNode task)
         => task.Ancestors().Prepend<Node>(task).SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal);

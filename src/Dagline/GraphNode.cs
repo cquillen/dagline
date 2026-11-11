@@ -44,7 +44,11 @@ internal sealed record GraphTask(
     ImmutableArray<int> Groups,
     ImmutableArray<Upstream> Upstreams,
     ImmutableArray<int> HeldLimits)
-    : GraphNode(Position, Path, Title, Dependencies, Limits, Dependents);
+    : GraphNode(Position, Path, Title, Dependencies, Limits, Dependents)
+{
+    /// <summary>Whether this task waits for the node at a position, by either kind of dependency.</summary>
+    public bool IsUpstream(int position) => Upstreams.Any(upstream => upstream.Position == position);
+}
 
 /// <summary>A group of a built graph.</summary>
 /// <param name="Position">The position of this group among the nodes of the graph.</param>

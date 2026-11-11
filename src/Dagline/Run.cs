@@ -88,6 +88,26 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
+    /// <summary>
+    /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
+    /// </summary>
+    /// <exception cref="ArgumentException">The task does not depend on the node.</exception>
+    public NodeStatus StatusOf(GraphTask task, Node dependency)
+    {
+        if (!_graph.TryGetDependency(task, dependency, out var position))
+        {
+            throw new ArgumentException(
+                $"The task '{task.Path}' does not depend on the node '{dependency.Path}'. A task can read the status of an upstream "
+                + "declared on it or on a group that holds it, and of a node beneath such an upstream.",
+                nameof(dependency));
+        }
+
+        lock (_gate)
+        {
+            return _nodes[position].Status;
+        }
+    }
+
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
     private bool Apply(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
     {
