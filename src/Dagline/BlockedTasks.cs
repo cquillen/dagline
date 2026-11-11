@@ -1,5 +1,4 @@
 using System.Collections.Frozen;
-using System.Collections.Immutable;
 
 namespace Dagline;
 
@@ -43,7 +42,7 @@ public sealed record BlockedTasks(NodePath Cause, IReadOnlyList<NodeSnapshot> Ta
     /// <summary>One entry for each failed task that blocked anything among <paramref name="nodes"/>, in declaration order of the cause.</summary>
     /// <param name="nodes">Every node of a run at one instant, in declaration order.</param>
     /// <param name="positions">Where each node is in declaration order.</param>
-    internal static IReadOnlyList<BlockedTasks> Among(ImmutableArray<NodeSnapshot> nodes, FrozenDictionary<NodePath, int> positions)
+    internal static IReadOnlyList<BlockedTasks> Among(IReadOnlyList<NodeSnapshot> nodes, FrozenDictionary<NodePath, int> positions)
     {
         return
         [

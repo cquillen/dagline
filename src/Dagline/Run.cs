@@ -24,7 +24,6 @@ internal sealed class Run : ISnapshotSource
     private readonly Graph _graph;
     private readonly TimeProvider _timeProvider;
     private readonly ReporterDelivery _delivery;
-    private readonly NodeSnapshot[] _nodes;
     private readonly StatusCounts _counts;
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
     private readonly List<BuiltGroup> _settledInThisStep = [];
@@ -33,6 +32,7 @@ internal sealed class Run : ISnapshotSource
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
+    private ChunkedList<NodeSnapshot> _nodes;
     private DateTimeOffset? _endedAt;
     private RunOutcome? _outcome;
     private volatile Snapshot? _current;
@@ -47,7 +47,7 @@ internal sealed class Run : ISnapshotSource
         _groupCounts = graph.Nodes.OfType<BuiltGroup>().ToFrozenDictionary(
             group => group.Position,
             group => new StatusCounts(pending: group.TaskCount));
-        _nodes = [.. graph.Nodes.Select(AtTheStart)];
+        _nodes = ChunkedList<NodeSnapshot>.From(graph.Nodes.Select(AtTheStart));
         _startedAt = timeProvider.GetUtcNow();
     }
 
@@ -124,7 +124,7 @@ internal sealed class Run : ISnapshotSource
         }
 
         var after = report(before);
-        _nodes[task.Position] = after;
+        _nodes = _nodes.With(task.Position, after);
         _current = null;
 
         // A warning that was kept is the one report that is also an event.
@@ -333,7 +333,7 @@ internal sealed class Run : ISnapshotSource
         var to = changed.Status;
         var after = changed with { Counts = StatusCounts.OfOneTask(to) };
 
-        _nodes[task.Position] = after;
+        _nodes = _nodes.With(task.Position, after);
         _counts.Move(from, to);
         foreach (var group in task.Groups.Select(_graph.GroupAt))
         {
@@ -352,7 +352,7 @@ internal sealed class Run : ISnapshotSource
         var counts = _groupCounts[group.Position];
         counts.Move(from, to);
         var status = counts.GroupStatus;
-        _nodes[group.Position] = _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() };
+        _nodes = _nodes.With(group.Position, _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() });
 
         if (status.IsSettled())
         {
@@ -383,5 +383,5 @@ internal sealed class Run : ISnapshotSource
     }
 
     private Snapshot TakeSnapshot()
-        => new(_startedAt, _endedAt, _outcome, [.. _nodes], _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
+        => new(_startedAt, _endedAt, _outcome, _nodes, _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
 }
