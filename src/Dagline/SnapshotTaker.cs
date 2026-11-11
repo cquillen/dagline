@@ -10,7 +10,7 @@ namespace Dagline;
 /// <para>
 /// <see cref="RunSteps"/> records each change to a node as it makes it, and closes the changes recorded so far into a
 /// <see cref="SnapshotChange"/> with each event. A snapshot is built only when it is taken, so the changes a step has decided
-/// cost one small entry each, not a list of every node each, until the step is carried out.
+/// cost one small entry for each node an event changed, not a list of every node each, until the step is carried out.
 /// </para>
 /// <para>
 /// The nodes of each snapshot share every chunk but the changed ones with the snapshot before, as <see cref="ChunkedList{T}"/> allows.
@@ -23,15 +23,17 @@ namespace Dagline;
 internal sealed class SnapshotTaker(IEnumerable<NodeSnapshot> atTheStart, FrozenDictionary<NodePath, int> positions, Slots slots)
 {
     private readonly Queue<NodeChange> _untaken = new();
-    private ChunkedList<NodeSnapshot> _nodes = ChunkedList<NodeSnapshot>.From(atTheStart);
-    private int _recordedSinceLastChange;
 
-    /// <summary>Records a node as it is after a change, for the next change to close.</summary>
-    public void Record(int position, NodeSnapshot node)
-    {
-        _untaken.Enqueue(new NodeChange(position, node));
-        _recordedSinceLastChange++;
-    }
+    // Reports that publish no event, such as progress, close no change until the next event or a read of the current snapshot.
+    // Keeping only the latest node at each position bounds what they hold to one entry per node, however often a task reports.
+    private readonly Dictionary<int, NodeSnapshot> _sinceLastChange = [];
+    private ChunkedList<NodeSnapshot> _nodes = ChunkedList<NodeSnapshot>.From(atTheStart);
+
+    /// <summary>
+    /// Records a node as it is after a change, for the next change to close. A later record at the same position before
+    /// that close replaces this one.
+    /// </summary>
+    public void Record(int position, NodeSnapshot node) => _sinceLastChange[position] = node;
 
     /// <summary>
     /// Closes the node changes recorded since the last change into a new one, with everything else the snapshot holds.
@@ -43,8 +45,13 @@ internal sealed class SnapshotTaker(IEnumerable<NodeSnapshot> atTheStart, Frozen
         counts.CopyTo(tally);
         slots.CopyTo(tally.AsSpan(StatusCounts.TallyLength));
 
-        SnapshotChange change = new(_recordedSinceLastChange, milestones, tally);
-        _recordedSinceLastChange = 0;
+        foreach (var (position, node) in _sinceLastChange)
+        {
+            _untaken.Enqueue(new NodeChange(position, node));
+        }
+
+        SnapshotChange change = new(_sinceLastChange.Count, milestones, tally);
+        _sinceLastChange.Clear();
         return change;
     }
 
