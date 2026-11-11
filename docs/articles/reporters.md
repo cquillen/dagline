@@ -25,6 +25,8 @@ An **event** is a record of one thing that happened in the run, with the time it
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
+Nothing an event carries is ever null. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same.
+
 ### The order within one step
 
 A change and everything that follows from it at once are one step. The events of a step all have the same time and come in a fixed order, causes before effects:

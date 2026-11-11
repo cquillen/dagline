@@ -53,5 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The plain-text reporter writes all the lines of one event with one call and never lets two of its writes overlap. A writer that throws drops the reporter and stops its line of counts, and the error is on `RunResult.ReporterErrors`.
 - `samples/Dagline.Samples.Basic` is a real run: one group, two tasks and a *requires*, printed by the plain-text reporter on standard output, with the run outcome mapped to the exit code.
 - Docs: the plain-text reporter and its line formats in the Reporters article, and the Concepts article.
+- The event records `RunStarted`, `TaskStatusChanged`, `WarningAdded` and `GroupSettled`, and `ReporterError`, `BlockedTasks` and `GraphProblem`, reject a null argument with `ArgumentNullException`, both when one is made and when one is copied by a `with` expression.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main
