@@ -352,28 +352,31 @@ public class GracePeriodTests
     [Test]
     public async Task A_grace_period_at_the_timer_maximum_is_allowed_on_the_system_clock()
     {
-        var load = new PausedBody();
-        var builder = new GraphBuilder();
-        builder.Task("load", load.Body);
-        var stop = new StopSignal();
-        var reporter = new RecordingReporter();
-        var watched = new WatchedReporter(reporter);
-        var gracePeriod = TimeSpan.FromMilliseconds(4_294_967_294L);
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var load = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("load", load.Body);
+            var stop = new StopSignal();
+            var reporter = new RecordingReporter();
+            var watched = new WatchedReporter(reporter);
+            var gracePeriod = TimeSpan.FromMilliseconds(4_294_967_294L);
 
-        var run = Runner.RunAsync(
-            builder.Build(),
-            new RunOptions { Journal = Journal.None, GracePeriod = gracePeriod, Reporters = [watched] },
-            stop);
-        await load.Started;
-        stop.Request();
-        await watched.Handled("stop requested");
-        stop.Request();
-        var result = await run;
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = Journal.None, GracePeriod = gracePeriod, Reporters = [watched] },
+                stop);
+            await load.Started;
+            stop.Request();
+            await watched.Handled("stop requested");
+            stop.Request();
+            var result = await run;
+            load.Release();
 
-        result.Outcome.ShouldBe(RunOutcome.Stopped);
-        result.Snapshot.Stop!.GracePeriod.ShouldBe(gracePeriod);
-        reporter.Lines.ShouldContain("stopped waiting: second stop");
-        load.Release();
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
+            result.Snapshot.Stop!.GracePeriod.ShouldBe(gracePeriod);
+            reporter.Lines.ShouldContain("stopped waiting: second stop");
+        }
     }
 
     [Test]
