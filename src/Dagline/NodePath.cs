@@ -21,6 +21,9 @@ namespace Dagline;
 /// </remarks>
 public readonly record struct NodePath
 {
+    /// <summary>The rule a segment follows, worded to end a sentence that names a segment or a path that breaks it.</summary>
+    internal const string SegmentRule = "a segment is one or more of A-Z a-z 0-9 . _ -";
+
     private const char _separator = '/';
 
     private static readonly SearchValues<char> _segmentCharacters =
@@ -57,7 +60,7 @@ public readonly record struct NodePath
         return TryParse(text, out var path)
             ? path
             : throw new FormatException(
-                $"'{text}' is not a valid path. A path is one or more segments joined by '/', and a segment is one or more of A-Z a-z 0-9 . _ -");
+                $"'{text}' is not a valid path. A path is one or more segments joined by '/', and {SegmentRule}");
     }
 
     /// <summary>Reads a path from its text form without throwing.</summary>
@@ -79,6 +82,6 @@ public readonly record struct NodePath
 
     internal NodePath Child(string segment) => new($"{_text}{_separator}{segment}");
 
-    private static bool IsSegment(string segment)
+    internal static bool IsSegment(string segment)
         => segment.Length > 0 && !segment.AsSpan().ContainsAnyExcept(_segmentCharacters);
 }

@@ -60,6 +60,77 @@ public class NodePathTests
     }
 
     [Test]
+    public void Every_character_a_segment_may_use_is_accepted_alone_and_inside_a_path()
+    {
+        foreach (var character in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        {
+            NodePath.Parse($"{character}").Segments.ShouldBe([$"{character}"]);
+            NodePath.TryParse($"shard-3/a{character}b/{character}", out var path).ShouldBeTrue();
+            path.Segments.ShouldBe(["shard-3", $"a{character}b", $"{character}"]);
+        }
+    }
+
+    [Test]
+    public void Every_other_character_is_rejected_wherever_it_is_in_a_segment()
+    {
+        const string allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
+        var otherAscii = Enumerable.Range(0, 128).Select(code => (char)code).Where(character => character != '/' && !allowed.Contains(character));
+        var beyondAscii = ((int[])[0x00E9, 0x0416, 0x0663, 0xFF21, 0x00A0, 0x2028]).Select(code => (char)code);
+
+        foreach (var character in otherAscii.Concat(beyondAscii))
+        {
+            foreach (var text in (string[])[$"{character}", $"{character}load", $"load{character}", $"lo{character}ad", $"shard-3/lo{character}ad/verify"])
+            {
+                NodePath.TryParse(text, out var path).ShouldBeFalse($"U+{(int)character:X4} in '{text}'");
+                path.ShouldBe(default);
+                Should.Throw<FormatException>(() => NodePath.Parse(text));
+            }
+        }
+    }
+
+    [Test]
+    [Arguments("/")]
+    [Arguments("//")]
+    [Arguments("shard-3/tenant-a/")]
+    [Arguments("/shard-3/tenant-a")]
+    [Arguments("shard-3/ /prepare")]
+    [Arguments(" ")]
+    [Arguments(" prepare")]
+    [Arguments("prepare\n")]
+    [Arguments("shard-3\\prepare")]
+    public void A_path_with_an_empty_segment_or_white_space_is_rejected(string text)
+    {
+        NodePath.TryParse(text, out _).ShouldBeFalse();
+        Should.Throw<FormatException>(() => NodePath.Parse(text));
+    }
+
+    [Test]
+    public void Parent_walks_up_to_the_root_one_segment_at_a_time()
+    {
+        var path = NodePath.Parse("shard-3/tenant-a/prepare");
+        var tenant = path.Parent.ShouldNotBeNull();
+        var shard = tenant.Parent.ShouldNotBeNull();
+
+        tenant.ShouldBe(NodePath.Parse("shard-3/tenant-a"));
+        shard.ShouldBe(NodePath.Parse("shard-3"));
+        shard.Parent.ShouldBeNull();
+        default(NodePath).Parent.ShouldBeNull();
+    }
+
+    [Test]
+    public void The_path_of_a_handle_at_the_root_has_no_parent_and_one_in_a_group_has_the_path_of_the_group()
+    {
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-3");
+        var prepare = shard.Group("tenant-a").Task("prepare", _ => Task.CompletedTask);
+
+        shard.Path.Parent.ShouldBeNull();
+        builder.Task("publish", _ => Task.CompletedTask).Path.Parent.ShouldBeNull();
+        prepare.Path.Parent.ShouldBe(NodePath.Parse("shard-3/tenant-a"));
+        prepare.Path.ShouldBe(NodePath.Parse("shard-3/tenant-a/prepare"));
+    }
+
+    [Test]
     public void Null_is_not_a_path()
     {
         Should.Throw<ArgumentNullException>(() => NodePath.Parse(null!));

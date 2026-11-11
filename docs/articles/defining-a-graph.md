@@ -47,7 +47,7 @@ A group may stay empty. When a list comes back with nothing in it, the loop adds
 
 Nesting never orders work. Two tasks in one group run at the same time unless a dependency says otherwise.
 
-To add more children to a group later, keep its handle. Calling `Group` again with the same segment does not reopen the group.
+To add more children to a group later, keep its handle. Calling `Group` again with the same segment does not reopen the group: it adds a duplicate path, which is a [build error](#build-errors).
 
 ## Paths and segments
 
@@ -55,7 +55,7 @@ Every node has a path: the segment of each group that holds it, from the root do
 
 The path is the identity of the node. The same path means the same work in every run, so choose every segment yourself from something stable, such as a name or a key, and not from a position in a list.
 
-A segment is one or more of the characters `A-Z`, `a-z`, `0-9`, `.`, `_` and `-`. Two children of one parent may not share a segment, nor have segments that differ only by case.
+A segment is one or more of the characters `A-Z`, `a-z`, `0-9`, `.`, `_` and `-`. Two children of one parent may not share a segment, nor have segments that differ only by case. A segment that breaks these rules is a [build error](#build-errors).
 
 <xref:Dagline.Node.Path> on a handle gives the path as a <xref:Dagline.NodePath>. `NodePath.Parse` reads one from text, and `ToString` writes it back.
 
@@ -220,6 +220,79 @@ Dagline uses this one order everywhere:
 - Tasks that become ready at the same moment do so in declaration order, and ready tasks start in it.
 
 Declaration order is not a priority. It never makes a task wait: only a dependency, a full limit or the cap does.
+
+## Build errors
+
+<xref:Dagline.GraphBuilder.Build*> checks the whole graph before it builds anything. A graph that cannot run is refused there, before any task starts.
+
+Adding a node or declaring a dependency never throws because of what the graph then looks like. A handle always comes back, even for a segment that is invalid or already taken, so the code that builds the graph runs to its end. `Build` then reports every problem at once, in one <xref:Dagline.GraphException>:
+
+```csharp
+try
+{
+    return builder.Build();
+}
+catch (GraphException exception)
+{
+    foreach (var problem in exception.Problems)
+    {
+        Console.Error.WriteLine(problem.Message);
+    }
+
+    return null;
+}
+```
+
+Each <xref:Dagline.GraphProblem> has a one-line `Message` that names every node involved by its path, and the `Path` of the node the problem is about. The exception's own message lists every problem, one to a line, so an app that lets it escape still prints them all.
+
+| Problem | Example message |
+| --- | --- |
+| An invalid segment | `'shard 1' is not a valid segment for a node at the root: a segment is one or more of A-Z a-z 0-9 . _ -` |
+| A duplicate path | `'shard-1/load' was added 2 times: a path is one node.` |
+| Siblings that differ only by case | `'shard-1/load' and 'shard-1/Load' differ only by case: siblings must differ by more than case.` |
+| A handle from another builder | `'publish' requires 'load', a handle from another builder.` |
+| A node that depends on itself | `'load' requires itself.` |
+| A dependency on an ancestor or a descendant | `'shard-1/load' requires 'shard-1', its own ancestor.` |
+| A cycle | `These dependencies form a cycle: 'load' requires 'verify', 'verify' runs after 'load'.` |
+
+The messages are written for people, and their wording may change between releases. Do not match on it.
+
+### Problems with nodes
+
+- **An invalid segment.** A segment is one or more of `A-Z`, `a-z`, `0-9`, `.`, `_` and `-`. An empty segment, a space and a `/` are all invalid. The node has no valid path, so the problem's `Path` is null and the message names the group the node was added to. The nodes beneath a group with an invalid segment are not reported again.
+- **A duplicate path.** Two children of one parent were added with the same segment. That includes a task and a group on one path, and a group added twice: calling `Group` again does not reopen a group, so keep its handle to add more children. A path added several times is one problem.
+- **Siblings that differ only by case.** `load` and `Load` under one parent are refused, so that paths stay distinct wherever they are used as identities, including on a file system that ignores case. The same two segments under different parents are fine.
+
+### Problems with dependencies
+
+- **A handle from another builder.** A dependency joins two nodes of one graph. An upstream that a different `GraphBuilder` returned is refused.
+- **A node that depends on itself.**
+- **A dependency between a node and its own ancestor or descendant.** A task cannot depend on a group that holds it, because the group stands for the task itself among others. A group cannot depend on a node beneath it, because that node would inherit a dependency on itself.
+
+### Cycles
+
+A cycle is a chain of dependencies that leads back to where it started, so that none of its tasks could ever become ready. Both kinds of dependency count. The message spells out the whole cycle, one dependency after another, starting from the one declared first, so you can see which one to remove.
+
+A group stands for whatever is beneath it, and a dependency declared on a group applies to everything beneath it. A cycle can therefore pass through a group:
+
+```csharp
+var loads = builder.Group("loads");
+var entities = loads.Task("entities", LoadEntitiesAsync);
+var publish = builder.Task("publish", PublishAsync).Requires(loads);
+entities.After(publish);
+```
+
+`Build` reports the cycle as `'publish' requires 'loads', 'loads/entities' runs after 'publish'`: `publish` waits for everything beneath `loads`, and `loads/entities` is beneath it.
+
+A cycle through a group is reported even while the group is empty. The dependency is on the group, not on a list of the members it has today.
+
+Where several cycles share dependencies, `Build` reports at least one of them and not always each of them. Once those are fixed, the next call to `Build` reports any that are left.
+
+### A builder is single use
+
+Once `Build` has returned a graph, that graph cannot change. The builder and every handle it made throw `InvalidOperationException` from any call that would change it: `Group`, `Task`, `Title`, `Limit`, `Requires`, `After`, and a second `Build`. The handles stay valid to read.
+
+A null argument is a different kind of mistake. It throws `ArgumentNullException` at the call, before and after `Build`.
 
 ## Groups in a run
 
