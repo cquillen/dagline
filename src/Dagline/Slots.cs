@@ -12,7 +12,7 @@ namespace Dagline;
 /// </remarks>
 /// <param name="limitNames">Every limit the graph names, as <see cref="Graph.LimitNames"/> gives them.</param>
 /// <param name="sizes">The size of the cap and of each of those limits.</param>
-internal sealed class Slots(ImmutableArray<string> limitNames, LimitSizes sizes)
+internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes sizes)
 {
     private readonly int[] _inUse = new int[sizes.Limits.Length];
     private int _running;
@@ -25,9 +25,9 @@ internal sealed class Slots(ImmutableArray<string> limitNames, LimitSizes sizes)
     /// </summary>
     public ReadOnlyDictionary<string, LimitUse> Limits
         => new(limitNames.Index().ToDictionary(
-            limit => limit.Item,
+            limit => limit.Item.Text,
             limit => new LimitUse(sizes.Limits[limit.Index], _inUse[limit.Index]),
-            StringComparer.Ordinal));
+            LimitName.TextComparer));
 
     /// <summary>
     /// Takes one slot of the cap and of every limit a task holds, if each has one free.

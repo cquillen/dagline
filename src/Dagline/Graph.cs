@@ -32,21 +32,24 @@ public sealed class Graph : IReadOnlyList<Node>
         var dependencies = new TaskDependencies(tasks, positions, declared);
         var tasksBeneath = tasks.SelectMany(task => task.Ancestors()).CountBy(group => (Node)group).ToDictionary();
 
-        LimitNames = [.. nodes.SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal)];
-        var limitPositions = LimitNames.Index().ToDictionary(limit => limit.Item, limit => limit.Index, StringComparer.Ordinal);
+        LimitNames = [.. nodes.SelectMany(node => node.Limits).Distinct()];
+        var limitPositions = LimitNames.Index().ToDictionary(limit => limit.Item, limit => limit.Index);
 
         Nodes = [.. nodes.Select(ToGraphNode)];
         Tasks = [.. Nodes.OfType<GraphTask>()];
         Positions = Nodes.ToFrozenDictionary(node => node.Path, node => node.Position);
 
         GraphNode ToGraphNode(Node node, int position)
-            => node is TaskNode task
+        {
+            IReadOnlyList<string> limitsNamed = [.. node.Limits.Select(limit => limit.Text)];
+
+            return node is TaskNode task
                 ? new GraphTask(
                     position,
                     node.Path,
                     node.TitleText,
                     dependencies.DeclaredOn(node),
-                    [.. node.Limits],
+                    limitsNamed,
                     dependencies.DependentsOf(node),
                     task.Body,
                     [.. node.Ancestors().Select(group => positions[group])],
@@ -57,10 +60,11 @@ public sealed class Graph : IReadOnlyList<Node>
                     node.Path,
                     node.TitleText,
                     dependencies.DeclaredOn(node),
-                    [.. node.Limits],
+                    limitsNamed,
                     dependencies.DependentsOf(node),
                     Depth: node.Ancestors().Count(),
                     TaskCount: tasksBeneath.GetValueOrDefault(node));
+        }
     }
 
     /// <summary>How many nodes the graph has, tasks and groups together.</summary>
@@ -76,7 +80,7 @@ public sealed class Graph : IReadOnlyList<Node>
     internal FrozenDictionary<NodePath, int> Positions { get; }
 
     /// <summary>Every limit the graph names, on a task or on a group, each once, in the order first named in declaration order.</summary>
-    internal ImmutableArray<string> LimitNames { get; }
+    internal ImmutableArray<LimitName> LimitNames { get; }
 
     /// <summary>The handle of the node at a position in declaration order.</summary>
     /// <param name="index">The position of the node, from zero.</param>
@@ -147,6 +151,6 @@ public sealed class Graph : IReadOnlyList<Node>
         => Positions.TryGetValue(handle.Path, out position) && ReferenceEquals(_handles[position], handle);
 
     /// <summary>The limits a task holds: those named on it and those named on every group that holds it, each once.</summary>
-    private static IEnumerable<string> HeldBy(TaskNode task)
-        => task.WithAncestors().SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal);
+    private static IEnumerable<LimitName> HeldBy(TaskNode task)
+        => task.WithAncestors().SelectMany(node => node.Limits).Distinct();
 }

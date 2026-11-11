@@ -29,11 +29,11 @@ internal sealed class LimitSizes
     /// </exception>
     public static LimitSizes For(Graph graph, RunOptions options)
     {
-        // Limit names are compared ordinally, whatever comparer the consumer's dictionary uses.
-        Dictionary<string, int> given = new(StringComparer.Ordinal);
+        // Read into a dictionary of our own, so that names compare as limit names do whatever comparer the consumer's dictionary uses.
+        Dictionary<LimitName, int> given = [];
         foreach (var (name, size) in options.Limits)
         {
-            given[name] = size;
+            given[new LimitName(name)] = size;
         }
 
         List<string> problems = [];

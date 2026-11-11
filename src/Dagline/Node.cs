@@ -16,7 +16,7 @@ namespace Dagline;
 /// </remarks>
 public abstract class Node
 {
-    private readonly List<string> _limits = [];
+    private readonly List<LimitName> _limits = [];
 
     private protected Node(GraphBuilder builder, GroupNode? parent, string segment)
     {
@@ -53,7 +53,7 @@ public abstract class Node
     internal string? TitleText { get; private set; }
 
     /// <summary>The limits named on this node so far, each once, in the order first named.</summary>
-    internal IReadOnlyList<string> Limits => _limits;
+    internal IReadOnlyList<LimitName> Limits => _limits;
 
     /// <summary>The builder this handle came from. A dependency joins two handles of one builder.</summary>
     internal GraphBuilder Builder { get; }
@@ -88,9 +88,10 @@ public abstract class Node
         ArgumentException.ThrowIfNullOrEmpty(name);
         Builder.ThrowIfBuilt();
 
-        if (!_limits.Contains(name))
+        var limit = new LimitName(name);
+        if (!_limits.Contains(limit))
         {
-            _limits.Add(name);
+            _limits.Add(limit);
         }
     }
 
