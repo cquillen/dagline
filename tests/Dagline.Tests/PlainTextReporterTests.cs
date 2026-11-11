@@ -11,6 +11,80 @@ public class PlainTextReporterTests
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
     [Test]
+    public async Task A_run_of_the_reference_graph_prints_the_reference_output_line_for_line()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new StringWriter();
+        var a = new PausedBody();
+        var b = new PausedBody();
+        var report = new PausedBody();
+        var builder = new GraphBuilder();
+        var checks = builder.Group("checks");
+        checks.Task("a", a.Body);
+        checks.Task("b", async context =>
+        {
+            await b.Body(context);
+            throw context.Fail("2 bad entities", "entity 3: missing owner", "entity 17: bad date");
+        });
+        var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(checks);
+        builder.Task("notify", _ => Task.CompletedTask).Requires(publish);
+        builder.Task("report", report.Body).After(checks);
+        var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+
+        var run = Runner.RunAsync(builder.Build(), Options(clock, reporter));
+        var checkA = await a.Started;
+        var checkB = await b.Started;
+        clock.Advance(TimeSpan.FromSeconds(2));
+        checkA.Warn("entity 9 has no region");
+        await reporter.Handled("warning checks/a: entity 9 has no region");
+        clock.Advance(TimeSpan.FromSeconds(1.1));
+        checkB.Status("checking entities");
+        checkB.Count(17, 40);
+        b.Release();
+        await reporter.Handled("notify: pending -> blocked");
+        clock.Advance(TimeSpan.FromSeconds(1.9));
+        checkA.Message("checked 40 entities");
+        a.Release();
+        await reporter.Handled("report: ready -> running");
+        clock.Advance(TimeSpan.FromMinutes(1));
+        clock.Advance(TimeSpan.FromSeconds(15));
+        report.Release();
+        var result = await run;
+
+        result.Outcome.ShouldBe(RunOutcome.Incomplete);
+        result.ReporterErrors.ShouldBeEmpty();
+        Lines(writer).ShouldBe(
+        [
+            "2026-11-11T04:12:00Z run started: 5 tasks",
+            "2026-11-11T04:12:00Z started checks/a",
+            "2026-11-11T04:12:00Z started checks/b",
+            "2026-11-11T04:12:02Z warning checks/a: entity 9 has no region",
+            "2026-11-11T04:12:03Z failed checks/b in 3.1s: 2 bad entities",
+            "    entity 3: missing owner",
+            "    entity 17: bad date",
+            "2026-11-11T04:12:03Z blocked 2 tasks by checks/b",
+            "2026-11-11T04:12:05Z succeeded checks/a in 5.0s: checked 40 entities",
+            "2026-11-11T04:12:05Z group checks failed: 1 succeeded, 1 failed",
+            "2026-11-11T04:12:05Z started report",
+            "2026-11-11T04:13:05Z tasks: 1 running, 1 succeeded, 1 failed, 2 blocked",
+            "2026-11-11T04:13:20Z succeeded report in 1m15s",
+            "2026-11-11T04:13:20Z run ended: incomplete in 1m20s",
+            "tasks: 2 succeeded, 1 failed, 2 blocked",
+            "failed: 1",
+            "  checks/b (reported) at 2026-11-11T04:12:03Z after 3.1s",
+            "    progress: checking entities, 17 of 40",
+            "    message: 2 bad entities",
+            "    detail:",
+            "      entity 3: missing owner",
+            "      entity 17: bad date",
+            "    blocked 2 tasks: publish, notify",
+            "warnings: 1",
+            "  checks/a",
+            "    entity 9 has no region",
+        ]);
+    }
+
+    [Test]
     public async Task A_complete_run_with_no_warnings_prints_each_task_starting_and_settling_and_only_the_counts_as_its_summary()
     {
         var clock = new FakeTimeProvider(_runStart);
@@ -434,6 +508,55 @@ public class PlainTextReporterTests
             .. aMinuteAfterTheStart,
             "2026-11-11T04:13:40Z tasks: 1 running",
         ]);
+    }
+
+    [Test]
+    public async Task The_quiet_minute_is_measured_on_the_clock_of_the_reporter_and_not_on_that_of_the_run()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var reporterClock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 11, 9, 0, 0, TimeSpan.Zero));
+        var writer = new StringWriter();
+        var prepare = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("prepare", prepare.Body);
+        var reporter = new WatchedReporter(new PlainTextReporter(writer, reporterClock));
+
+        var run = Runner.RunAsync(builder.Build(), Options(clock, reporter));
+        await reporter.Handled("prepare: ready -> running");
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var afterFiveMinutesOfTheRun = Lines(writer);
+        reporterClock.Advance(TimeSpan.FromMinutes(1));
+        prepare.Release();
+        await run;
+
+        afterFiveMinutesOfTheRun.ShouldBe(
+        [
+            "2026-11-11T04:12:00Z run started: 1 task",
+            "2026-11-11T04:12:00Z started prepare",
+        ]);
+        Lines(writer).ShouldBe(
+        [
+            .. afterFiveMinutesOfTheRun,
+            "2026-11-11T09:01:00Z tasks: 1 running",
+            "2026-11-11T04:17:00Z succeeded prepare in 5m0s",
+            "2026-11-11T04:17:00Z run ended: complete in 5m0s",
+            "tasks: 1 succeeded",
+        ]);
+    }
+
+    [Test]
+    public async Task The_reporter_rejects_a_null_writer_a_null_event_and_a_null_snapshot()
+    {
+        var reporter = new PlainTextReporter(new StringWriter());
+        var ended = new RunEnded(_runStart, RunOutcome.Complete);
+
+        Should.Throw<ArgumentNullException>(() => new PlainTextReporter(null!)).ParamName.ShouldBe("writer");
+        var noEvent = await Should.ThrowAsync<ArgumentNullException>(
+            async () => await reporter.OnEventAsync(null!, null!, CancellationToken.None));
+        noEvent.ParamName.ShouldBe("runEvent");
+        var noSnapshot = await Should.ThrowAsync<ArgumentNullException>(
+            async () => await reporter.OnEventAsync(ended, null!, CancellationToken.None));
+        noSnapshot.ParamName.ShouldBe("snapshot");
     }
 
     [Test]
