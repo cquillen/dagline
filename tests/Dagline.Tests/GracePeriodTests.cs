@@ -491,6 +491,34 @@ public class GracePeriodTests
     }
 
     [Test]
+    public async Task The_token_of_a_task_let_go_is_signalled_by_the_time_the_run_returns_without_waiting_for_its_callbacks()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            using var callbackMayEnd = new ManualResetEventSlim();
+            var load = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("load", async context =>
+            {
+                using var blocking = context.CancellationToken.Register(() => callbackMayEnd.Wait(TimeSpan.FromSeconds(30)));
+                await load.Body(context);
+            });
+            var stop = new StopSignal();
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, stop);
+            var context = await load.Started;
+            stop.Request();
+            var result = await run;
+            var signalled = context.CancellationToken.IsCancellationRequested;
+            callbackMayEnd.Set();
+
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
+            signalled.ShouldBeTrue();
+            load.Release();
+        }
+    }
+
+    [Test]
     [Arguments(false)]
     [Arguments(true)]
     public async Task A_body_let_go_that_ends_later_changes_nothing_and_raises_nothing(bool throws)

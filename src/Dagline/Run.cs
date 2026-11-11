@@ -94,7 +94,6 @@ internal sealed class Run : ISnapshotSource
             StartWhatFitsOrEnd(_startedAt);
         }
 
-        SignalTheTasksIfStopped();
         HearTheSignal();
     }
 
@@ -153,13 +152,16 @@ internal sealed class Run : ISnapshotSource
                 LetGo(StoppedWaitingReason.SecondStop, now);
             }
         }
-
-        SignalTheTasksIfStopped();
     }
 
+    /// <summary>
+    /// Applies the first request: from this step on nothing starts. The token every task sees is signalled in the same step,
+    /// so it is signalled before the run can end and <see cref="Runner.RunAsync"/> return.
+    /// </summary>
     private void ApplyStop(DateTimeOffset now)
     {
         _stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod));
+        SignalTheTasks();
         Publish(new StopRequested(now, _gracePeriod));
     }
 
@@ -221,24 +223,17 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Signals the token every task sees, once a stop has been applied. It is called outside the lock,
-    /// because cancelling runs the callbacks that task bodies registered on the token.
+    /// Signals the token every task sees. The token reads as cancelled at once, while the callbacks that task bodies
+    /// registered on it run later on the thread pool, so none runs under the lock or holds up the end of the run.
     /// </summary>
-    private void SignalTheTasksIfStopped()
+    private void SignalTheTasks()
     {
-        if (Volatile.Read(ref _stop) is null)
-        {
-            return;
-        }
-
-        try
-        {
-            _stopping.Cancel();
-        }
-        catch (AggregateException)
-        {
+        _ = _stopping.CancelAsync().ContinueWith(
             // A callback a task body registered on its token threw. That is the body's affair, and the stop goes on.
-        }
+            static signalled => _ = signalled.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     /// <summary>

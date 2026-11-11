@@ -226,7 +226,7 @@ builder.Task("load", async context =>
 });
 ```
 
-The token is the same for every task of the run, is signalled once, and stays signalled. A run that is never stopped never signals it. Do your own cleanup when it is signalled, so you leave other systems in a known condition, then let the cancellation escape.
+The token is the same for every task of the run, is signalled once, and stays signalled. A run that is never stopped never signals it. It is already signalled when `RunAsync` returns, but a callback you register on it runs on the thread pool and the run does not wait for it. Do your own cleanup when it is signalled, so you leave other systems in a known condition, then let the cancellation escape.
 
 Once a stop has been requested, a task ends in the first of these ways that applies:
 

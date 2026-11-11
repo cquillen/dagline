@@ -73,8 +73,9 @@ public sealed class TaskContext
     /// <remarks>
     /// <para>
     /// Every task of a run sees the same token. It is signalled once, when the run applies a stop, and stays signalled.
-    /// A run that is never stopped never signals it. The callbacks registered on it run on a thread of the run's own, never
-    /// while the run holds its lock, so a callback may call this context.
+    /// A run that is never stopped never signals it. The token reads as signalled from the step that applies the stop, and so before
+    /// <see cref="Runner.RunAsync"/> returns. The callbacks registered on it run afterwards on the thread pool, never while the run
+    /// holds its lock, so a callback may call this context, and the run does not wait for them: it may return while one is still running.
     /// </para>
     /// <para>
     /// Once a stop has been requested, a task ends as follows. A failure recorded with <see cref="Fail"/> wins: the task fails
