@@ -13,6 +13,8 @@ One window stays open. If the process dies after the task has started the extern
 - **Save a self-chosen correlation id before starting the work.** The checkpoint then says only that a start may have happened, because the process can also die between the save and the start. The resumed task must settle which it was, by asking the external system for that id or by starting the work in a way that is idempotent on it.
 - **Look the work up by a predictable name before starting it.**
 
+A lookup, by id or by name, closes the window only if finding nothing rules out a start the external system has already accepted. Where it cannot, the start itself has to be idempotent on that id or name.
+
 A checkpoint proves the work started only when it was saved after the start. "Start it unless the checkpoint says it was started" is a few lines in the task and is documented as guidance, not provided as a shape.
 
 ## Considered options
