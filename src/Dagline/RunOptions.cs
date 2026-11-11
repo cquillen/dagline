@@ -6,7 +6,7 @@ namespace Dagline;
 /// What an app chooses for one run. The graph says what the work is, and the options say how this run of it goes.
 /// </summary>
 /// <remarks>
-/// Only <see cref="Journal"/> is required. Every property rejects <see langword="null"/> when it is set.
+/// Only <see cref="Journal"/> is required. Every property that could hold <see langword="null"/> rejects it when it is set.
 /// </remarks>
 public sealed record RunOptions
 {
@@ -17,6 +17,8 @@ public sealed record RunOptions
     /// The cap behaves as a limit that every task holds: a task takes one slot of it when it starts and gives the slot back
     /// when it settles. A ready task that finds the cap reached stays ready until a task settles.
     /// The default is fixed, not derived from the processor count, since a task mostly waits on other systems.
+    /// The cap must be at least 1: <see cref="Runner.RunAsync"/> refuses a lower one
+    /// with <see cref="RunConfigurationException"/> before any task starts.
     /// </remarks>
     public int Cap { get; init; } = 16;
 

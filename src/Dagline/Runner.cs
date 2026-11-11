@@ -13,9 +13,20 @@ public static class Runner
     /// </returns>
     /// <remarks>
     /// <para>
-    /// Every task starts pending. A task becomes ready once every dependency it has is met, and every ready task is started
-    /// on the thread pool, in declaration order. Each change of status is applied one at a time,
-    /// so the order of a run's events depends only on the order in which task bodies end.
+    /// Every task starts pending. A task becomes ready once every dependency it has is met. Each change of status is applied
+    /// one at a time, so the order of a run's events depends only on the order in which task bodies end.
+    /// </para>
+    /// <para>
+    /// When the run starts, and whenever a task settles after that, the ready tasks are tried in declaration order.
+    /// Each one that finds a slot free in the cap and in every limit it holds takes them all and is started on the thread pool.
+    /// One that does not fit takes none, is passed over and stays ready, so it never holds up the tasks behind it.
+    /// There are no priorities and no fairness: a task that needs two busy limits can be passed over many times.
+    /// A task gives its slots back when it settles, whatever its status.
+    /// </para>
+    /// <para>
+    /// The options are checked before anything else happens: <see cref="RunOptions.Cap"/> and every size in
+    /// <see cref="RunOptions.Limits"/> must be at least 1, and every limit the graph names must have a size.
+    /// A size for a limit the graph does not name is ignored.
     /// </para>
     /// <para>
     /// The method takes no <see cref="CancellationToken"/>: a run cannot be stopped.
@@ -24,6 +35,10 @@ public static class Runner
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="RunConfigurationException">
+    /// The cap or a size is below 1, or the graph names a limit that the options give no size. The message lists every problem.
+    /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
+    /// </exception>
     public static Task<RunResult> RunAsync(Graph graph, RunOptions options)
     {
         ArgumentNullException.ThrowIfNull(graph);

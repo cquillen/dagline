@@ -100,7 +100,8 @@ internal sealed class Run : ISnapshotSource
 
     private void MakeReady(IEnumerable<GraphTask> waiting, DateTimeOffset now)
     {
-        foreach (var task in waiting.Where(DependenciesAreMet).ToList())
+        List<GraphTask> ready = [.. waiting.Where(DependenciesAreMet)];
+        foreach (var task in ready)
         {
             Move(task, NodeStatus.Ready, now);
             _ready.Add(task.Position);
@@ -123,7 +124,7 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Tries every ready task in declaration order and starts each one that finds all its slots free.
+    /// Tries every ready task in declaration order and starts each one that finds a slot free in the cap and in every limit it holds.
     /// One that does not fit is passed over and stays ready, so it never holds up the tasks behind it.
     /// </summary>
     private void StartWhatFits(DateTimeOffset now)
