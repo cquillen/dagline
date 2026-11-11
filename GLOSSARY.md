@@ -55,7 +55,7 @@ Where a node is in its life during a run. A task has exactly one status at a tim
 _Avoid_: State, phase
 
 **Pending**:
-The status of a task that has a dependency not yet met.
+The status of a task that has a dependency not yet met and has not been blocked.
 _Avoid_: Waiting, not started, queued
 
 **Ready**:
@@ -67,7 +67,7 @@ The status of a task whose work has started and not ended, including while it wa
 _Avoid_: Active, in progress, waiting
 
 **Succeeded**:
-The status of a task whose work ended without a failure, in this run or an earlier one.
+The status of a task that finished its work without a failure, in this run or an earlier one.
 _Avoid_: Done, passed, completed, skipped
 
 **Failed**:
@@ -115,7 +115,7 @@ The run outcome when every task has succeeded, in this run or an earlier one.
 _Avoid_: Successful, passed, done
 
 **Incomplete**:
-The run outcome when the run went as far as it could and at least one task failed or was blocked.
+The run outcome when the operator did not ask the run to stop, it went as far as it could, and at least one task failed or was blocked.
 _Avoid_: Failed, partial
 
 **Stopped**:
