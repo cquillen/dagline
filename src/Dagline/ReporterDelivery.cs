@@ -39,8 +39,10 @@ internal sealed class ReporterDelivery
     /// <summary>
     /// Begins the wait for reporters at the end of the run: from now on, any request on the signal beyond the
     /// <paramref name="requestsApplied"/> the run applied drops every reporter still busy, including a request already made.
-    /// The run calls it as it ends and before it publishes <see cref="RunEnded"/>, so a request is either one the run applied
-    /// or one that ends this wait.
+    /// The run calls it as it ends, once it has published <see cref="RunEnded"/> and with the count of requests it applied,
+    /// so a request is either one the run applied or one that ends this wait. Listening only once the last event is queued
+    /// means a request is never heard while every reporter has handled every event so far but one more is still to come:
+    /// such a request, made before this call, is heard by the call the signal makes at once for a request already made.
     /// </summary>
     public void ListenBeyond(int requestsApplied)
     {

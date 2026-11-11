@@ -574,8 +574,8 @@ internal sealed class Run : ISnapshotSource
         _gracePeriodTimer?.Dispose();
         _endedAt = now;
         _outcome = outcome;
-        _delivery.ListenBeyond(_requestsApplied);
         Publish(new RunEnded(now, outcome));
+        _delivery.ListenBeyond(_requestsApplied);
         _delivery.Complete();
         _ended.SetResult(outcome);
     }
