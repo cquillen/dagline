@@ -40,6 +40,11 @@ public sealed record RunOptions
     /// The reporters that watch the run. Each receives every event of the run in order.
     /// The list is read once when the run starts, and no reporter joins later. The default is no reporters.
     /// </summary>
+    /// <remarks>
+    /// Each reporter has a queue of its own, so the run never waits for one while tasks are running and a slow reporter
+    /// does not hold up another. One that throws is dropped and is on <see cref="RunResult.ReporterErrors"/>.
+    /// <see cref="IReporter.OnEventAsync"/> says what a reporter may rely on.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">The value set is <see langword="null"/>.</exception>
     public IReadOnlyList<IReporter> Reporters
     {

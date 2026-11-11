@@ -7,7 +7,9 @@ public static class Runner
     /// <param name="graph">The graph to run. It is not changed, and can be run again.</param>
     /// <param name="options">The choices for this run.</param>
     /// <returns>
-    /// A task that completes when no task is running and none is ready, and every reporter has been handed every event.
+    /// A task that completes when no task is running and none is ready, and every reporter that was not dropped
+    /// has handled every event. That wait has no time bound. A reporter's exception never faults the task:
+    /// the reporter is dropped and its error is on <see cref="RunResult.ReporterErrors"/>.
     /// </returns>
     /// <remarks>
     /// <para>
