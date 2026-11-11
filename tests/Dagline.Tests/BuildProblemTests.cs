@@ -22,7 +22,7 @@ public class BuildProblemTests
     [Arguments("")]
     [Arguments("load/entities")]
     [Arguments("load entities")]
-    [Arguments("loäd")]
+    [Arguments("lo\u00E4d")]
     public void An_invalid_segment_is_reported_for_a_task_and_for_a_group_and_names_the_group_that_holds_the_node(string segment)
     {
         var builder = new GraphBuilder();
