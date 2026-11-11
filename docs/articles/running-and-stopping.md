@@ -28,7 +28,7 @@ static Task PublishAsync(TaskContext context) => Task.CompletedTask;
 
 Every task starts pending. A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the cap and its limits](#sizing-the-cap-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
 
-Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock.
+Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock, through which it also reports progress, warnings and its outcome: see [Writing tasks](writing-tasks.md).
 
 The call returns when the run has ended: no task is running, none is ready, and every reporter that was not dropped has handled every event.
 
@@ -140,7 +140,8 @@ Console.WriteLine($"{result.Snapshot.Counts[NodeStatus.Succeeded]} tasks succeed
 
 A failure costs only the work that needs it. An exception that escapes a task body fails that task and nothing else: it is never thrown from `RunAsync`, and the run carries on.
 
-- The task ends **failed**, as an *unexpected failure*. Its message is the exception's message, and its detail lines are the exception's type and stack trace. A cancellation exception is treated the same way, since a run cannot be stopped.
+- The task ends **failed**, as an *unexpected failure*. Its message is the exception's message, and the exception's type and stack trace are added to its detail lines. A cancellation exception is treated the same way, since a run cannot be stopped.
+- A task that declares a failure itself, with `throw context.Fail(...)`, ends **failed** as a *reported failure*, and everything below applies to it too: see [Failures](writing-tasks.md#failures).
 - Every task that *requires* the failed task becomes **blocked** at once, even while its other upstreams are still running. So does every task that requires a blocked task, to the end of the chain. A task that requires a group is blocked as soon as one task beneath the group fails or is blocked: it does not wait for the group to settle.
 - A task that runs *after* the failed task, or after a blocked one, still runs.
 - Every other task keeps running.

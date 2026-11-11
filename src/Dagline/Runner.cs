@@ -30,7 +30,7 @@ public static class Runner
     /// </para>
     /// <para>
     /// A task that fails costs only the work that requires it. An exception that escapes a task body fails that task
-    /// and is never thrown from this method. Every task that requires the failed task, directly, through a group or through
+    /// and is never thrown from this method, and a task also fails when it reports a failure with <see cref="TaskContext.Fail"/>. Every task that requires the failed task, directly, through a group or through
     /// a chain of such tasks, becomes blocked at once and records the failed task in <see cref="NodeSnapshot.BlockedBy"/>.
     /// A task that runs <em>after</em> it still runs, and so does every task with no dependency on it.
     /// The run outcome is then <see cref="RunOutcome.Incomplete"/>.

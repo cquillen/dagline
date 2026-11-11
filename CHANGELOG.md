@@ -38,5 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Blocking: every task that requires a failed task, directly, through a group or through a chain, becomes blocked at once and names the failed task in `NodeSnapshot.BlockedBy`. A blocked task has a settle time and no start time. *After* tasks and unrelated tasks still run, and a group settles failed when a task beneath it failed, or blocked when none failed and one is blocked.
 - The order of events within one step is fixed: the settle, the tasks it blocks, the tasks it makes ready, the groups that settle (deepest first), then the tasks that start, each list in declaration order.
 - `Snapshot.Failed` lists the failed tasks, and `Snapshot.Blocked` gives one `BlockedTasks` per failed task that blocked anything, with every task it blocked and the roots: the highest nodes whose every task it blocked.
+- What a task reports, through its `TaskContext`: `Status` and `Count` set progress (status text, and a count with an optional total), which shows in the snapshot as `NodeSnapshot.StatusText`, `Count` and `Total`, is never an event, and is frozen when the task settles.
+- `TaskContext.Warn` adds a warning that stays on the task whatever status it settles with, in `NodeSnapshot.Warnings`, and publishes the new `WarningAdded` event. `Snapshot.WarningCount` counts every warning of the run and `Snapshot.WithWarnings` lists the tasks that have any.
+- `TaskContext.Message` and `TaskContext.Detail` set the message and add detail lines of a task's outcome, on a task that succeeds as well as one that fails. A line break in a message or a warning becomes a space, and text given as detail is split into one line per break.
+- Reported failures: `throw context.Fail(message, detail)` ends a task failed with `FailureKind.Reported`. Once `Fail` has been called the task ends that way however its body ends. `Fail` returns the new `ReportedFailureException`, and one that the task's own `Fail` did not make is an unexpected failure.
+- An unexpected failure now adds the exception's type and stack trace after any detail lines the task had already added.
+- The volume limit: the first 100 warnings and the first 100 detail lines of a task are kept, and the rest are counted in `NodeSnapshot.WarningsOmitted` and `NodeSnapshot.DetailOmitted`. No `WarningAdded` is published for a warning that is not kept.
+- `TaskContext.StatusOf` reads the status of a node the task depends on: an upstream declared on it or on a group that holds it, or any node beneath an upstream group.
+- A `TaskContext` is safe to call from several threads at once, and changes nothing once its task has settled.
+- Docs: the Writing tasks article.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main

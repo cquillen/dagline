@@ -20,7 +20,7 @@ namespace Dagline;
 /// <item><description>Every task that now starts, ready to running, in declaration order.</description></item>
 /// </list>
 /// <para>
-/// The events of one step are never mixed with those of another.
+/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own.
 /// </para>
 /// </remarks>
 public abstract record RunEvent

@@ -17,6 +17,7 @@ An **event** is a record of one thing that happened in the run, with the time it
 | --- | --- | --- |
 | <xref:Dagline.RunStarted> | First, once per run. | The snapshot source of the run. |
 | <xref:Dagline.TaskStatusChanged> | Every time a task changes status, pending to ready included. | The task as it is after the change, and the status before and after. |
+| <xref:Dagline.WarningAdded> | When a running task adds a warning that is kept: the first 100 of each task. | The path of the task and the warning. |
 | <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it. | The path of the group, its status and its count of tasks per status. |
 | <xref:Dagline.RunEnded> | Last, once per run. | The run outcome. |
 
@@ -33,6 +34,10 @@ A change and everything that follows from it at once are one step. The events of
 5. Every task that now starts, ready to running.
 
 Each list is in declaration order. The steps of a run never overlap, so the events of one are never mixed with those of another.
+
+A warning is a step of its own, with one event. A warning a task adds before its body ends always comes before the event of that task settling.
+
+Progress is never an event. The status text and count a task reports change only the snapshot, so a task that reports often costs a reporter nothing.
 
 A failure is the step with the most consequences. Take a group `checks` that holds the task `verify`, a task `publish` that requires `checks`, and a task `report` that runs after `checks`. When `verify` fails, a reporter receives:
 
@@ -58,6 +63,7 @@ Dagline keeps the snapshot, so a reporter never rebuilds the state of the run fr
 A snapshot also answers the questions a summary asks, each in declaration order, so every reporter's summary agrees:
 
 - <xref:Dagline.Snapshot.Failed> lists the failed tasks. Each has its <xref:Dagline.NodeSnapshot.Failure> kind, its message and its detail lines.
+- <xref:Dagline.Snapshot.WarningCount> counts every warning added, and <xref:Dagline.Snapshot.WithWarnings> lists the tasks that have any. Each task keeps its first 100 warnings in <xref:Dagline.NodeSnapshot.Warnings> and counts the rest in <xref:Dagline.NodeSnapshot.WarningsOmitted>.
 - <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line.
 
 ## What a reporter may rely on
@@ -185,7 +191,8 @@ What to know about the source:
 
 - **`Current` is the run as it is now.** It may be ahead of the events the reporter has been handed so far: a reporter still handling `RunStarted` can read a `Current` in which every task has already succeeded.
 - **Each read is one consistent snapshot.** Read `Current` once per draw and take everything from that one snapshot. Two reads may give two different instants.
-- **Reading never waits for the run**, and is safe from any thread.
+- **Reading never waits for a task or a reporter**, and is safe from any thread.
+- **Progress is here and nowhere else.** A running task's <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total> are as the task last reported them. Once the task has settled they stay as it left them.
 - **After the run has ended** `Current` is the final snapshot: the same one that is handed with `RunEnded` and returned on <xref:Dagline.RunResult.Snapshot>.
 
 A timer is the reporter's own concurrency. Dagline makes one call at a time into `OnEventAsync`, but it knows nothing of a loop the reporter started, so the reporter keeps the two apart itself. The example writes from `OnEventAsync` only after its loop has stopped. It also awaits the loop while handling `RunEnded`, so an exception from the loop leaves `OnEventAsync` and is reported like any other reporter error.

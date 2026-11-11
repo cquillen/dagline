@@ -10,6 +10,9 @@ public interface ISnapshotSource
     /// The run as it is now. This may be ahead of the events a reporter has been handed so far.
     /// Once the run has ended it is the final snapshot.
     /// </summary>
-    /// <remarks>Safe to read from any thread. Reading it never waits for the run.</remarks>
+    /// <remarks>
+    /// Safe to read from any thread. Reading it never waits for a task body or a reporter.
+    /// It includes the progress every running task has reported so far.
+    /// </remarks>
     Snapshot Current { get; }
 }

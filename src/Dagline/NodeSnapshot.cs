@@ -68,7 +68,10 @@ public sealed record NodeSnapshot
     /// Why the task failed, or <see langword="null"/> for a task that has not failed and for a group.
     /// </summary>
     /// <remarks>
-    /// An exception that escapes a task body, a cancellation exception included, is <see cref="FailureKind.Unexpected"/>.
+    /// A task that called <see cref="TaskContext.Fail"/> fails as <see cref="FailureKind.Reported"/>, however its body ended.
+    /// Any other task whose body let an exception escape, a cancellation exception included, fails as
+    /// <see cref="FailureKind.Unexpected"/>. The kind is set when the task settles: it is <see langword="null"/> while the task
+    /// is running, even after it has called <see cref="TaskContext.Fail"/>.
     /// </remarks>
     public FailureKind? Failure { get; internal init; }
 
@@ -83,16 +86,25 @@ public sealed record NodeSnapshot
 
     /// <summary>
     /// The one-line message of the task's outcome, or <see langword="null"/> when it has none and for a group.
-    /// For an unexpected failure it is the message of the exception that escaped the task body, with each line break in it
-    /// replaced by a space.
     /// </summary>
+    /// <remarks>
+    /// It is the message the task last set with <see cref="TaskContext.Message"/> or <see cref="TaskContext.Fail"/>,
+    /// and shows from the moment it is set, while the task is still running. For an unexpected failure it is the message
+    /// of the exception that escaped the task body, which replaces any the task had set. Each line break in the text given
+    /// is replaced by a space.
+    /// </remarks>
     public string? Message { get; internal init; }
 
     /// <summary>
     /// The detail lines of the task's outcome, in the order added. Empty when it has none and for a group.
-    /// For an unexpected failure they are the full name of the exception's type, then each line of its stack trace
-    /// as the runtime wrote it.
     /// </summary>
+    /// <remarks>
+    /// They are the lines the task added with <see cref="TaskContext.Detail"/> and <see cref="TaskContext.Fail"/>,
+    /// each shown from the moment it is added. An unexpected failure adds, after any lines the task had already added,
+    /// the full name of the exception's type, then each line of its stack trace as the runtime wrote it.
+    /// Only the first 100 detail lines of a task are kept, whichever way they were added:
+    /// <see cref="DetailOmitted"/> counts the rest.
+    /// </remarks>
     public IReadOnlyList<string> Detail { get; internal init; } = [];
 
     /// <summary>

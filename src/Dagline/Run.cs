@@ -8,9 +8,15 @@ namespace Dagline;
 /// is a function of the order in which task bodies end.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A change and everything that follows from it are one step: the step publishes its events in order, each with
 /// the snapshot as of that event, before the next change is looked at. No consumer code runs under the lock:
 /// task bodies are started on the thread pool, and reporters are called by <see cref="ReporterDelivery"/>.
+/// </para>
+/// <para>
+/// What a running task reports through its <see cref="TaskContext"/> is a change like any other and is applied under the same lock.
+/// It goes straight onto the task as the snapshot shows it, and only a warning that is kept is published.
+/// </para>
 /// </remarks>
 internal sealed class Run : ISnapshotSource
 {
