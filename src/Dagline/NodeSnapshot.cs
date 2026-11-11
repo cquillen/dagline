@@ -72,7 +72,8 @@ public sealed record NodeSnapshot
 
     /// <summary>
     /// The one-line message of the task's outcome, or <see langword="null"/> when it has none and for a group.
-    /// For an unexpected failure it is the message of the exception that escaped the task body.
+    /// For an unexpected failure it is the message of the exception that escaped the task body, with each line break in it
+    /// replaced by a space.
     /// </summary>
     public string? Message { get; internal init; }
 

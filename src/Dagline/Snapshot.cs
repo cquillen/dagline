@@ -59,7 +59,9 @@ public sealed class Snapshot
     /// and kept, so reading it again costs nothing.
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> Failed
-        => LazyInitializer.EnsureInitialized(ref _failed, () => [.. _nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
+        => LazyInitializer.EnsureInitialized(
+            ref _failed,
+            () => [.. _nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
 
     /// <summary>
     /// What each failure blocked: one entry for each failed task that blocked at least one task, in declaration order

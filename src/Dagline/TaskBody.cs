@@ -13,7 +13,7 @@ namespace Dagline;
 /// <para>
 /// An exception that escapes the body fails that task and nothing else: the run carries on, and the exception is never thrown
 /// from <see cref="Runner.RunAsync"/>. The task ends <see cref="NodeStatus.Failed"/> as an unexpected failure
-/// (<see cref="FailureKind.Unexpected"/>), with the exception's message as its <see cref="NodeSnapshot.Message"/> and the exception's
+/// (<see cref="FailureKind.Unexpected"/>), with the exception's message, on one line, as its <see cref="NodeSnapshot.Message"/> and the exception's
 /// type and stack trace as its <see cref="NodeSnapshot.Detail"/>. It makes no difference whether the body throws before its first
 /// <see langword="await"/>, throws after it, or returns a task that is faulted or cancelled. A cancellation exception is treated
 /// like any other, since a run cannot be stopped.

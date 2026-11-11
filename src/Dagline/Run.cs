@@ -243,6 +243,10 @@ internal sealed class Run : ISnapshotSource
         Replace(task, settled, now);
     }
 
+    /// <summary>
+    /// Puts a task as it is after a change of status in place of the task as it was, counts the change in the run
+    /// and in every group that holds the task, and publishes it.
+    /// </summary>
     private void Replace(GraphTask task, NodeSnapshot changed, DateTimeOffset now)
     {
         var from = _nodes[task.Position].Status;

@@ -21,17 +21,20 @@ internal sealed record TaskOutcome
     public IReadOnlyList<string> Detail { get; private init; } = [];
 
     /// <summary>
-    /// The outcome of a task whose body let an exception escape: the exception's message is the task's message,
+    /// The outcome of a task whose body let an exception escape: the exception's message, on one line, is the task's message,
     /// and its type, then each line of its stack trace, are the detail lines.
     /// </summary>
     public static TaskOutcome UnexpectedFailure(Exception exception) => new(NodeStatus.Failed)
     {
         Failure = FailureKind.Unexpected,
-        Message = exception.Message,
+        Message = exception.Message.ReplaceLineEndings(" "),
         Detail = [exception.GetType().ToString(), .. StackTraceLines(exception)],
     };
 
-    /// <summary>The outcome of a task that will not run because <paramref name="cause"/>, a task it requires, failed.</summary>
+    /// <summary>
+    /// The outcome of a task that will not run because the task at <paramref name="cause"/> failed and this one requires it,
+    /// directly, through a group or through a chain of blocked tasks.
+    /// </summary>
     public static TaskOutcome Blocked(NodePath cause) => new(NodeStatus.Blocked) { BlockedBy = cause };
 
     private static string[] StackTraceLines(Exception exception)

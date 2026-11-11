@@ -77,6 +77,19 @@ public class FailureTests
     }
 
     [Test]
+    public async Task The_message_of_an_unexpected_failure_is_one_line_with_each_line_break_of_the_exception_message_replaced_by_a_space()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task(
+            "load",
+            _ => throw new InvalidOperationException("entity 7 has no owner\r\nentity 9 has no region\nentity 11 has no owner"));
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+
+        result.Snapshot[load.Path].Message.ShouldBe("entity 7 has no owner entity 9 has no region entity 11 has no owner");
+    }
+
+    [Test]
     public async Task A_task_that_has_not_failed_has_no_failure_kind_no_message_and_no_detail()
     {
         var builder = new GraphBuilder();
