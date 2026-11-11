@@ -307,7 +307,7 @@ public sealed class TaskContext
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
         ArgumentNullException.ThrowIfNull(check);
 
-        return CheckUntilDone(interval, check, text);
+        return CheckUntilDone(interval, check, text, CancellationToken);
     }
 
     /// <summary>Reads the status, and nothing else, of a node this task depends on.</summary>
@@ -339,15 +339,19 @@ public sealed class TaskContext
         return _run.StatusOf(_task, dependency);
     }
 
-    private async Task CheckUntilDone(TimeSpan interval, Func<CancellationToken, Task<bool>> check, string? text)
+    private async Task CheckUntilDone(
+        TimeSpan interval,
+        Func<CancellationToken, Task<bool>> check,
+        string? text,
+        CancellationToken cancellationToken)
     {
-        CancellationToken.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
 
         using (Waiting(text))
         {
-            while (!await check(CancellationToken).ConfigureAwait(false))
+            while (!await check(cancellationToken).ConfigureAwait(false))
             {
-                await Task.Delay(interval, TimeProvider, CancellationToken).ConfigureAwait(false);
+                await Task.Delay(interval, TimeProvider, cancellationToken).ConfigureAwait(false);
             }
         }
     }
