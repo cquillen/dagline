@@ -45,5 +45,83 @@ The kind of dependency that is met when the upstream has settled, whatever the o
 _Avoid_: Finally, always
 
 **Settled**:
-Said of a task that will not change status again in this run, and of a group once every task beneath it is settled. Provisional until the task statuses are defined.
+Said of a task whose status is succeeded, failed, blocked or cancelled: it will not change status again in this run. A group is settled once every task beneath it is.
 _Avoid_: Done, finished, complete
+
+### Status
+
+**Status**:
+Where a node is in its life during a run. A task has exactly one status at a time, and a group's status is derived from the tasks beneath it.
+_Avoid_: State, phase
+
+**Pending**:
+The status of a task that has a dependency not yet met and has not been blocked.
+_Avoid_: Waiting, not started, queued
+
+**Ready**:
+The status of a task whose dependencies are all met and which has not started yet.
+_Avoid_: Queued, scheduled, waiting
+
+**Running**:
+The status of a task whose work has started and not ended, including while it waits on an external system.
+_Avoid_: Active, in progress, waiting
+
+**Succeeded**:
+The status of a task that finished its work without a failure, in this run or an earlier one.
+_Avoid_: Done, passed, completed, skipped
+
+**Failed**:
+The status of a task whose work ended in a failure, whether the task reported a problem or broke unexpectedly.
+_Avoid_: Errored, crashed, faulted
+
+**Blocked**:
+The status of a task that will not run in this run because a node it requires failed or is itself blocked.
+_Avoid_: Skipped, cancelled
+
+**Cancelled**:
+The status of a task that was running and ended because the run was stopped.
+_Avoid_: Stopped, aborted, interrupted
+
+### Outcomes
+
+**Outcome**:
+What a settled task leaves behind: its status, a message, detail lines and warnings.
+_Avoid_: Result, output, return value
+
+**Warning**:
+A one-line note a task attaches to its own outcome. A warning never changes the task's status and never blocks a dependent.
+_Avoid_: Soft failure, issue, alert
+
+**Reported failure**:
+A failure the task declared itself, such as bad data it found or external work that ended in error.
+_Avoid_: Validation error, soft failure, expected failure
+
+**Unexpected failure**:
+A failure the task did not declare: its code broke.
+_Avoid_: Crash, fault, exception
+
+### Runs
+
+**Run**:
+One execution of a graph by one process.
+_Avoid_: Execution, session, job
+
+**Run outcome**:
+How a run ended: complete, incomplete or stopped.
+_Avoid_: Result, exit status
+
+**Complete**:
+The run outcome when every task has succeeded, in this run or an earlier one.
+_Avoid_: Successful, passed, done
+
+**Incomplete**:
+The run outcome when the operator did not ask the run to stop, it went as far as it could, and at least one task failed or was blocked.
+_Avoid_: Failed, partial
+
+**Stopped**:
+The run outcome when the operator asked the run to stop and at least one task had not succeeded.
+_Avoid_: Cancelled, aborted, interrupted
+
+**Progress**:
+What a running task reports about how far it has got: a line of text, a count, or both. Progress is live only and is never carried into a later run.
+_Avoid_: Sub-step, percent
