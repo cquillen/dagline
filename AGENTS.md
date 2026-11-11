@@ -15,6 +15,7 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 - `src/Dagline`: core engine, NuGet package
 - `src/Dagline.Spectre`: Spectre.Console UI, NuGet package
 - `tests/*.Tests`: one TUnit project per package
+- `tests/Dagline.TestSupport`: helpers the test projects share (recording reporter, paused task bodies, fake clock helper); holds no tests, never packed
 - `samples/`: runnable console apps
 - `docs/`: DocFX site, published to GitHub Pages
 

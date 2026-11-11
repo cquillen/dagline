@@ -1,0 +1,73 @@
+using System.Collections.Frozen;
+using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
+
+namespace Dagline;
+
+/// <summary>
+/// Everything Dagline knows about a run at one instant: every node of the graph with its status and the data attached to it.
+/// </summary>
+/// <remarks>
+/// A snapshot is immutable and consistent: it never changes after it is made, and everything in it is as of the same instant.
+/// It is safe to read from any thread and to keep after the run has ended.
+/// </remarks>
+public sealed class Snapshot
+{
+    private readonly ImmutableArray<NodeSnapshot> _nodes;
+    private readonly FrozenDictionary<NodePath, int> _positions;
+
+    internal Snapshot(
+        DateTimeOffset started,
+        DateTimeOffset? ended,
+        RunOutcome? outcome,
+        ImmutableArray<NodeSnapshot> nodes,
+        FrozenDictionary<NodePath, int> positions,
+        IReadOnlyDictionary<NodeStatus, int> counts)
+    {
+        Started = started;
+        Ended = ended;
+        Outcome = outcome;
+        _nodes = nodes;
+        Nodes = nodes;
+        _positions = positions;
+        Counts = counts;
+    }
+
+    /// <summary>When the run started, read from the run's <see cref="RunOptions.TimeProvider"/>.</summary>
+    public DateTimeOffset Started { get; }
+
+    /// <summary>When the run ended, or <see langword="null"/> while it has not.</summary>
+    public DateTimeOffset? Ended { get; }
+
+    /// <summary>How the run ended, or <see langword="null"/> while it has not.</summary>
+    public RunOutcome? Outcome { get; }
+
+    /// <summary>Every node of the graph, in declaration order.</summary>
+    public IReadOnlyList<NodeSnapshot> Nodes { get; }
+
+    /// <summary>
+    /// How many tasks have each status. Every status is present, with zero for a status no task has,
+    /// and the entries are in lifecycle order: pending, ready, running, succeeded, failed, blocked, cancelled.
+    /// </summary>
+    public IReadOnlyDictionary<NodeStatus, int> Counts { get; }
+
+    /// <summary>The node with the given path.</summary>
+    /// <param name="path">The path of a node of the graph.</param>
+    /// <returns>The node as it was at the instant of this snapshot.</returns>
+    /// <exception cref="KeyNotFoundException">The graph has no node with that path.</exception>
+    public NodeSnapshot this[NodePath path]
+        => TryGetNode(path, out var node)
+            ? node
+            : throw new KeyNotFoundException($"The graph has no node with the path '{path}'.");
+
+    /// <summary>Finds the node with the given path, if the graph has one.</summary>
+    /// <param name="path">The path to look for.</param>
+    /// <param name="node">The node as it was at the instant of this snapshot, when the method returns <see langword="true"/>.</param>
+    /// <returns><see langword="true"/> when the graph has a node with that path.</returns>
+    public bool TryGetNode(NodePath path, [MaybeNullWhen(false)] out NodeSnapshot node)
+    {
+        var found = _positions.TryGetValue(path, out var position);
+        node = found ? _nodes[position] : null;
+        return found;
+    }
+}
