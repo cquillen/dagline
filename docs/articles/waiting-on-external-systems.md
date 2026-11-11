@@ -46,7 +46,12 @@ There is no backoff and no jitter, and tasks that wait at the same interval are 
 
 Waiting is a marker on a running task and never a status. The task is running throughout: its dependents, its group and the run outcome are what they would be without the marker, and progress, warnings and the outcome work as usual. The task counts as waiting from the moment it enters the helper until the helper ends, however it ends, time spent inside a check included.
 
-Reporters see a <xref:Dagline.WaitingChanged> when the wait begins and another when it ends, and while it lasts the task's <xref:Dagline.NodeSnapshot> has <xref:Dagline.NodeSnapshot.WaitingSince> and <xref:Dagline.NodeSnapshot.WaitingText>. [Reporters](reporters.md#waiting-is-a-marker) has the details.
+Reporters see a <xref:Dagline.WaitingChanged> when the wait begins and another when it ends, and while it lasts the task's <xref:Dagline.NodeSnapshot> has <xref:Dagline.NodeSnapshot.WaitingSince> and <xref:Dagline.NodeSnapshot.WaitingText>. [Reporters](reporters.md#waiting-is-a-marker) has the details. The plain-text reporter prints a line at each end of the wait, so a long wait is visible in a log:
+
+```text
+2026-11-11T04:12:02Z waiting job: job 17 to finish
+2026-11-11T04:13:40Z waited job for 1m38s
+```
 
 ### A waiting task keeps its slots
 
