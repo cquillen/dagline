@@ -1,0 +1,1 @@
+T:System.Console;The core package never writes to the console. Write to a TextWriter the app hands over.
