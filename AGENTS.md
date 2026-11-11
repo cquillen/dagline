@@ -33,7 +33,7 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 
 ### Issue tracker
 
-GitHub Issues on `cquillen/dagline`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues for this repository, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
