@@ -5,8 +5,6 @@ namespace Dagline.Tests;
 
 public class TaskContextTests
 {
-    private const int Repeats = 50;
-
     [Test]
     public async Task A_task_body_receives_its_path_and_the_clock_of_the_run()
     {
@@ -49,10 +47,11 @@ public class TaskContextTests
     [Test]
     public async Task A_context_called_from_several_threads_at_once_loses_no_report()
     {
+        const int repeats = 50;
         const int threads = 4;
         const int reportsOfEachThread = 25;
 
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < repeats; repeat++)
         {
             var builder = new GraphBuilder();
             var load = builder.Task("load", async context =>

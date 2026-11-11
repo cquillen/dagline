@@ -6,14 +6,14 @@ namespace Dagline;
 internal static class TaskReportRules
 {
     /// <summary>How many warnings, and separately how many detail lines, are kept for one task. The rest are counted.</summary>
-    private const int Kept = 100;
+    private const int _kept = 100;
 
     /// <summary>
     /// Adds a warning to the task when it has fewer than the number kept, and otherwise counts it as omitted.
     /// A warning that was kept is one more entry in <see cref="NodeSnapshot.Warnings"/>.
     /// </summary>
     public static NodeSnapshot WithWarning(this NodeSnapshot task, string warning)
-        => task.Warnings.Count < Kept
+        => task.Warnings.Count < _kept
             ? task with { Warnings = [.. task.Warnings, OneLine(warning)] }
             : task with { WarningsOmitted = task.WarningsOmitted + 1 };
 
@@ -25,7 +25,7 @@ internal static class TaskReportRules
     public static NodeSnapshot WithDetail(this NodeSnapshot task, IEnumerable<string> texts)
     {
         string[] lines = [.. texts.SelectMany(Lines)];
-        var kept = Math.Min(lines.Length, Kept - task.Detail.Count);
+        var kept = Math.Min(lines.Length, _kept - task.Detail.Count);
 
         return task with
         {
