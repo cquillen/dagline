@@ -30,7 +30,7 @@ Every task starts pending. A task becomes ready once every dependency it has is 
 
 Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock.
 
-The call returns when the run has ended: no task is running, none is ready, and every reporter has been handed every event.
+The call returns when the run has ended: no task is running, none is ready, and every reporter that was not dropped has handled every event.
 
 The graph is not changed by a run. You can run the same built graph again, and every run starts with every task pending.
 
@@ -64,9 +64,11 @@ A reporter is something that presents a run to people while it happens. Each rep
 
 The list is read once when the run starts. A reporter cannot change the run, and Dagline itself never writes to the console: what your app prints is up to you and your reporters.
 
+The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on and how to write one.
+
 ## The result
 
-<xref:Dagline.RunResult> has two parts.
+<xref:Dagline.RunResult> has three parts.
 
 `Outcome` is the run outcome:
 
@@ -84,6 +86,8 @@ foreach (var node in result.Snapshot.Nodes)
 
 Console.WriteLine($"{result.Snapshot.Counts[NodeStatus.Succeeded]} tasks succeeded");
 ```
+
+`ReporterErrors` has one entry for each reporter that threw during the run and was dropped, naming the reporter, the event it was handling and the exception. It is empty when no reporter failed. A reporter's error is never thrown at your app and never changes the outcome: see [Reporters](reporters.md#when-a-reporter-fails).
 
 ## Exit codes
 
