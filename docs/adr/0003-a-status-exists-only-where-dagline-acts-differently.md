@@ -18,7 +18,7 @@ Two distinctions did earn a status:
 Two rules follow from the same principle and are easy to get backwards:
 
 1. **Blocked cascades at once.** A task becomes blocked the moment any task it requires fails or is blocked, even while its other upstreams are still running, and every task that requires it becomes blocked in the same instant. Requiring a group means requiring every task beneath it, so one failed or blocked member blocks the dependent at once, without waiting for the group to settle. An *after* dependency never blocks: a blocked upstream is settled, so the dependency is met.
-2. **Cancelled never blocks.** A task that requires a cancelled task stays pending. An *after* dependency on a cancelled task is met, as it is on any settled task. Blocked always means "an upstream failed" and never "the run was stopped". A task that ends by cancellation when nobody asked the run to stop has failed.
+2. **Cancelled never blocks.** Cancellation is never what makes a task blocked: a task that requires a cancelled task stays pending, unless something else it requires has failed or is blocked. An *after* dependency on a cancelled task is met, as it is on any settled task. Blocked always means "an upstream failed" and never "the run was stopped". A task that ends by cancellation when nobody asked the run to stop has failed.
 
 ## Considered options
 
