@@ -82,7 +82,7 @@ _Avoid_: Queued, scheduled, waiting
 
 **Running**:
 The status of a task whose work has started and not ended, including while it waits on an external system.
-_Avoid_: Active, in progress, waiting
+_Avoid_: Active, in progress
 
 **Succeeded**:
 The status of a task that finished its work without a failure, in this run or an earlier one.
@@ -151,3 +151,11 @@ _Avoid_: Cancelled, aborted, interrupted
 **Progress**:
 What a running task reports about how far it has got: a line of text, a count, or both. Progress is live only and is never carried into a later run.
 _Avoid_: Sub-step, percent
+
+**Waiting**:
+Said of a running task that has told Dagline it is idle until an external system changes. Waiting is not a status: the task is running, and only a reporter treats it differently.
+_Avoid_: Polling, sleeping, suspended, paused
+
+**Checkpoint**:
+A small piece of text a running task saves so that a later run continuing the same work can carry on from it instead of starting over. Dagline keeps it until the task succeeds.
+_Avoid_: Saved state, bookmark, handle, resume token
