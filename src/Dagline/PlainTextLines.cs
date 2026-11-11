@@ -24,13 +24,20 @@ internal static class PlainTextLines
     {
         RunStarted => [At(runEvent.At, $"run started: {CountsText.Tasks(snapshot.Counts.Values.Sum())}")],
         TaskStatusChanged { To: NodeStatus.Running } changed => [At(runEvent.At, $"started {changed.Node.Path}")],
-        TaskStatusChanged { To: NodeStatus.Succeeded } changed => [At(runEvent.At, Settled(changed.Node))],
+        TaskStatusChanged { To: NodeStatus.Succeeded or NodeStatus.Cancelled } changed => [At(runEvent.At, Settled(changed.Node))],
         TaskStatusChanged { To: NodeStatus.Failed } changed =>
         [
             At(runEvent.At, Settled(changed.Node)),
             .. Kept(changed.Node.Detail, changed.Node.DetailOmitted, _detailIndent),
         ],
         WarningAdded added => [At(runEvent.At, $"warning {added.Path}: {added.Warning}")],
+        WaitingChanged { Waiting: true } began => [At(runEvent.At, Began(began))],
+        WaitingChanged ended => [At(runEvent.At, $"waited {ended.Path} for {DurationText.Of(ended.At - ended.Since)}")],
+        StopRequested requested => [At(runEvent.At, Requested(requested.GracePeriod, Running(snapshot)))],
+        StoppedWaiting stopped =>
+        [
+            At(runEvent.At, $"stopped waiting: {Why(stopped.Reason)}, {CountsText.Tasks(Running(snapshot))} still running"),
+        ],
         GroupSettled settled =>
         [
             At(runEvent.At, $"group {settled.Path} {NameText.Of(settled.Status)}: {CountsText.PerStatus(settled.Counts)}"),
@@ -61,6 +68,26 @@ internal static class PlainTextLines
 
     private static string Counts(Snapshot snapshot) => $"tasks: {CountsText.PerStatus(snapshot.Counts)}";
 
+    private static int Running(Snapshot snapshot) => snapshot.Counts.GetValueOrDefault(NodeStatus.Running);
+
+    private static string Began(WaitingChanged began)
+        => began.Text is { } text
+            // The text is kept as the task gave it, line breaks included, and here it has one line to fit on.
+            ? $"waiting {began.Path}: {TaskReportRules.OneLine(text)}"
+            : $"waiting {began.Path}";
+
+    private static string Requested(TimeSpan gracePeriod, int running)
+        => gracePeriod == Timeout.InfiniteTimeSpan
+            ? $"stop requested: waiting for {CountsText.Tasks(running, "running")}"
+            : $"stop requested: waiting up to {DurationText.Of(gracePeriod)} for {CountsText.Tasks(running, "running")}";
+
+    private static string Why(StoppedWaitingReason reason) => reason switch
+    {
+        StoppedWaitingReason.SecondStop => "second stop",
+        StoppedWaitingReason.GracePeriodOver => "grace period over",
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
+    };
+
     private static string Settled(NodeSnapshot task)
     {
         var unexpected = task.Failure is FailureKind.Unexpected ? $" ({NameText.Of(FailureKind.Unexpected)})" : "";
@@ -72,25 +99,30 @@ internal static class PlainTextLines
     private static string Ran(NodeSnapshot task) => DurationText.Of((task.Settled - task.Started) ?? TimeSpan.Zero);
 
     private static IEnumerable<string> Summary(Snapshot snapshot)
-        => [Counts(snapshot), .. Failures(snapshot), .. Warnings(snapshot)];
-
-    private static IEnumerable<string> Failures(Snapshot snapshot)
     {
-        if (snapshot.Failed.Count == 0)
-        {
-            return [];
-        }
-
         var blockedBy = snapshot.Blocked.ToDictionary(blocked => blocked.Cause);
 
         return
         [
-            Invariant($"failed: {snapshot.Failed.Count}"),
-            .. snapshot.Failed.SelectMany(task => Failure(task, blockedBy.GetValueOrDefault(task.Path))),
+            Counts(snapshot),
+            .. Section("failed", snapshot.Failed, task => Entry(task, blockedBy.GetValueOrDefault(task.Path))),
+            .. Section("cancelled", snapshot.Cancelled, task => Entry(task, blocked: null)),
+            .. Warnings(snapshot),
         ];
     }
 
-    private static IEnumerable<string> Failure(NodeSnapshot task, BlockedTasks? blocked)
+    /// <summary>A heading with the number of tasks, then each task's entry. Nothing at all when there are no tasks.</summary>
+    private static IEnumerable<string> Section(
+        string heading,
+        IReadOnlyList<NodeSnapshot> tasks,
+        Func<NodeSnapshot, IEnumerable<string>> entry)
+        => tasks.Count == 0 ? [] : [Invariant($"{heading}: {tasks.Count}"), .. tasks.SelectMany(entry)];
+
+    /// <summary>
+    /// A failed or cancelled task in the summary: the kind of failure if it failed, then when it settled, how long it ran,
+    /// its progress, message and detail lines, and what it blocked.
+    /// </summary>
+    private static IEnumerable<string> Entry(NodeSnapshot task, BlockedTasks? blocked)
     {
         var kind = task.Failure is { } failure ? $" ({NameText.Of(failure)})" : "";
         var settled = task.Settled is { } at ? $" at {Timestamp(at)}" : "";

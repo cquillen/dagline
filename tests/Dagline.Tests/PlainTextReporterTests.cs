@@ -85,6 +85,78 @@ public class PlainTextReporterTests
     }
 
     [Test]
+    public async Task A_stopped_run_of_the_stop_reference_graph_prints_the_stop_reference_output_line_for_line()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var fake = new FakeTimeProvider(_runStart);
+            var clock = new WatchedClock(fake);
+            var writer = new StringWriter();
+            var a = new PausedBody();
+            var slow = new PausedBody();
+            var jobStart = new PausedBody();
+            var builder = new GraphBuilder();
+            var aTask = builder.Task("a", a.Body);
+            var job = builder.Task("job", async context =>
+            {
+                await jobStart.Body(context);
+                await context.WaitUntil(TimeSpan.FromMinutes(2), _ => Task.FromResult(false), "job 17 to finish");
+            }).Requires(aTask);
+            builder.Task("slow", slow.Body);
+            builder.Task("tidy", _ => Task.CompletedTask).Requires(job);
+            builder.Task("report", _ => Task.CompletedTask).After(job);
+            var stop = new StopSignal();
+            var reporter = new WatchedReporter(new PlainTextReporter(writer, fake));
+
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] },
+                stop);
+            await a.Started;
+            await slow.Started;
+            fake.Advance(TimeSpan.FromSeconds(1));
+            a.Release();
+            await jobStart.Started;
+            fake.Advance(TimeSpan.FromSeconds(1));
+            jobStart.Release();
+            await reporter.Handled("waiting job: job 17 to finish");
+            (await clock.NextTimerAsync()).ShouldBe(TimeSpan.FromMinutes(2));
+            fake.Advance(TimeSpan.FromMinutes(1));
+            fake.Advance(TimeSpan.FromSeconds(38));
+            stop.Request();
+            await reporter.Handled("job: running -> cancelled");
+            (await clock.NextTimerAsync()).ShouldBe(TimeSpan.FromSeconds(30));
+            fake.Advance(TimeSpan.FromSeconds(30));
+            var result = await run;
+            slow.Release();
+
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
+            result.ReporterErrors.ShouldBeEmpty();
+            Lines(writer).ShouldBe(
+            [
+                "2026-11-11T04:12:00Z run started: 5 tasks",
+                "2026-11-11T04:12:00Z started a",
+                "2026-11-11T04:12:00Z started slow",
+                "2026-11-11T04:12:01Z succeeded a in 1.0s",
+                "2026-11-11T04:12:01Z started job",
+                "2026-11-11T04:12:02Z waiting job: job 17 to finish",
+                "2026-11-11T04:13:02Z tasks: 2 pending, 2 running, 1 succeeded",
+                "2026-11-11T04:13:40Z stop requested: waiting up to 30.0s for 2 running tasks",
+                "2026-11-11T04:13:40Z waited job for 1m38s",
+                "2026-11-11T04:13:40Z cancelled job in 1m39s",
+                "2026-11-11T04:14:10Z stopped waiting: grace period over, 1 task still running",
+                "2026-11-11T04:14:10Z cancelled slow in 2m10s: still running when the run stopped waiting",
+                "2026-11-11T04:14:10Z run ended: stopped in 2m10s",
+                "tasks: 1 pending, 1 ready, 1 succeeded, 2 cancelled",
+                "cancelled: 2",
+                "  job at 2026-11-11T04:13:40Z after 1m39s",
+                "  slow at 2026-11-11T04:14:10Z after 2m10s",
+                "    message: still running when the run stopped waiting",
+            ]);
+        }
+    }
+
+    [Test]
     public async Task A_complete_run_with_no_warnings_prints_each_task_starting_and_settling_and_only_the_counts_as_its_summary()
     {
         var clock = new FakeTimeProvider(_runStart);

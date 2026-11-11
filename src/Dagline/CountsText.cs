@@ -8,7 +8,12 @@ internal static class CountsText
     private static readonly NodeStatus[] _lifecycleOrder = Enum.GetValues<NodeStatus>();
 
     /// <summary>A number of tasks, as in <c>1 task</c> or <c>5 tasks</c>.</summary>
-    public static string Tasks(int count) => Invariant($"{count} {(count == 1 ? "task" : "tasks")}");
+    public static string Tasks(int count) => Invariant($"{count} {Noun(count)}");
+
+    /// <summary>A number of tasks of one kind, as in <c>1 running task</c> or <c>2 running tasks</c>.</summary>
+    public static string Tasks(int count, string kind) => Invariant($"{count} {kind} {Noun(count)}");
+
+    private static string Noun(int count) => count == 1 ? "task" : "tasks";
 
     /// <summary>
     /// A list of counts, as in <c>1 running, 2 succeeded</c>: each status that has at least one task, in lifecycle order.
