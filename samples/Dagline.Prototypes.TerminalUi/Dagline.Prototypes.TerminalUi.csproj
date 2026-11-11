@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- PROTOTYPE. Throwaway code for the "Terminal UI: what the operator sees" ticket. Never merge. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RollForward>Major</RollForward>
+    <RootNamespace>Dagline.Prototypes.TerminalUi</RootNamespace>
+    <NoWarn>$(NoWarn);CA1305;CA1304;CA1311;CA1310;CA1822;CA1859;IDE0011;CA5394;CA1861</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" />
+  </ItemGroup>
+
+</Project>
