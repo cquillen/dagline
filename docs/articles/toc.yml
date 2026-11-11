@@ -1,0 +1,8 @@
+- name: Getting started
+  href: getting-started.md
+- name: Concepts
+  href: concepts.md
+- name: Terminal UI
+  href: terminal-ui.md
+- name: Contributing
+  href: contributing.md

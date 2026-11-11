@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Spectre.Console terminal UI for Dagline: live views of queued, running and completed tasks and their progress.</Description>
+    <PackageTags>$(PackageTags);spectre-console</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dagline\Dagline.csproj" />
+    <PackageReference Include="Spectre.Console" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dagline.Spectre.Tests" />
+  </ItemGroup>
+
+</Project>

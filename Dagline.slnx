@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Dagline/Dagline.csproj" />
+    <Project Path="src/Dagline.Spectre/Dagline.Spectre.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Dagline.Tests/Dagline.Tests.csproj" />
+    <Project Path="tests/Dagline.Spectre.Tests/Dagline.Spectre.Tests.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Dagline.Samples.Basic/Dagline.Samples.Basic.csproj" />
+  </Folder>
+</Solution>

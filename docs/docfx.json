@@ -1,0 +1,40 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../src",
+          "files": ["**/*.csproj"]
+        }
+      ],
+      "dest": "api",
+      "properties": {
+        "Configuration": "Release"
+      }
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": ["**/*.{md,yml}"],
+        "exclude": ["_site/**"]
+      }
+    ],
+    "output": "_site",
+    "template": ["default", "modern"],
+    "globalMetadata": {
+      "_appName": "Dagline",
+      "_appTitle": "Dagline",
+      "_appFooter": "Dagline · MIT License",
+      "_enableSearch": true,
+      "_gitContribute": {
+        "repo": "https://github.com/cquillen/dagline",
+        "branch": "main"
+      }
+    },
+    "sitemap": {
+      "baseUrl": "https://cquillen.github.io/dagline/"
+    }
+  }
+}

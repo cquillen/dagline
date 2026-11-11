@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>A lightweight, in-process library for running directed acyclic graphs (DAGs) of tasks in .NET command-line apps.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dagline.Tests" />
+  </ItemGroup>
+
+</Project>

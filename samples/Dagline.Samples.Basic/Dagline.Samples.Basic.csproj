@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dagline\Dagline.csproj" />
+    <ProjectReference Include="..\..\src\Dagline.Spectre\Dagline.Spectre.csproj" />
+  </ItemGroup>
+
+</Project>

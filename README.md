@@ -1,0 +1,36 @@
+# Dagline
+
+[![CI](https://github.com/cquillen/dagline/actions/workflows/ci.yml/badge.svg)](https://github.com/cquillen/dagline/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/vpre/Dagline.svg)](https://www.nuget.org/packages/Dagline)
+[![Docs](https://img.shields.io/badge/docs-cquillen.github.io%2Fdagline-blue)](https://cquillen.github.io/dagline/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+A lightweight, in-process .NET library for running directed acyclic graphs (DAGs) of tasks in command-line apps, with live progress in the terminal.
+
+Think Apache Airflow, but purely local: no scheduler service, no database, no web server. You define tasks and their dependencies in C#, and Dagline runs them in dependency order inside your console app while a terminal UI shows what's queued, running and done.
+
+> **Status:** early development. The API is not yet usable and will change.
+
+## Packages
+
+| Package | Description |
+| --- | --- |
+| [`Dagline`](https://www.nuget.org/packages/Dagline) | Core engine: define, schedule and run task graphs. No UI dependencies. |
+| [`Dagline.Spectre`](https://www.nuget.org/packages/Dagline.Spectre) | Live terminal UI built on [Spectre.Console](https://spectreconsole.net/). |
+
+```shell
+dotnet add package Dagline
+dotnet add package Dagline.Spectre
+```
+
+## Documentation
+
+Guides and API reference: **https://cquillen.github.io/dagline/**
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Craig Quillen

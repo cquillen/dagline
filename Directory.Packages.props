@@ -1,0 +1,20 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Build -->
+    <PackageVersion Include="MinVer" Version="8.0.0" />
+
+    <!-- Runtime -->
+    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
+
+    <!-- Tests -->
+    <PackageVersion Include="TUnit" Version="1.83.0" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>
