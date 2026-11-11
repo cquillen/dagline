@@ -15,6 +15,8 @@ public sealed class Snapshot
 {
     private readonly ImmutableArray<NodeSnapshot> _nodes;
     private readonly FrozenDictionary<NodePath, int> _positions;
+    private IReadOnlyList<NodeSnapshot>? _failed;
+    private IReadOnlyList<BlockedTasks>? _blocked;
 
     internal Snapshot(
         DateTimeOffset started,
@@ -50,6 +52,25 @@ public sealed class Snapshot
     /// and the entries are in lifecycle order: pending, ready, running, succeeded, failed, blocked, cancelled.
     /// </summary>
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; }
+
+    /// <summary>Every failed task, in declaration order. Empty when no task has failed.</summary>
+    /// <remarks>
+    /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read
+    /// and kept, so reading it again costs nothing.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> Failed
+        => LazyInitializer.EnsureInitialized(ref _failed, () => [.. _nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
+
+    /// <summary>
+    /// What each failure blocked: one entry for each failed task that blocked at least one task, in declaration order
+    /// of the failed task. Empty when no task is blocked.
+    /// </summary>
+    /// <remarks>
+    /// A failed task that blocked nothing has no entry, and a blocked task is in exactly one entry: that of the failed task
+    /// its <see cref="NodeSnapshot.BlockedBy"/> names. The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<BlockedTasks> Blocked
+        => LazyInitializer.EnsureInitialized(ref _blocked, () => BlockedTasks.Among(_nodes, _positions));
 
     /// <summary>The node with the given path.</summary>
     /// <param name="path">The path of a node of the graph.</param>
