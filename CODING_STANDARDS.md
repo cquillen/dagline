@@ -37,6 +37,16 @@ A departure from the Microsoft guidelines is a judgement call.
 - **State is passed in.** A type receives what it depends on through its constructor or parameters. A mutable `static` is a breach.
 - **Time is injected.** Code under `src/` takes time from an injected `TimeProvider`: the current time, delays, sleeps and elapsed durations alike. `src/BannedSymbols.txt` lists the clock APIs the build rejects.
 
+## SOLID
+
+Design follows the SOLID principles. Each one applies here through a rule a reviewer can check:
+
+- **Single responsibility** is _One reason to change_.
+- **Open/closed** (judgement). Behaviour that varies by consumer or by reporter sits behind an extension point, so a new variant adds a type and leaves the engine untouched. For a closed set, _One answer per question_ keeps the change to one place.
+- **Liskov substitution.** An implementation honours the whole contract it implements: it accepts every input the contract allows and provides every member. A member that throws `NotSupportedException` or `NotImplementedException` is a breach.
+- **Interface segregation** (judgement). An interface holds only the members every implementer provides and its callers use together. One whose callers each use a different half is ready to split.
+- **Dependency inversion** is _State is passed in_, within the limit of _Abstractions are earned_: a type depends on an abstraction where one is earned, and on a sealed concrete type otherwise.
+
 ## Async and failure
 
 - **Async all the way.** Asynchronous work is awaited. `.Result`, `.Wait()`, `GetAwaiter().GetResult()` and `async void` are breaches.
