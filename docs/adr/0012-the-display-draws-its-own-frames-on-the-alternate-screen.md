@@ -26,7 +26,7 @@ Five rules follow, and a reader could reasonably expect each to be otherwise:
 
 ## Consequences
 
-- While a run is in progress nothing is written to the scrollback, and the operator cannot scroll back through the run. A process that is killed outright leaves nothing on the screen. The journal is the record, not the terminal.
+- While a run is in progress nothing is written to the scrollback, and the operator cannot scroll back through the run. A process that is killed outright cannot restore the terminal: the last frame stays where it was drawn, the cursor stays hidden, and a terminal that honoured the request stays on the alternate screen until it is reset. Either way nothing of the run is in the scrollback. The journal is the record, not the terminal.
 - The app's own logging has to go to a file while the display is up.
 - A frame can be tested as lines of text for a given snapshot and size, with no terminal.
 - `Dagline.Spectre` depends on Spectre.Console for styling only. A breaking change to its live display does not reach us.
