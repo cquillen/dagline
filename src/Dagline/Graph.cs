@@ -98,4 +98,7 @@ public sealed class Graph : IReadOnlyList<Node>
 
     /// <summary>The task at a position among the nodes of the graph.</summary>
     internal GraphTask TaskAt(int position) => (GraphTask)Nodes[position];
+
+    /// <summary>The group at a position among the nodes of the graph.</summary>
+    internal GraphGroup GroupAt(int position) => (GraphGroup)Nodes[position];
 }

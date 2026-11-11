@@ -21,6 +21,7 @@ internal sealed class Run : ISnapshotSource
     private readonly NodeSnapshot[] _nodes;
     private readonly StatusCounts _counts;
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
+    private readonly List<GraphGroup> _settledInThisStep = [];
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
     private DateTimeOffset? _endedAt;
@@ -67,11 +68,13 @@ internal sealed class Run : ISnapshotSource
 
     /// <summary>
     /// Applies what follows from one change, causes before effects: the tasks among <paramref name="waiting"/>
-    /// whose dependencies are now met become ready, the ready tasks start, and the run ends when nothing is left to do.
+    /// whose dependencies are now met become ready, the groups that the step settled are announced,
+    /// the ready tasks start, and the run ends when nothing is left to do.
     /// </summary>
     private void Advance(IEnumerable<GraphTask> waiting, DateTimeOffset now)
     {
         var ready = MakeReady(waiting, now);
+        AnnounceSettledGroups(now);
         StartAll(ready, now);
 
         if (_counts[NodeStatus.Running] == 0 && _counts[NodeStatus.Ready] == 0)
@@ -93,6 +96,18 @@ internal sealed class Run : ISnapshotSource
 
     private bool DependenciesAreMet(GraphTask task)
         => task.Upstreams.All(upstream => _nodes[upstream.Position].Status.Meets(upstream.Kind));
+
+    /// <summary>Publishes one event for each group the current step settled: the deepest first, then in declaration order.</summary>
+    private void AnnounceSettledGroups(DateTimeOffset now)
+    {
+        foreach (var group in _settledInThisStep.OrderByDescending(group => group.Depth).ThenBy(group => group.Position))
+        {
+            var settled = _nodes[group.Position];
+            Publish(new GroupSettled(now, group.Path, settled.Status, settled.Counts));
+        }
+
+        _settledInThisStep.Clear();
+    }
 
     private void StartAll(List<GraphTask> ready, DateTimeOffset now)
     {
@@ -133,7 +148,7 @@ internal sealed class Run : ISnapshotSource
 
         _nodes[task.Position] = after;
         _counts.Move(before.Status, to);
-        foreach (var group in task.Groups)
+        foreach (var group in task.Groups.Select(_graph.GroupAt))
         {
             MoveBeneath(group, before.Status, to);
         }
@@ -141,12 +156,21 @@ internal sealed class Run : ISnapshotSource
         Publish(new TaskStatusChanged(now, after, before.Status, to));
     }
 
-    /// <summary>Counts one task's change of status in a group that holds it, and derives the group's status again.</summary>
-    private void MoveBeneath(int group, NodeStatus from, NodeStatus to)
+    /// <summary>
+    /// Counts one task's change of status in a group that holds it, and derives the group's status again.
+    /// A group has no settled task left to move, so one that comes out settled has settled in this step.
+    /// </summary>
+    private void MoveBeneath(GraphGroup group, NodeStatus from, NodeStatus to)
     {
-        var counts = _groupCounts[group];
+        var counts = _groupCounts[group.Position];
         counts.Move(from, to);
-        _nodes[group] = _nodes[group] with { Status = counts.GroupStatus, Counts = counts.ToDictionary() };
+        var status = counts.GroupStatus;
+        _nodes[group.Position] = _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() };
+
+        if (status.IsSettled())
+        {
+            _settledInThisStep.Add(group);
+        }
     }
 
     private NodeSnapshot AtTheStart(GraphNode node)

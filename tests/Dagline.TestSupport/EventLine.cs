@@ -7,13 +7,14 @@ namespace Dagline.TestSupport;
 public static class EventLine
 {
     /// <summary>
-    /// <c>run started</c>, <c>prepare: pending -> ready</c> or <c>run ended: complete</c>.
+    /// <c>run started</c>, <c>prepare: pending -> ready</c>, <c>group shard-1 settled: succeeded</c> or <c>run ended: complete</c>.
     /// A kind of event this does not know is written with its own <c>ToString</c>.
     /// </summary>
     public static string Describe(RunEvent runEvent) => runEvent switch
     {
         RunStarted => "run started",
         TaskStatusChanged changed => $"{changed.Node.Path}: {Lower(changed.From)} -> {Lower(changed.To)}",
+        GroupSettled settled => $"group {settled.Path} settled: {Lower(settled.Status)}",
         RunEnded ended => $"run ended: {Lower(ended.Outcome)}",
         _ => runEvent.ToString(),
     };
