@@ -9,6 +9,16 @@ namespace Dagline;
 public sealed record RunOptions
 {
     /// <summary>
+    /// The cap: the most tasks that may be running at once in the run, whatever limits they hold. The default is 16.
+    /// </summary>
+    /// <remarks>
+    /// The cap behaves as a limit that every task holds: a task takes one slot of it when it starts and gives the slot back
+    /// when it settles. A ready task that finds the cap reached stays ready until a task settles.
+    /// The default is fixed, not derived from the processor count, since a task mostly waits on other systems.
+    /// </remarks>
+    public int Cap { get; init; } = 16;
+
+    /// <summary>
     /// The clock of the run. Event times, each task's start and settle times, and the run's own start and end are read from it,
     /// and every task body receives it on its context. The default is <see cref="TimeProvider.System"/>.
     /// </summary>
