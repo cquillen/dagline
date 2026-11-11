@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 
 namespace Dagline;
@@ -29,10 +30,14 @@ public sealed class Graph
                 [.. declaredOn[task].Select(dependency => new Upstream(positions[dependency.Upstream], dependency.Kind))],
                 [.. dependentsOf[position].Distinct().Order()])),
         ];
+        Positions = Tasks.ToFrozenDictionary(task => task.Path, task => task.Position);
     }
 
     /// <summary>Every task, in declaration order.</summary>
     internal ImmutableArray<GraphTask> Tasks { get; }
+
+    /// <summary>Where each node is in declaration order.</summary>
+    internal FrozenDictionary<NodePath, int> Positions { get; }
 
     /// <summary>The task at a position among the nodes of the graph.</summary>
     internal GraphTask TaskAt(int position) => Tasks[position];

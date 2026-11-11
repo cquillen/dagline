@@ -16,6 +16,7 @@ internal sealed class Run : ISnapshotSource
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
     private DateTimeOffset? _endedAt;
+    private RunOutcome? _outcome;
     private volatile Snapshot _current;
 
     public Run(Graph graph, TimeProvider timeProvider, ReporterDelivery delivery)
@@ -23,7 +24,7 @@ internal sealed class Run : ISnapshotSource
         _graph = graph;
         _timeProvider = timeProvider;
         _delivery = delivery;
-        _nodes = [.. graph.Tasks.Select(task => new NodeSnapshot(task.Path))];
+        _nodes = [.. graph.Tasks.Select(task => new NodeSnapshot(task.Path, task.Dependencies))];
         _counts = new StatusCounts(pending: graph.Tasks.Length);
         _startedAt = timeProvider.GetUtcNow();
         _current = TakeSnapshot();
@@ -102,6 +103,7 @@ internal sealed class Run : ISnapshotSource
     {
         var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete : RunOutcome.Incomplete;
         _endedAt = now;
+        _outcome = outcome;
         Publish(new RunEnded(now, outcome));
         _delivery.Complete();
         _ended.SetResult(outcome);
@@ -128,5 +130,5 @@ internal sealed class Run : ISnapshotSource
         _delivery.Publish(runEvent, _current);
     }
 
-    private Snapshot TakeSnapshot() => new(_startedAt, _endedAt, [.. _nodes]);
+    private Snapshot TakeSnapshot() => new(_startedAt, _endedAt, _outcome, [.. _nodes], _graph.Positions, _counts.ToDictionary());
 }

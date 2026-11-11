@@ -9,6 +9,13 @@ public sealed class RecordingReporter : IReporter
     private readonly Lock _gate = new();
     private readonly List<RunEvent> _events = [];
     private readonly List<Snapshot> _snapshots = [];
+    private readonly TaskCompletionSource<ISnapshotSource> _source = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Completes once the reporter has been handed <see cref="RunStarted"/>, with the snapshot source that event carries.
+    /// A test reads <see cref="ISnapshotSource.Current"/> from it while task bodies are paused.
+    /// </summary>
+    public Task<ISnapshotSource> Source => _source.Task;
 
     /// <summary>The events received so far, in the order received.</summary>
     public IReadOnlyList<RunEvent> Events
@@ -44,6 +51,11 @@ public sealed class RecordingReporter : IReporter
         {
             _events.Add(runEvent);
             _snapshots.Add(snapshot);
+        }
+
+        if (runEvent is RunStarted started)
+        {
+            _source.TrySetResult(started.Source);
         }
 
         return ValueTask.CompletedTask;
