@@ -1,5 +1,4 @@
 using System.Collections.Frozen;
-using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Dagline;
@@ -13,7 +12,6 @@ namespace Dagline;
 /// </remarks>
 public sealed class Snapshot
 {
-    private readonly ImmutableArray<NodeSnapshot> _nodes;
     private readonly FrozenDictionary<NodePath, int> _positions;
     private IReadOnlyList<NodeSnapshot>? _failed;
     private IReadOnlyList<BlockedTasks>? _blocked;
@@ -23,7 +21,7 @@ public sealed class Snapshot
         DateTimeOffset started,
         DateTimeOffset? ended,
         RunOutcome? outcome,
-        ImmutableArray<NodeSnapshot> nodes,
+        ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
         IReadOnlyDictionary<NodeStatus, int> counts,
         LimitUse cap,
@@ -32,7 +30,6 @@ public sealed class Snapshot
         Started = started;
         Ended = ended;
         Outcome = outcome;
-        _nodes = nodes;
         Nodes = nodes;
         _positions = positions;
         Counts = counts;
@@ -83,7 +80,7 @@ public sealed class Snapshot
     public IReadOnlyList<NodeSnapshot> Failed
         => LazyInitializer.EnsureInitialized(
             ref _failed,
-            () => [.. _nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
+            () => [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
 
     /// <summary>
     /// What each failure blocked: one entry for each failed task that blocked at least one task, in declaration order
@@ -94,7 +91,7 @@ public sealed class Snapshot
     /// its <see cref="NodeSnapshot.BlockedBy"/> names. The list is worked out on the first read and kept.
     /// </remarks>
     public IReadOnlyList<BlockedTasks> Blocked
-        => LazyInitializer.EnsureInitialized(ref _blocked, () => BlockedTasks.Among(_nodes, _positions));
+        => LazyInitializer.EnsureInitialized(ref _blocked, () => BlockedTasks.Among(Nodes, _positions));
 
     /// <summary>
     /// How many warnings the tasks of the run have added so far, whatever the status of each task: those kept in
@@ -108,7 +105,7 @@ public sealed class Snapshot
     /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> WithWarnings
-        => LazyInitializer.EnsureInitialized(ref _withWarnings, () => [.. _nodes.Where(node => node.Warnings.Count > 0)]);
+        => LazyInitializer.EnsureInitialized(ref _withWarnings, () => [.. Nodes.Where(node => node.Warnings.Count > 0)]);
 
     /// <summary>The node with the given path.</summary>
     /// <param name="path">The path of a node of the graph.</param>
@@ -126,7 +123,7 @@ public sealed class Snapshot
     public bool TryGetNode(NodePath path, [MaybeNullWhen(false)] out NodeSnapshot node)
     {
         var found = _positions.TryGetValue(path, out var position);
-        node = found ? _nodes[position] : null;
+        node = found ? Nodes[position] : null;
         return found;
     }
 }

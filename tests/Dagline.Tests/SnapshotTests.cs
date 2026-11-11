@@ -96,6 +96,59 @@ public class SnapshotTests
     }
 
     [Test]
+    public async Task Every_snapshot_of_a_run_of_many_nodes_stays_as_of_its_event_once_the_run_has_moved_on()
+    {
+        var builder = new GraphBuilder();
+        for (var shard = 1; shard <= 12; shard++)
+        {
+            var shardGroup = builder.Group($"shard-{shard}");
+            for (var tenant = 1; tenant <= 25; tenant++)
+            {
+                var fails = tenant == 7;
+                shardGroup.Group($"tenant-{tenant}").Task(
+                    "load",
+                    _ => fails ? throw new InvalidOperationException("no entities to load") : Task.CompletedTask);
+            }
+
+            builder.Task($"publish-{shard}", _ => Task.CompletedTask).Requires(shardGroup);
+        }
+
+        var reporter = new RecordingReporter();
+
+        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        // Replaying the events up to each one says what the snapshot handed with it must show, however far the run went on after it:
+        // each task as its last event left it, and each group counting the tasks beneath it as those events left them.
+        var atTheStart = reporter.Snapshots[0];
+        var tasks = atTheStart.Nodes.Where(node => !node.IsGroup).ToDictionary(task => task.Path);
+        var beneath = atTheStart.Nodes.Where(node => node.IsGroup).ToDictionary(
+            group => group.Path,
+            group => group.Counts.ToDictionary(count => count.Key, count => count.Value));
+        List<string> wrong = [];
+        foreach (var (runEvent, snapshot) in reporter.Events.Zip(reporter.Snapshots))
+        {
+            if (runEvent is TaskStatusChanged changed)
+            {
+                tasks[changed.Node.Path] = changed.Node;
+                for (var group = changed.Node.Path.Parent; group is not null; group = group.Value.Parent)
+                {
+                    beneath[group.Value][changed.From]--;
+                    beneath[group.Value][changed.To]++;
+                }
+            }
+
+            wrong.AddRange(snapshot.Nodes
+                .Where(node => node.IsGroup
+                    ? !beneath[node.Path].All(count => node.Counts[count.Key] == count.Value)
+                    : !ReferenceEquals(node, tasks[node.Path]))
+                .Select(node => $"{node.Path} in the snapshot handed with '{EventLine.Describe(runEvent)}'"));
+        }
+
+        reporter.Snapshots.Count.ShouldBeGreaterThan(1_000);
+        wrong.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task A_node_is_found_in_a_snapshot_by_its_path()
     {
         var builder = new GraphBuilder();

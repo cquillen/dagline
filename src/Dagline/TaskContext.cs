@@ -38,9 +38,9 @@ namespace Dagline;
 public sealed class TaskContext
 {
     private readonly Run _run;
-    private readonly GraphTask _task;
+    private readonly BuiltTask _task;
 
-    internal TaskContext(Run run, GraphTask task, TimeProvider timeProvider)
+    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider)
     {
         _run = run;
         _task = task;
@@ -60,7 +60,8 @@ public sealed class TaskContext
     /// <param name="text">The new status text, which replaces the last one. <see langword="null"/> clears it.</param>
     /// <remarks>
     /// The text shows as <see cref="NodeSnapshot.StatusText"/>. It is independent of the count: setting one leaves the other as it was.
-    /// Progress is never an event, so calling this often costs a reporter nothing. The text is kept as given.
+    /// Progress is never an event, so calling this often costs a reporter nothing. The text is kept as given, line breaks included.
+    /// A reporter decides how to show them: <see cref="PlainTextReporter"/> prints each as a space.
     /// </remarks>
     public void Status(string? text) => _run.Report(_task, task => task.WithStatusText(text));
 
@@ -221,10 +222,6 @@ public sealed class TaskContext
     private static void ThrowIfAnyNull(string[] lines, string paramName)
     {
         ArgumentNullException.ThrowIfNull(lines, paramName);
-
-        if (lines.Contains(null))
-        {
-            throw new ArgumentException("A line is null.", paramName);
-        }
+        Arguments.ThrowIfAnyNull(lines, "A line is null.", paramName);
     }
 }

@@ -36,5 +36,5 @@ internal sealed class ChildNodes(GraphBuilder builder, GroupNode? parent)
     /// depth first, each group before its own children, and each scope's children in the order added to it.
     /// </summary>
     public IEnumerable<Node> InDeclarationOrder()
-        => _nodes.SelectMany(node => node is GroupNode group ? group.Children.InDeclarationOrder().Prepend(node) : [node]);
+        => _nodes.SelectMany(node => node.NodesBeneath().Prepend(node));
 }

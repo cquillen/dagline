@@ -12,4 +12,15 @@ namespace Dagline;
 /// <param name="Exception">
 /// What the reporter threw from <see cref="IReporter.OnEventAsync"/>, or what the <see cref="ValueTask"/> it returned faulted with.
 /// </param>
-public sealed record ReporterError(IReporter Reporter, RunEvent? Event, Exception Exception);
+public sealed record ReporterError(IReporter Reporter, RunEvent? Event, Exception Exception)
+{
+    /// <summary>The reporter that failed, as it was given in <see cref="RunOptions.Reporters"/>.</summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public IReporter Reporter { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Reporter);
+
+    /// <summary>
+    /// What the reporter threw from <see cref="IReporter.OnEventAsync"/>, or what the <see cref="ValueTask"/> it returned faulted with.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public Exception Exception { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Exception);
+}

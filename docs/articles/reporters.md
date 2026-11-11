@@ -25,6 +25,8 @@ An **event** is a record of one thing that happened in the run, with the time it
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
+Nothing an event carries is ever null. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same.
+
 ### The order within one step
 
 A change and everything that follows from it at once are one step. The events of a step all have the same time and come in a fixed order, causes before effects:
@@ -60,7 +62,7 @@ A reporter gets snapshots in two ways:
 - **With each event.** The snapshot handed to <xref:Dagline.IReporter.OnEventAsync*> is the run as of that event. It includes that event and none after it, however far the run has moved on since. Use it to show totals beside the event.
 - **From the snapshot source.** <xref:Dagline.RunStarted> carries an <xref:Dagline.ISnapshotSource>, and its `Current` is the run as it is now. Use it to show the run on a timer of your own.
 
-Dagline keeps the snapshot, so a reporter never rebuilds the state of the run from events, and two reporters never disagree about it.
+Dagline keeps the snapshot, so a reporter never pieces it together from events, and two reporters never disagree about it.
 
 A snapshot also answers the questions a summary asks, each in declaration order, so every reporter's summary agrees:
 
@@ -285,7 +287,7 @@ The summary follows the `run ended` line and has no timestamps. It has up to thr
 
 1. **The counts**: `tasks:` and the count of tasks per status.
 2. **The failures**: `failed:` and the number of failed tasks, then each of them in declaration order. The first line of a failure has the path, the kind of failure (`reported` or `unexpected`), when the task failed and how long it had run. Beneath it, each only when there is something to show:
-   - `progress:` the progress the task had reported when it failed. It reads `<text>`, `<count>`, `<count> of <total>`, or the text and the count joined by a comma.
+   - `progress:` the progress the task had reported when it failed. It reads `<text>`, `<count>`, `<count> of <total>`, or the text and the count joined by a comma. It is always one line: a line break in the status text is printed as a space.
    - `message:` its message.
    - `detail:` its detail lines, one to a line.
    - `blocked <n> tasks:` what the failure blocked, named by its roots: the highest nodes whose every task it blocked. A failure that blocked every task beneath a group names that one group.

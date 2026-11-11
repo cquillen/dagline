@@ -17,6 +17,8 @@ public sealed class TaskNode : Node
 
     internal TaskBody Body { get; }
 
+    internal override IEnumerable<Node> NodesBeneath() => [];
+
     /// <summary>Gives this task a title: a readable name for people.</summary>
     /// <param name="title">The title. It may hold any text and need not be unique. Calling again replaces it.</param>
     /// <returns>This handle.</returns>

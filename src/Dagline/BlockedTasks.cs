@@ -1,5 +1,4 @@
 using System.Collections.Frozen;
-using System.Collections.Immutable;
 
 namespace Dagline;
 
@@ -24,10 +23,26 @@ namespace Dagline;
 /// </param>
 public sealed record BlockedTasks(NodePath Cause, IReadOnlyList<NodeSnapshot> Tasks, IReadOnlyList<NodeSnapshot> Roots)
 {
+    /// <summary>
+    /// Every task this failure blocked, directly, through a group or through a chain of blocked tasks, in declaration order.
+    /// Never empty in an entry of <see cref="Snapshot.Blocked"/>.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public IReadOnlyList<NodeSnapshot> Tasks { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Tasks);
+
+    /// <summary>
+    /// The highest nodes whose every task this failure blocked, in declaration order. A root is a group when the failure blocked
+    /// every task beneath it at any depth and did not block every task beneath the group that holds it. Otherwise it is
+    /// a blocked task itself. Every task in <see cref="Tasks"/> is one root or beneath exactly one, and a group with no tasks
+    /// beneath it is never a root.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public IReadOnlyList<NodeSnapshot> Roots { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Roots);
+
     /// <summary>One entry for each failed task that blocked anything among <paramref name="nodes"/>, in declaration order of the cause.</summary>
     /// <param name="nodes">Every node of a run at one instant, in declaration order.</param>
     /// <param name="positions">Where each node is in declaration order.</param>
-    internal static IReadOnlyList<BlockedTasks> Among(ImmutableArray<NodeSnapshot> nodes, FrozenDictionary<NodePath, int> positions)
+    internal static IReadOnlyList<BlockedTasks> Among(IReadOnlyList<NodeSnapshot> nodes, FrozenDictionary<NodePath, int> positions)
     {
         return
         [

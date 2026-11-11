@@ -52,10 +52,7 @@ public static class Runner
         ArgumentNullException.ThrowIfNull(options);
 
         IReporter[] reporters = [.. options.Reporters];
-        if (reporters.Contains(null))
-        {
-            throw new ArgumentException("A reporter in the options is null.", nameof(options));
-        }
+        Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));
 
         return RunToEndAsync(graph, LimitSizes.For(graph, options), options.TimeProvider, reporters);
     }

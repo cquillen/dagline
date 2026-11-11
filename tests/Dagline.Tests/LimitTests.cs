@@ -4,14 +4,14 @@ namespace Dagline.Tests;
 
 public class LimitTests
 {
-    private const int Repeats = 50;
+    private const int _repeats = 50;
 
     [Test]
     public async Task The_number_of_running_tasks_that_hold_a_limit_never_exceeds_its_size()
     {
         const int size = 2;
 
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
             var loads = new OverlappingBodies(expected: size);
             var builder = new GraphBuilder();
@@ -35,7 +35,7 @@ public class LimitTests
     {
         const int size = 2;
 
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
             var loads = new OverlappingBodies(expected: size);
             var builder = new GraphBuilder();
@@ -66,6 +66,7 @@ public class LimitTests
     [Arguments("files")]
     public async Task A_task_holds_its_own_limits_and_those_of_every_group_that_holds_it(string fullLimit)
     {
+        // Not repeated: the two tasks share a limit of size 1, so one body runs at a time and the events can come in one order only.
         var builder = new GraphBuilder();
         builder.Task("holder", _ => Task.CompletedTask).Limit(fullLimit);
         builder.Group("shard-1").Limit("network")
@@ -100,44 +101,49 @@ public class LimitTests
     [Test]
     public async Task A_task_that_needs_two_limits_holds_neither_while_one_of_them_is_full()
     {
-        var load = new PausedBody();
-        var builder = new GraphBuilder();
-        builder.Task("load", load.Body).Limit("database");
-        builder.Task("merge", _ => Task.CompletedTask).Limit("database").Limit("files");
-        builder.Task("export", _ => Task.CompletedTask).Limit("files");
-        var reporter = new RecordingReporter();
+        // Repeated: load and export end in either order, and merge must start only once both have given their slots back.
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var load = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("load", load.Body).Limit("database");
+            builder.Task("merge", _ => Task.CompletedTask).Limit("database").Limit("files");
+            builder.Task("export", _ => Task.CompletedTask).Limit("files");
+            var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(
-            builder.Build(),
-            new RunOptions
-            {
-                Journal = Journal.None,
-                Limits = new Dictionary<string, int> { ["database"] = 1, ["files"] = 1 },
-                Reporters = [reporter],
-            });
-        await load.Started;
-        load.Release();
-        var result = await run;
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions
+                {
+                    Journal = Journal.None,
+                    Limits = new Dictionary<string, int> { ["database"] = 1, ["files"] = 1 },
+                    Reporters = [reporter],
+                });
+            await load.Started;
+            load.Release();
+            var result = await run;
 
-        // Had merge taken its slot of files while it waited for database, export could not have started in the first step.
-        result.Outcome.ShouldBe(RunOutcome.Complete);
-        var lines = reporter.Lines.ToList();
-        lines.Take(6).ShouldBe(
-        [
-            "run started",
-            "load: pending -> ready",
-            "merge: pending -> ready",
-            "export: pending -> ready",
-            "load: ready -> running",
-            "export: ready -> running",
-        ]);
-        lines.IndexOf("merge: ready -> running").ShouldBeGreaterThan(lines.IndexOf("load: running -> succeeded"));
-        lines.IndexOf("merge: ready -> running").ShouldBeGreaterThan(lines.IndexOf("export: running -> succeeded"));
+            // Had merge taken its slot of files while it waited for database, export could not have started in the first step.
+            result.Outcome.ShouldBe(RunOutcome.Complete);
+            var lines = reporter.Lines.ToList();
+            lines.Take(6).ShouldBe(
+            [
+                "run started",
+                "load: pending -> ready",
+                "merge: pending -> ready",
+                "export: pending -> ready",
+                "load: ready -> running",
+                "export: ready -> running",
+            ]);
+            lines.IndexOf("merge: ready -> running").ShouldBeGreaterThan(lines.IndexOf("load: running -> succeeded"));
+            lines.IndexOf("merge: ready -> running").ShouldBeGreaterThan(lines.IndexOf("export: running -> succeeded"));
+        }
     }
 
     [Test]
     public async Task A_ready_task_whose_limit_is_full_is_passed_over_and_a_task_behind_it_starts()
     {
+        // Not repeated: every body is paused and the test releases one at a time, so the events asserted can come in one order only.
         var firstLoad = new PausedBody();
         var secondLoad = new PausedBody();
         var publish = new PausedBody();

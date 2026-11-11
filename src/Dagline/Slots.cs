@@ -12,7 +12,7 @@ namespace Dagline;
 /// </remarks>
 /// <param name="limitNames">Every limit the graph names, as <see cref="Graph.LimitNames"/> gives them.</param>
 /// <param name="sizes">The size of the cap and of each of those limits.</param>
-internal sealed class Slots(ImmutableArray<string> limitNames, LimitSizes sizes)
+internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes sizes)
 {
     private readonly int[] _inUse = new int[sizes.Limits.Length];
     private int _running;
@@ -25,16 +25,16 @@ internal sealed class Slots(ImmutableArray<string> limitNames, LimitSizes sizes)
     /// </summary>
     public ReadOnlyDictionary<string, LimitUse> Limits
         => new(limitNames.Index().ToDictionary(
-            limit => limit.Item,
+            limit => limit.Item.Text,
             limit => new LimitUse(sizes.Limits[limit.Index], _inUse[limit.Index]),
-            StringComparer.Ordinal));
+            LimitName.TextComparer));
 
     /// <summary>
     /// Takes one slot of the cap and of every limit a task holds, if each has one free.
     /// A task that does not fit takes none, so it never holds one slot while it waits for another.
     /// </summary>
     /// <returns><see langword="true"/> when the task now holds its slots and may start.</returns>
-    public bool TryTake(GraphTask task)
+    public bool TryTake(BuiltTask task)
     {
         if (_running == sizes.Cap || task.HeldLimits.Any(limit => _inUse[limit] == sizes.Limits[limit]))
         {
@@ -51,7 +51,7 @@ internal sealed class Slots(ImmutableArray<string> limitNames, LimitSizes sizes)
     }
 
     /// <summary>Gives back the slots a task took when it started.</summary>
-    public void GiveBack(GraphTask task)
+    public void GiveBack(BuiltTask task)
     {
         _running--;
         foreach (var limit in task.HeldLimits)

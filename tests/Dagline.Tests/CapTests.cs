@@ -4,14 +4,14 @@ namespace Dagline.Tests;
 
 public class CapTests
 {
-    private const int Repeats = 50;
+    private const int _repeats = 50;
 
     [Test]
     public async Task The_number_of_task_bodies_running_at_once_never_exceeds_the_cap()
     {
         const int cap = 3;
 
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
             var bodies = new OverlappingBodies(expected: cap);
             var builder = new GraphBuilder();
@@ -30,6 +30,7 @@ public class CapTests
     [Test]
     public async Task Whenever_a_task_settles_the_next_ready_task_in_declaration_order_starts()
     {
+        // Not repeated: every body is paused and the test releases one at a time, so the events asserted can come in one order only.
         var bodies = Enumerable.Range(0, 4).Select(_ => new PausedBody()).ToList();
         var builder = new GraphBuilder();
         builder.Task("shard-1", bodies[0].Body);
@@ -69,6 +70,7 @@ public class CapTests
     [Test]
     public async Task A_task_that_has_just_become_ready_starts_before_a_held_task_later_in_declaration_order()
     {
+        // Not repeated: a cap of 1 lets one body run at a time, so the events can come in one order only.
         var builder = new GraphBuilder();
         var prepare = builder.Task("prepare", _ => Task.CompletedTask);
         builder.Task("publish", _ => Task.CompletedTask).Requires(prepare);
@@ -100,6 +102,7 @@ public class CapTests
     [Test]
     public async Task With_a_cap_of_one_the_ready_tasks_run_one_at_a_time_in_declaration_order()
     {
+        // Not repeated: a cap of 1 lets one body run at a time, so the events can come in one order only.
         var builder = new GraphBuilder();
         builder.Task("shard-1", _ => Task.CompletedTask);
         builder.Task("shard-2", _ => Task.CompletedTask);

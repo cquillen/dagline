@@ -29,6 +29,7 @@ namespace Dagline;
 /// then every failed task (the kind of failure, when it failed, how long it ran, the progress it had reported, its message,
 /// its detail lines and what it blocked, named by the roots of <see cref="BlockedTasks"/>), then every warning that was kept,
 /// under its task. A section with nothing in it is left out, so a complete run with no warnings ends with the counts alone.
+/// The progress is one line: each line break in the task's status text is printed as a space.
 /// </para>
 /// <para>
 /// Every line about an event begins with the time of the event in UTC, as <c>2026-11-11T04:12:03Z</c>. Numbers are written
@@ -60,7 +61,7 @@ public sealed class PlainTextReporter : IReporter
     private readonly Lock _gate = new();
     private readonly TextWriter _writer;
     private readonly TimeProvider _timeProvider;
-    private BlockedRun? _blocked;
+    private BlockedStreak? _blocked;
     private ISnapshotSource? _source;
     private ITimer? _idleTimer;
     private long _lastLine;
@@ -134,7 +135,7 @@ public sealed class PlainTextReporter : IReporter
         var blockedLine = TakeBlockedLine();
         if (blockedBy is { } cause)
         {
-            _blocked = new BlockedRun(runEvent.At, cause, Tasks: 1);
+            _blocked = new BlockedStreak(runEvent.At, cause, Tasks: 1);
         }
 
         Print([.. blockedLine, .. PlainTextLines.About(runEvent, snapshot)]);
@@ -160,13 +161,13 @@ public sealed class PlainTextReporter : IReporter
     /// <summary>The line for the blocked events counted so far, which are counted no further. Empty when there are none.</summary>
     private string[] TakeBlockedLine()
     {
-        if (_blocked is not { } run)
+        if (_blocked is not { } streak)
         {
             return [];
         }
 
         _blocked = null;
-        return [PlainTextLines.Blocked(run.At, run.Tasks, run.Cause)];
+        return [PlainTextLines.Blocked(streak.At, streak.Tasks, streak.Cause)];
     }
 
     private void Print(IReadOnlyList<string> lines)
@@ -223,5 +224,5 @@ public sealed class PlainTextReporter : IReporter
     }
 
     /// <summary>Consecutive blocked events with one cause, which are printed as one line.</summary>
-    private readonly record struct BlockedRun(DateTimeOffset At, NodePath Cause, int Tasks);
+    private readonly record struct BlockedStreak(DateTimeOffset At, NodePath Cause, int Tasks);
 }

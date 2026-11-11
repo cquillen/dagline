@@ -39,7 +39,10 @@ internal static class TaskReportRules
     public static NodeSnapshot WithCount(this NodeSnapshot task, long current, long? total)
         => task with { Count = current, Total = total };
 
-    /// <summary>A message or a warning is one line: each line break in the text is replaced by a space.</summary>
+    /// <summary>
+    /// Text as one line: each line break in it is replaced by a space. A message and a warning are kept that way,
+    /// and status text, which is kept as given, is printed that way.
+    /// </summary>
     public static string OneLine(string text) => text.ReplaceLineEndings(" ");
 
     /// <summary>Text given as detail is one detail line for each line of it: it is split at every line break.</summary>

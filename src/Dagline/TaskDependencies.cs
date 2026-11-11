@@ -3,10 +3,10 @@ using System.Collections.Immutable;
 namespace Dagline;
 
 /// <summary>
-/// Works out which nodes each task waits for, from the dependencies as they were declared on handles.
+/// Works out which nodes each task depends on, from the dependencies as they were declared on handles.
 /// </summary>
 /// <remarks>
-/// A task waits for the upstreams declared on it and for those declared on every group that holds it.
+/// A task depends on the upstreams declared on it and on those declared on every group that holds it.
 /// Where that names one upstream more than once, it is one dependency, and requires wins.
 /// An upstream that is a group is kept as the group: its derived status says whether every task beneath it has succeeded or settled.
 /// </remarks>
@@ -30,7 +30,7 @@ internal sealed class TaskDependencies
         _upstreams = tasks.ToDictionary(task => task, ResolveUpstreams);
         _dependents = tasks
             .SelectMany(task => _upstreams[task].Select(upstream => (Upstream: upstream.Position, Dependent: positions[task])))
-            .ToLookup(wait => wait.Upstream, wait => wait.Dependent);
+            .ToLookup(dependency => dependency.Upstream, dependency => dependency.Dependent);
     }
 
     /// <summary>
@@ -39,15 +39,15 @@ internal sealed class TaskDependencies
     public IReadOnlyList<Dependency> DeclaredOn(Node node)
         => [.. Merge(_declaredOn[node]).Select(dependency => new Dependency(dependency.Upstream.Path, dependency.Kind))];
 
-    /// <summary>Every node a task waits for, in declaration order.</summary>
+    /// <summary>Every node a task depends on, in declaration order.</summary>
     public ImmutableArray<Upstream> UpstreamsOf(TaskNode task) => _upstreams[task];
 
-    /// <summary>The positions of the tasks that wait for a node, in declaration order.</summary>
+    /// <summary>The positions of the tasks that depend on a node, in declaration order.</summary>
     public ImmutableArray<int> DependentsOf(Node node) => [.. _dependents[_positions[node]]];
 
     private ImmutableArray<Upstream> ResolveUpstreams(TaskNode task)
     {
-        var ownAndInherited = task.Ancestors().Prepend<Node>(task).SelectMany(node => _declaredOn[node]);
+        var ownAndInherited = task.WithAncestors().SelectMany(node => _declaredOn[node]);
 
         return
         [
@@ -59,7 +59,5 @@ internal sealed class TaskDependencies
 
     /// <summary>One dependency for each upstream named, in the order each was first named.</summary>
     private static IEnumerable<(Node Upstream, DependencyKind Kind)> Merge(IEnumerable<DeclaredDependency> dependencies)
-        => dependencies
-            .GroupBy(dependency => dependency.Upstream, dependency => dependency.Kind)
-            .Select(kinds => (Upstream: kinds.Key, Kind: kinds.Strongest()));
+        => dependencies.MergedBy(dependency => dependency.Upstream);
 }

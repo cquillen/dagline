@@ -32,51 +32,55 @@ public sealed class Graph : IReadOnlyList<Node>
         var dependencies = new TaskDependencies(tasks, positions, declared);
         var tasksBeneath = tasks.SelectMany(task => task.Ancestors()).CountBy(group => (Node)group).ToDictionary();
 
-        LimitNames = [.. nodes.SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal)];
-        var limitPositions = LimitNames.Index().ToDictionary(limit => limit.Item, limit => limit.Index, StringComparer.Ordinal);
+        LimitNames = [.. nodes.SelectMany(node => node.Limits).Distinct()];
+        var limitPositions = LimitNames.Index().ToDictionary(limit => limit.Item, limit => limit.Index);
 
-        Nodes = [.. nodes.Select(ToGraphNode)];
-        Tasks = [.. Nodes.OfType<GraphTask>()];
+        Nodes = [.. nodes.Select(ToBuiltNode)];
+        Tasks = [.. Nodes.OfType<BuiltTask>()];
         Positions = Nodes.ToFrozenDictionary(node => node.Path, node => node.Position);
 
-        GraphNode ToGraphNode(Node node, int position)
-            => node is TaskNode task
-                ? new GraphTask(
+        BuiltNode ToBuiltNode(Node node, int position)
+        {
+            IReadOnlyList<string> limitsNamed = [.. node.Limits.Select(limit => limit.Text)];
+
+            return node is TaskNode task
+                ? new BuiltTask(
                     position,
                     node.Path,
                     node.TitleText,
                     dependencies.DeclaredOn(node),
-                    [.. node.Limits],
+                    limitsNamed,
                     dependencies.DependentsOf(node),
                     task.Body,
                     [.. node.Ancestors().Select(group => positions[group])],
                     dependencies.UpstreamsOf(task),
                     [.. HeldBy(task).Select(limit => limitPositions[limit])])
-                : new GraphGroup(
+                : new BuiltGroup(
                     position,
                     node.Path,
                     node.TitleText,
                     dependencies.DeclaredOn(node),
-                    [.. node.Limits],
+                    limitsNamed,
                     dependencies.DependentsOf(node),
                     Depth: node.Ancestors().Count(),
                     TaskCount: tasksBeneath.GetValueOrDefault(node));
+        }
     }
 
     /// <summary>How many nodes the graph has, tasks and groups together.</summary>
     public int Count => _handles.Length;
 
     /// <summary>Every node, in declaration order.</summary>
-    internal ImmutableArray<GraphNode> Nodes { get; }
+    internal ImmutableArray<BuiltNode> Nodes { get; }
 
     /// <summary>Every task, in declaration order.</summary>
-    internal ImmutableArray<GraphTask> Tasks { get; }
+    internal ImmutableArray<BuiltTask> Tasks { get; }
 
     /// <summary>Where each node is in declaration order.</summary>
     internal FrozenDictionary<NodePath, int> Positions { get; }
 
     /// <summary>Every limit the graph names, on a task or on a group, each once, in the order first named in declaration order.</summary>
-    internal ImmutableArray<string> LimitNames { get; }
+    internal ImmutableArray<LimitName> LimitNames { get; }
 
     /// <summary>The handle of the node at a position in declaration order.</summary>
     /// <param name="index">The position of the node, from zero.</param>
@@ -116,16 +120,16 @@ public sealed class Graph : IReadOnlyList<Node>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>The task at a position among the nodes of the graph.</summary>
-    internal GraphTask TaskAt(int position) => (GraphTask)Nodes[position];
+    internal BuiltTask TaskAt(int position) => (BuiltTask)Nodes[position];
 
     /// <summary>The group at a position among the nodes of the graph.</summary>
-    internal GraphGroup GroupAt(int position) => (GraphGroup)Nodes[position];
+    internal BuiltGroup GroupAt(int position) => (BuiltGroup)Nodes[position];
 
     /// <summary>A task and every group that holds it: the nodes that cannot succeed unless the task does.</summary>
-    internal IEnumerable<GraphNode> WithItsGroups(GraphTask task) => task.Groups.Select(GroupAt).Prepend<GraphNode>(task);
+    internal IEnumerable<BuiltNode> WithItsGroups(BuiltTask task) => task.Groups.Select(GroupAt).Prepend<BuiltNode>(task);
 
     /// <summary>The tasks that require a node, in declaration order.</summary>
-    internal IEnumerable<GraphTask> Requiring(GraphNode node)
+    internal IEnumerable<BuiltTask> Requiring(BuiltNode node)
     {
         var requires = new Upstream(node.Position, DependencyKind.Requires);
         return node.Dependents.Select(TaskAt).Where(dependent => dependent.Upstreams.Contains(requires));
@@ -138,15 +142,15 @@ public sealed class Graph : IReadOnlyList<Node>
     /// <param name="task">The task that depends.</param>
     /// <param name="handle">A handle to the node, which may be of another graph.</param>
     /// <param name="position">The position of the node among the nodes of this graph, when the method returns <see langword="true"/>.</param>
-    internal bool TryGetDependency(GraphTask task, Node handle, out int position)
+    internal bool TryGetDependency(BuiltTask task, Node handle, out int position)
         => TryGetPosition(handle, out position)
-            && handle.Ancestors().Prepend(handle).Select(node => Positions[node.Path]).Any(task.IsUpstream);
+            && handle.WithAncestors().Select(node => Positions[node.Path]).Any(task.IsUpstream);
 
     /// <summary>Finds where a handle is in declaration order. A handle of another graph is not found, whatever its path.</summary>
     private bool TryGetPosition(Node handle, out int position)
         => Positions.TryGetValue(handle.Path, out position) && ReferenceEquals(_handles[position], handle);
 
     /// <summary>The limits a task holds: those named on it and those named on every group that holds it, each once.</summary>
-    private static IEnumerable<string> HeldBy(TaskNode task)
-        => task.Ancestors().Prepend<Node>(task).SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal);
+    private static IEnumerable<LimitName> HeldBy(TaskNode task)
+        => task.WithAncestors().SelectMany(node => node.Limits).Distinct();
 }

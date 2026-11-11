@@ -37,7 +37,12 @@ public abstract record RunEvent
 /// <summary>The run started. This is the first event of every run.</summary>
 /// <param name="At">When the run started.</param>
 /// <param name="Source">A live source of snapshots of this run, which a reporter may keep and read at any time.</param>
-public sealed record RunStarted(DateTimeOffset At, ISnapshotSource Source) : RunEvent(At);
+public sealed record RunStarted(DateTimeOffset At, ISnapshotSource Source) : RunEvent(At)
+{
+    /// <summary>A live source of snapshots of this run, which a reporter may keep and read at any time.</summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public ISnapshotSource Source { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Source);
+}
 
 /// <summary>
 /// A task changed status. One is published for every change, pending to ready and pending to blocked included.
@@ -46,7 +51,12 @@ public sealed record RunStarted(DateTimeOffset At, ISnapshotSource Source) : Run
 /// <param name="Node">The task as it is after the change. When the task has settled, this carries its whole outcome.</param>
 /// <param name="From">The status before the change.</param>
 /// <param name="To">The status after the change.</param>
-public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, NodeStatus From, NodeStatus To) : RunEvent(At);
+public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, NodeStatus From, NodeStatus To) : RunEvent(At)
+{
+    /// <summary>The task as it is after the change. When the task has settled, this carries its whole outcome.</summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public NodeSnapshot Node { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Node);
+}
 
 /// <summary>
 /// A running task added a warning to its outcome with <see cref="TaskContext.Warn"/>, and Dagline kept it.
@@ -65,7 +75,12 @@ public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, Nod
 /// <param name="At">When the warning was added.</param>
 /// <param name="Path">The path of the task that added the warning.</param>
 /// <param name="Warning">The warning, on one line: each line break in the text the task gave is replaced by a space.</param>
-public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warning) : RunEvent(At);
+public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warning) : RunEvent(At)
+{
+    /// <summary>The warning, on one line: each line break in the text the task gave is replaced by a space.</summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public string Warning { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Warning);
+}
 
 /// <summary>
 /// A group settled: the last task beneath it, at any depth, settled.
@@ -92,7 +107,14 @@ public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warni
 /// How many tasks beneath the group, at any depth, have each status. Every status is present, in lifecycle order.
 /// </param>
 public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus Status, IReadOnlyDictionary<NodeStatus, int> Counts)
-    : RunEvent(At);
+    : RunEvent(At)
+{
+    /// <summary>
+    /// How many tasks beneath the group, at any depth, have each status. Every status is present, in lifecycle order.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public IReadOnlyDictionary<NodeStatus, int> Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
+}
 
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <param name="At">When the run ended.</param>

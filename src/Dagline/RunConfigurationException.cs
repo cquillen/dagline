@@ -16,10 +16,7 @@ namespace Dagline;
 public sealed class RunConfigurationException : DaglineException
 {
     internal RunConfigurationException(IReadOnlyList<string> problems)
-        : base(Describe(problems))
+        : base(ProblemsText.Under("The options cannot be used to run the graph:", problems))
     {
     }
-
-    private static string Describe(IReadOnlyList<string> problems)
-        => string.Join(Environment.NewLine, problems.Select(problem => $"- {problem}").Prepend("The options cannot be used to run the graph:"));
 }
