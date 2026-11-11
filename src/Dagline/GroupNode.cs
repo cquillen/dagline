@@ -25,6 +25,8 @@ public sealed class GroupNode : Node
 
     internal ChildNodes Children { get; }
 
+    internal override IEnumerable<Node> NodesBeneath() => Children.InDeclarationOrder();
+
     /// <summary>Gives this group a title: a readable name for people.</summary>
     /// <param name="title">The title. It may hold any text and need not be unique. Calling again replaces it.</param>
     /// <returns>This handle.</returns>

@@ -67,6 +67,9 @@ public abstract class Node
         }
     }
 
+    /// <summary>Every node beneath this one, at any depth, in declaration order. A task has none.</summary>
+    internal abstract IEnumerable<Node> NodesBeneath();
+
     private protected void SetTitle(string title)
     {
         ArgumentNullException.ThrowIfNull(title);
