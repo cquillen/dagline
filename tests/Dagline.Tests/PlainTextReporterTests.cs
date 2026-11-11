@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Dagline.TestSupport;
 using Microsoft.Extensions.Time.Testing;
 
@@ -6,6 +7,7 @@ namespace Dagline.Tests;
 
 public class PlainTextReporterTests
 {
+    private const int Repeats = 50;
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
     [Test]
@@ -354,6 +356,205 @@ public class PlainTextReporterTests
         ]);
     }
 
+    [Test]
+    public async Task A_line_of_counts_is_printed_after_each_quiet_minute_and_none_once_the_run_has_ended()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new StringWriter();
+        var prepare = new PausedBody();
+        var builder = new GraphBuilder();
+        var prepareTask = builder.Task("prepare", prepare.Body);
+        builder.Task("publish", _ => Task.CompletedTask).Requires(prepareTask);
+        var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+
+        var run = Runner.RunAsync(builder.Build(), Options(clock, reporter));
+        await reporter.Handled("prepare: ready -> running");
+        clock.Advance(TimeSpan.FromSeconds(59));
+        var afterLessThanAMinute = Lines(writer);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var afterAMinute = Lines(writer);
+        clock.Advance(TimeSpan.FromSeconds(60));
+        prepare.Release();
+        await run;
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        afterLessThanAMinute.ShouldBe(
+        [
+            "2026-11-11T04:12:00Z run started: 2 tasks",
+            "2026-11-11T04:12:00Z started prepare",
+        ]);
+        afterAMinute.ShouldBe(
+        [
+            .. afterLessThanAMinute,
+            "2026-11-11T04:13:00Z tasks: 1 pending, 1 running",
+        ]);
+        Lines(writer).ShouldBe(
+        [
+            .. afterAMinute,
+            "2026-11-11T04:14:00Z tasks: 1 pending, 1 running",
+            "2026-11-11T04:14:00Z succeeded prepare in 2m0s",
+            "2026-11-11T04:14:00Z started publish",
+            "2026-11-11T04:14:00Z succeeded publish in 0.0s",
+            "2026-11-11T04:14:00Z run ended: complete in 2m0s",
+            "tasks: 2 succeeded",
+        ]);
+    }
+
+    [Test]
+    public async Task The_line_of_counts_waits_a_minute_from_the_last_line_printed_whatever_that_line_was()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new StringWriter();
+        var prepare = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("prepare", prepare.Body);
+        var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+
+        var run = Runner.RunAsync(builder.Build(), Options(clock, reporter));
+        var context = await prepare.Started;
+        await reporter.Handled("prepare: ready -> running");
+        clock.Advance(TimeSpan.FromSeconds(40));
+        context.Warn("entity 9 has no region");
+        await reporter.Handled("warning prepare: entity 9 has no region");
+        clock.Advance(TimeSpan.FromSeconds(40));
+        var aMinuteAfterTheStart = Lines(writer);
+        clock.Advance(TimeSpan.FromSeconds(20));
+        var aMinuteAfterTheWarning = Lines(writer);
+        prepare.Release();
+        await run;
+
+        aMinuteAfterTheStart.ShouldBe(
+        [
+            "2026-11-11T04:12:00Z run started: 1 task",
+            "2026-11-11T04:12:00Z started prepare",
+            "2026-11-11T04:12:40Z warning prepare: entity 9 has no region",
+        ]);
+        aMinuteAfterTheWarning.ShouldBe(
+        [
+            .. aMinuteAfterTheStart,
+            "2026-11-11T04:13:40Z tasks: 1 running",
+        ]);
+    }
+
+    [Test]
+    public async Task The_line_for_blocked_tasks_is_printed_before_the_line_of_counts_when_no_event_follows_it_within_the_minute()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new StringWriter();
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("load", load.Body);
+        var verify = builder.Task("verify", context => throw context.Fail("entity 3 has a bad date"));
+        builder.Task("publish", _ => Task.CompletedTask).Requires(verify);
+        var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+
+        var run = Runner.RunAsync(builder.Build(), Options(clock, reporter));
+        await reporter.Handled("publish: pending -> blocked");
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var afterAMinute = Lines(writer);
+        load.Release();
+        await run;
+
+        afterAMinute.ShouldBe(
+        [
+            "2026-11-11T04:12:00Z run started: 3 tasks",
+            "2026-11-11T04:12:00Z started load",
+            "2026-11-11T04:12:00Z started verify",
+            "2026-11-11T04:12:00Z failed verify in 0.0s: entity 3 has a bad date",
+            "2026-11-11T04:12:00Z blocked 1 task by verify",
+            "2026-11-11T04:13:00Z tasks: 1 running, 1 failed, 1 blocked",
+        ]);
+    }
+
+    [Test]
+    public async Task A_reporter_whose_writer_fails_on_an_event_is_dropped_and_prints_no_line_of_counts_afterwards()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new BreakingWriter(text => text.Contains("started load", StringComparison.Ordinal));
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("load", load.Body);
+        var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+
+        var run = Runner.RunAsync(builder.Build(), Options(clock, reporter));
+        await reporter.Handled("load: ready -> running");
+        clock.Advance(TimeSpan.FromMinutes(5));
+        load.Release();
+        var result = await run;
+
+        writer.Attempts.ShouldBe(
+        [
+            $"2026-11-11T04:12:00Z run started: 1 task{writer.NewLine}",
+            $"2026-11-11T04:12:00Z started load{writer.NewLine}",
+        ]);
+        var error = result.ReporterErrors.ShouldHaveSingleItem();
+        error.Reporter.ShouldBeSameAs(reporter);
+        error.Exception.ShouldBeSameAs(writer.Failure);
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+    }
+
+    [Test]
+    public async Task A_reporter_whose_writer_fails_on_the_line_of_counts_prints_no_other_and_is_dropped_at_the_next_event()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var writer = new BreakingWriter(text => text.Contains(" tasks: ", StringComparison.Ordinal));
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("load", load.Body);
+        var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+
+        var run = Runner.RunAsync(builder.Build(), Options(clock, reporter));
+        await reporter.Handled("load: ready -> running");
+        clock.Advance(TimeSpan.FromMinutes(1));
+        clock.Advance(TimeSpan.FromMinutes(5));
+        load.Release();
+        var result = await run;
+
+        writer.Attempts.ShouldBe(
+        [
+            $"2026-11-11T04:12:00Z run started: 1 task{writer.NewLine}",
+            $"2026-11-11T04:12:00Z started load{writer.NewLine}",
+            $"2026-11-11T04:13:00Z tasks: 1 running{writer.NewLine}",
+        ]);
+        var error = result.ReporterErrors.ShouldHaveSingleItem();
+        error.Reporter.ShouldBeSameAs(reporter);
+        error.Event.ShouldBeOfType<TaskStatusChanged>().To.ShouldBe(NodeStatus.Succeeded);
+        error.Exception.ShouldBeSameAs(writer.Failure);
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+    }
+
+    [Test]
+    public async Task All_the_lines_about_one_event_are_written_with_one_call_and_no_two_writes_are_ever_in_progress_at_once()
+    {
+        for (var repeat = 0; repeat < Repeats; repeat++)
+        {
+            var clock = new FakeTimeProvider(_runStart);
+            var writer = new OverlapCountingWriter();
+            var builder = new GraphBuilder();
+            Node last = builder.Task("shard-0", context => throw context.Fail("no entities", "entity 3: missing owner"));
+            for (var shard = 1; shard <= 20; shard++)
+            {
+                last = builder.Task($"shard-{shard}", WaitAMinute).After(last);
+            }
+
+            // Every step of the clock ends a task and, a minute after the last line, is also due a line of counts:
+            // the reporter is called for the events on one thread while its own timer fires on this one.
+            var run = Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
+            await clock.AdvanceUntilAsync(run, TimeSpan.FromMinutes(1));
+            await run;
+
+            writer.MostWritesAtOnce.ShouldBe(1);
+            writer.Writes
+                .Where(text => text.Contains(" failed shard-0 in ", StringComparison.Ordinal))
+                .ShouldHaveSingleItem()
+                .ShouldEndWith($": no entities{writer.NewLine}    entity 3: missing owner{writer.NewLine}");
+            writer.Writes.Count(text => text.Contains(" started shard-", StringComparison.Ordinal)).ShouldBe(21);
+            writer.Writes[^1].ShouldContain($"{writer.NewLine}tasks: 20 succeeded, 1 failed{writer.NewLine}failed: 1{writer.NewLine}");
+        }
+
+        static Task WaitAMinute(TaskContext context) => Task.Delay(TimeSpan.FromMinutes(1), context.TimeProvider);
+    }
+
     private static RunOptions Options(FakeTimeProvider clock, params IReporter[] reporters)
         => new() { Journal = Journal.None, TimeProvider = clock, Reporters = reporters };
 
@@ -363,5 +564,93 @@ public class PlainTextReporterTests
         var written = writer.ToString();
         written.ShouldEndWith(writer.NewLine);
         return written[..^writer.NewLine.Length].Split(writer.NewLine);
+    }
+
+    /// <summary>
+    /// Keeps every text it is asked to write, and fails on each one that <paramref name="failsOn"/> picks, with <see cref="Failure"/>.
+    /// </summary>
+    private sealed class BreakingWriter(Func<string, bool> failsOn) : TextWriter
+    {
+        private readonly Lock _gate = new();
+        private readonly List<string> _attempts = [];
+
+        public IOException Failure { get; } = new("the disk is full");
+
+        public IReadOnlyList<string> Attempts
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _attempts];
+                }
+            }
+        }
+
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void Write(char value) => Write(value.ToString());
+
+        public override void Write(string? value)
+        {
+            var text = value ?? "";
+            lock (_gate)
+            {
+                _attempts.Add(text);
+            }
+
+            if (failsOn(text))
+            {
+                throw Failure;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Keeps every text it is asked to write, and counts the most calls to write that were ever in progress at once.
+    /// Each call stays open across a yield to other threads, so a call made before the last one returned would overlap it.
+    /// </summary>
+    private sealed class OverlapCountingWriter : TextWriter
+    {
+        private readonly Lock _gate = new();
+        private readonly List<string> _writes = [];
+        private int _writing;
+        private int _mostWritesAtOnce;
+
+        public int MostWritesAtOnce => Volatile.Read(ref _mostWritesAtOnce);
+
+        public IReadOnlyList<string> Writes
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _writes];
+                }
+            }
+        }
+
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void Write(char value) => Write(value.ToString());
+
+        public override void Write(string? value)
+        {
+            var writing = Interlocked.Increment(ref _writing);
+            int most;
+            while (writing > (most = Volatile.Read(ref _mostWritesAtOnce)))
+            {
+                Interlocked.CompareExchange(ref _mostWritesAtOnce, writing, most);
+            }
+
+            Thread.Yield();
+            lock (_gate)
+            {
+                _writes.Add(value ?? "");
+            }
+
+            Thread.Yield();
+            Interlocked.Decrement(ref _writing);
+        }
     }
 }
