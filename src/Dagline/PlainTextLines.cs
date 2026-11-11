@@ -77,7 +77,7 @@ internal static class PlainTextLines
             : $"waiting {began.Path}";
 
     private static string Requested(TimeSpan gracePeriod, int running)
-        => gracePeriod == Timeout.InfiniteTimeSpan
+        => GracePeriodRules.IsUnlimited(gracePeriod)
             ? $"stop requested: waiting for {CountsText.Tasks(running, "running")}"
             : $"stop requested: waiting up to {DurationText.Of(gracePeriod)} for {CountsText.Tasks(running, "running")}";
 

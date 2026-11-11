@@ -21,39 +21,47 @@ internal sealed class LimitSizes
     public ImmutableArray<int> Limits { get; }
 
     /// <summary>
-    /// Reads the cap and the sizes from the options of a run of <paramref name="graph"/>.
+    /// A line for each problem with the cap and the sizes in the options of a run of <paramref name="graph"/>:
+    /// the cap or a size is below 1, or the graph names a limit that has no size.
+    /// </summary>
+    public static IEnumerable<string> ProblemsWith(Graph graph, RunOptions options)
+    {
+        var given = Given(options);
+        if (options.Cap < 1)
+        {
+            yield return Invariant($"The cap is {options.Cap}. It must be at least 1.");
+        }
+
+        foreach (var (name, size) in given.Where(limit => limit.Value < 1))
+        {
+            yield return Invariant($"The size of the limit '{name}' is {size}. It must be at least 1.");
+        }
+
+        foreach (var name in graph.LimitNames.Where(name => !given.ContainsKey(name)))
+        {
+            yield return $"The graph names the limit '{name}', and the options give it no size.";
+        }
+    }
+
+    /// <summary>
+    /// Reads the cap and the sizes from options that <see cref="ProblemsWith"/> found no problem with.
     /// A size for a limit the graph does not name is left out.
     /// </summary>
-    /// <param name="graph">The graph to run.</param>
-    /// <param name="options">The options of the run.</param>
-    /// <param name="problems">
-    /// Gains a line for each problem found: the cap or a size is below 1, or the graph names a limit that has no size.
-    /// </param>
-    /// <returns>The sizes, or <see langword="null"/> when a problem was found.</returns>
-    public static LimitSizes? For(Graph graph, RunOptions options, List<string> problems)
+    public static LimitSizes For(Graph graph, RunOptions options)
     {
-        var before = problems.Count;
-        // Read into a dictionary of our own, so that names compare as limit names do whatever comparer the consumer's dictionary uses.
+        var given = Given(options);
+        return new LimitSizes(options.Cap, [.. graph.LimitNames.Select(name => given[name])]);
+    }
+
+    // Read into a dictionary of our own, so that names compare as limit names do whatever comparer the consumer's dictionary uses.
+    private static Dictionary<LimitName, int> Given(RunOptions options)
+    {
         Dictionary<LimitName, int> given = [];
         foreach (var (name, size) in options.Limits)
         {
             given[new LimitName(name)] = size;
         }
 
-        if (options.Cap < 1)
-        {
-            problems.Add(Invariant($"The cap is {options.Cap}. It must be at least 1."));
-        }
-
-        problems.AddRange(given
-            .Where(limit => limit.Value < 1)
-            .Select(limit => Invariant($"The size of the limit '{limit.Key}' is {limit.Value}. It must be at least 1.")));
-        problems.AddRange(graph.LimitNames
-            .Where(name => !given.ContainsKey(name))
-            .Select(name => $"The graph names the limit '{name}', and the options give it no size."));
-
-        return problems.Count == before
-            ? new LimitSizes(options.Cap, [.. graph.LimitNames.Select(name => given[name])])
-            : null;
+        return given;
     }
 }

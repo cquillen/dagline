@@ -1,5 +1,3 @@
-using static System.FormattableString;
-
 namespace Dagline;
 
 /// <summary>The entry point: runs a graph to its end.</summary>
@@ -81,20 +79,7 @@ public static class Runner
         IReporter[] reporters = [.. options.Reporters];
         Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));
 
-        List<string> problems = [];
-        var sizes = LimitSizes.For(graph, options, problems);
-        if (options.GracePeriod < TimeSpan.Zero && options.GracePeriod != Timeout.InfiniteTimeSpan)
-        {
-            problems.Add(Invariant(
-                $"The grace period is {options.GracePeriod}. It must be zero or more, or Timeout.InfiniteTimeSpan to wait with no limit."));
-        }
-
-        if (sizes is null || problems.Count > 0)
-        {
-            throw new RunConfigurationException(problems);
-        }
-
-        return RunToEndAsync(graph, new RunSettings(sizes, options.GracePeriod, options.TimeProvider), reporters, stop);
+        return RunToEndAsync(graph, RunSettings.From(graph, options), reporters, stop);
     }
 
     // No token, by design: a run is stopped through its StopSignal, not a CancellationToken, so there is none to pass on.
