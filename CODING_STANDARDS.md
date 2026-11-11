@@ -43,9 +43,9 @@ Design follows the SOLID principles. Each one applies here through a rule a revi
 
 - **Single responsibility** is _One reason to change_.
 - **Open/closed** (judgement). Behaviour that varies by consumer or by reporter sits behind an extension point, so a new variant adds a type and leaves the engine untouched. For a closed set, _One answer per question_ keeps the change to one place.
-- **Liskov substitution.** An implementation honours the whole contract it implements: it accepts every input the contract allows and provides every member. A member that throws `NotSupportedException` or `NotImplementedException` is a breach.
+- **Liskov substitution.** An implementation honours the whole contract it implements: it accepts every input the contract allows and provides every member. A member that throws `NotSupportedException` or `NotImplementedException` is a breach, unless it implements a framework contract that documents the exception, such as `Stream.Seek`.
 - **Interface segregation** (judgement). An interface holds only the members every implementer provides and its callers use together. One whose callers each use a different half is ready to split.
-- **Dependency inversion** is _State is passed in_, within the limit of _Abstractions are earned_: a type depends on an abstraction where one is earned, and on a sealed concrete type otherwise.
+- **Dependency inversion** is _State is passed in_, within the limit of _Abstractions are earned_: a type depends on an abstraction where one is earned, and directly on the concrete type otherwise.
 
 ## Async and failure
 
