@@ -2,18 +2,31 @@
 
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
+  <!-- A project named *.Tests holds tests. Dagline.TestSupport holds the helpers they share and is a plain library. -->
   <PropertyGroup>
+    <HoldsTests>$(MSBuildProjectName.EndsWith('.Tests'))</HoldsTests>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HoldsTests)' == 'true'">
     <OutputType>Exe</OutputType>
     <RollForward>Major</RollForward>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(HoldsTests)' == 'true'">
     <PackageReference Include="TUnit" />
     <PackageReference Include="Shouldly" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(HoldsTests)' == 'true'">
     <Using Include="Shouldly" />
+  </ItemGroup>
+
+  <!-- The only real time in a test: a stuck test fails after 30 seconds. -->
+  <ItemGroup Condition="'$(HoldsTests)' == 'true'">
+    <AssemblyAttribute Include="TUnit.Core.TimeoutAttribute">
+      <_Parameter1>30000</_Parameter1>
+      <_Parameter1_IsLiteral>true</_Parameter1_IsLiteral>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>
