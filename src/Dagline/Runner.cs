@@ -21,18 +21,25 @@ public static class Runner
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
     public static Task<RunResult> RunAsync(Graph graph, RunOptions options)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(options);
 
-        return RunToEndAsync(graph, options);
+        IReporter[] reporters = [.. options.Reporters];
+        if (reporters.Contains(null))
+        {
+            throw new ArgumentException("A reporter in the options is null.", nameof(options));
+        }
+
+        return RunToEndAsync(graph, options.TimeProvider, reporters);
     }
 
-    private static async Task<RunResult> RunToEndAsync(Graph graph, RunOptions options)
+    private static async Task<RunResult> RunToEndAsync(Graph graph, TimeProvider timeProvider, IReporter[] reporters)
     {
-        var delivery = new ReporterDelivery([.. options.Reporters]);
-        var run = new Run(graph, options.TimeProvider, delivery);
+        var delivery = new ReporterDelivery(reporters);
+        var run = new Run(graph, timeProvider, delivery);
 
         run.Start();
         var outcome = await run.Ended.ConfigureAwait(false);
