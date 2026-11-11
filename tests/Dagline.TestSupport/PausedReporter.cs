@@ -50,8 +50,12 @@ public sealed class PausedReporter : IReporter
     public void Release() => _released.TrySetResult();
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentNullException"><paramref name="runEvent"/> or <paramref name="snapshot"/> is <see langword="null"/>.</exception>
     public async ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(runEvent);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
         lock (_gate)
         {
             _events.Add(runEvent);
