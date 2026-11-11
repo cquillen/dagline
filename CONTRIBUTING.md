@@ -34,7 +34,7 @@ dotnet docfx docs/docfx.json --serve   # http://localhost:8080
 5. For user-facing changes, update the docs in `docs/` and add an entry under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
 6. Open a pull request. CI must pass on Linux, Windows and macOS. PRs are squash-merged.
 
-Code style is defined in `.editorconfig` and enforced at build time. All files use LF line endings.
+Code style is defined in `.editorconfig` and enforced at build time. Design and factoring rules are in [CODING_STANDARDS.md](CODING_STANDARDS.md). All files use LF line endings.
 
 ## Releasing (maintainers)
 

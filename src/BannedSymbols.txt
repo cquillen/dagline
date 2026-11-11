@@ -1,0 +1,11 @@
+P:System.DateTime.Now;Take the current time from an injected TimeProvider.
+P:System.DateTime.UtcNow;Take the current time from an injected TimeProvider.
+P:System.DateTimeOffset.Now;Take the current time from an injected TimeProvider.
+P:System.DateTimeOffset.UtcNow;Take the current time from an injected TimeProvider.
+M:System.Threading.Tasks.Task.Delay(System.Int32);Use the Task.Delay overload that takes a TimeProvider.
+M:System.Threading.Tasks.Task.Delay(System.Int32,System.Threading.CancellationToken);Use the Task.Delay overload that takes a TimeProvider.
+M:System.Threading.Tasks.Task.Delay(System.TimeSpan);Use the Task.Delay overload that takes a TimeProvider.
+M:System.Threading.Tasks.Task.Delay(System.TimeSpan,System.Threading.CancellationToken);Use the Task.Delay overload that takes a TimeProvider.
+M:System.Threading.Thread.Sleep(System.Int32);Await Task.Delay with an injected TimeProvider.
+M:System.Threading.Thread.Sleep(System.TimeSpan);Await Task.Delay with an injected TimeProvider.
+T:System.Diagnostics.Stopwatch;Measure with TimeProvider.GetTimestamp and TimeProvider.GetElapsedTime.

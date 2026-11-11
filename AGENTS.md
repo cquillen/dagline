@@ -26,6 +26,7 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 - Nullable on, file-scoped namespaces, LF line endings, `.editorconfig` style.
 - Every public type and member needs an XML doc comment (CS1591 is an error in CI). These comments become the published API reference: write them for that reader, with as much behavioural and implementation detail as they would want (ordering, concurrency, failure modes).
 - Inside the code, names and structure are the documentation. Reserve `//` comments for the surprising: a non-obvious reason, a workaround, a constraint the code cannot show.
+- Factoring and design rules live in `CODING_STANDARDS.md`. Read it before writing or reviewing C#.
 - Any change to public API or behaviour updates `docs/` and `CHANGELOG.md` (`[Unreleased]`) in the same PR.
 - Keep the GitHub Pages docs site current: each new feature gets user-facing docs in `docs/articles/` (new page or section, added to `toc.yml`), and replace TODO stubs as the features they describe land.
 - Never commit to `main`. Use a branch and PR. Versions come from git tags (MinVer); never set `<Version>`.
