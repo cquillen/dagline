@@ -56,12 +56,12 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private void Settle(GraphTask task, NodeStatus status)
+    private void Settle(GraphTask task, TaskOutcome outcome)
     {
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
-            Move(task, status, now);
+            Move(task, outcome, now);
             Advance(WaitingFor(task), now);
         }
     }
@@ -132,8 +132,26 @@ internal sealed class Run : ISnapshotSource
     // No token: a run cannot be stopped, and a task body takes none.
     private async Task RunBodyAsync(GraphTask task)
     {
-        await task.Body(new TaskContext(task.Path, _timeProvider)).ConfigureAwait(false);
-        Settle(task, NodeStatus.Succeeded);
+        var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
+        Settle(task, outcome);
+    }
+
+    /// <summary>
+    /// Invokes the body of a task and says how it ended. This is the one place consumer code of a task is invoked,
+    /// and so the one catch-all: whatever escapes the body, a cancellation exception included, is an unexpected failure
+    /// of that task and of nothing else.
+    /// </summary>
+    private async Task<TaskOutcome> InvokeBodyAsync(GraphTask task)
+    {
+        try
+        {
+            await task.Body(new TaskContext(task.Path, _timeProvider)).ConfigureAwait(false);
+            return TaskOutcome.Succeeded;
+        }
+        catch (Exception escaped)
+        {
+            return TaskOutcome.UnexpectedFailure(escaped);
+        }
     }
 
     private void End(DateTimeOffset now)
@@ -146,25 +164,42 @@ internal sealed class Run : ISnapshotSource
         _ended.SetResult(outcome);
     }
 
+    /// <summary>Moves a task on to a status in which it has not settled: ready, or running.</summary>
     private void Move(GraphTask task, NodeStatus to, DateTimeOffset now)
     {
         var before = _nodes[task.Position];
-        var after = before with
+        Replace(task, before with { Status = to, Started = to is NodeStatus.Running ? now : before.Started }, now);
+    }
+
+    /// <summary>Settles a task: moves it to the status of its outcome and freezes that outcome on it.</summary>
+    private void Move(GraphTask task, TaskOutcome outcome, DateTimeOffset now)
+    {
+        var settled = _nodes[task.Position] with
         {
-            Status = to,
-            Counts = StatusCounts.OfOneTask(to),
-            Started = to is NodeStatus.Running ? now : before.Started,
-            Settled = to.IsSettled() ? now : before.Settled,
+            Status = outcome.Status,
+            Settled = now,
+            Failure = outcome.Failure,
+            Message = outcome.Message,
+            Detail = outcome.Detail,
         };
 
+        Replace(task, settled, now);
+    }
+
+    private void Replace(GraphTask task, NodeSnapshot changed, DateTimeOffset now)
+    {
+        var from = _nodes[task.Position].Status;
+        var to = changed.Status;
+        var after = changed with { Counts = StatusCounts.OfOneTask(to) };
+
         _nodes[task.Position] = after;
-        _counts.Move(before.Status, to);
+        _counts.Move(from, to);
         foreach (var group in task.Groups.Select(_graph.GroupAt))
         {
-            MoveBeneath(group, before.Status, to);
+            MoveBeneath(group, from, to);
         }
 
-        Publish(new TaskStatusChanged(now, after, before.Status, to));
+        Publish(new TaskStatusChanged(now, after, from, to));
     }
 
     /// <summary>

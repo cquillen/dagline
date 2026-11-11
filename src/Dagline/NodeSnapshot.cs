@@ -54,6 +54,27 @@ public sealed record NodeSnapshot
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; internal init; }
 
     /// <summary>
+    /// Why the task failed, or <see langword="null"/> for a task that has not failed and for a group.
+    /// </summary>
+    /// <remarks>
+    /// An exception that escapes a task body, a cancellation exception included, is <see cref="FailureKind.Unexpected"/>.
+    /// </remarks>
+    public FailureKind? Failure { get; internal init; }
+
+    /// <summary>
+    /// The one-line message of the task's outcome, or <see langword="null"/> when it has none and for a group.
+    /// For an unexpected failure it is the message of the exception that escaped the task body.
+    /// </summary>
+    public string? Message { get; internal init; }
+
+    /// <summary>
+    /// The detail lines of the task's outcome, in the order added. Empty when it has none and for a group.
+    /// For an unexpected failure they are the full name of the exception's type, then each line of its stack trace
+    /// as the runtime wrote it. An exception that was never thrown has no stack trace, and then the type is the only line.
+    /// </summary>
+    public IReadOnlyList<string> Detail { get; internal init; } = [];
+
+    /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
     /// or <see langword="null"/> while it has not started.
     /// </summary>
