@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Dagline;
 
 /// <summary>Finds every problem that stops a graph from being built.</summary>
@@ -11,13 +13,19 @@ internal static class GraphValidation
     {
         Node[] nodes = [.. root.InDeclarationOrder()];
         ChildNodes[] scopes = [root, .. nodes.OfType<GroupNode>().Select(group => group.Children)];
+        (DeclaredDependency Dependency, GraphProblem? Problem)[] dependencies =
+            [.. Merged(declared).Select(dependency => (dependency, ProblemWith(dependency, builder)))];
+
+        // A dependency with a problem of its own is left out of the search, so that one mistake is one problem.
+        DeclaredDependency[] sound = [.. dependencies.Where(checkedOne => checkedOne.Problem is null).Select(checkedOne => checkedOne.Dependency)];
 
         return
         [
             .. nodes.Where(node => !NodePath.IsSegment(node.Segment)).Select(InvalidSegment),
             .. scopes.SelectMany(DuplicatePaths),
             .. scopes.SelectMany(SiblingsThatDifferOnlyByCase),
-            .. Merged(declared).Select(dependency => ProblemWith(dependency, builder)).OfType<GraphProblem>(),
+            .. dependencies.Select(checkedOne => checkedOne.Problem).OfType<GraphProblem>(),
+            .. DependencyCycles.Among(sound).Select(Cycle),
         ];
     }
 
@@ -70,15 +78,21 @@ internal static class GraphValidation
     private static GraphProblem? ProblemWith(DeclaredDependency dependency, GraphBuilder builder)
     {
         var (dependent, upstream, kind) = dependency;
-        var what =
-            upstream.Builder != builder ? $"{Quoted(upstream)}, a handle from another builder"
-            : upstream == dependent ? "itself"
-            : dependent.Ancestors().Contains(upstream) ? $"{Quoted(upstream)}, its own ancestor"
-            : upstream.Ancestors().Contains(dependent) ? $"{Quoted(upstream)}, its own descendant"
+        var problem =
+            upstream.Builder != builder ? $"{Sentence(dependency)}, a handle from another builder."
+            : upstream == dependent ? $"{Quoted(dependent)} {kind.Verb()} itself."
+            : dependent.Ancestors().Contains(upstream) ? $"{Sentence(dependency)}, its own ancestor."
+            : upstream.Ancestors().Contains(dependent) ? $"{Sentence(dependency)}, its own descendant."
             : null;
 
-        return what is null ? null : new(dependent.ValidPath, $"{Quoted(dependent)} {kind.Verb()} {what}.");
+        return problem is null ? null : new(dependent.ValidPath, problem);
     }
+
+    private static GraphProblem Cycle(ImmutableArray<DeclaredDependency> cycle)
+        => new(cycle[0].Dependent.ValidPath, $"These dependencies form a cycle: {string.Join(", ", cycle.Select(Sentence))}.");
+
+    private static string Sentence(DeclaredDependency dependency)
+        => $"{Quoted(dependency.Dependent)} {dependency.Kind.Verb()} {Quoted(dependency.Upstream)}";
 
     private static string Quoted(Node node) => $"'{node.Path}'";
 }

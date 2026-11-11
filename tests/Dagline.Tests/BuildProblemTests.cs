@@ -231,6 +231,137 @@ public class BuildProblemTests
         ]);
     }
 
+    [Test]
+    public void A_cycle_is_reported_with_every_node_of_it_named_and_both_dependency_kinds_count()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => Task.CompletedTask);
+        var verify = builder.Task("verify", _ => Task.CompletedTask);
+        var publish = builder.Task("publish", _ => Task.CompletedTask);
+        builder.Task("report", _ => Task.CompletedTask).After(publish);
+
+        publish.Requires(verify);
+        verify.After(load);
+        load.Requires(publish);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(
+                NodePath.Parse("publish"),
+                "These dependencies form a cycle: 'publish' requires 'verify', 'verify' runs after 'load', 'load' requires 'publish'."),
+        ]);
+    }
+
+    [Test]
+    public void A_cycle_through_a_group_is_reported_because_the_group_stands_for_the_tasks_beneath_it()
+    {
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var load = shard.Group("tenant-a").Task("load", _ => Task.CompletedTask);
+        var publish = builder.Task("publish", _ => Task.CompletedTask);
+
+        publish.Requires(shard);
+        load.After(publish);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(
+                NodePath.Parse("publish"),
+                "These dependencies form a cycle: 'publish' requires 'shard-1', 'shard-1/tenant-a/load' runs after 'publish'."),
+        ]);
+    }
+
+    [Test]
+    public void A_cycle_through_a_dependency_declared_on_a_group_is_reported_because_it_applies_to_every_task_beneath()
+    {
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var load = shard.Group("tenant-a").Task("load", _ => Task.CompletedTask);
+        var publish = builder.Task("publish", _ => Task.CompletedTask);
+
+        shard.Requires(publish);
+        publish.Requires(load);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(
+                NodePath.Parse("shard-1"),
+                "These dependencies form a cycle: 'shard-1' requires 'publish', 'publish' requires 'shard-1/tenant-a/load'."),
+        ]);
+    }
+
+    [Test]
+    public void A_cycle_through_an_empty_group_is_reported()
+    {
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var publish = builder.Task("publish", _ => Task.CompletedTask);
+
+        shard.After(publish);
+        publish.Requires(shard);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(
+                NodePath.Parse("shard-1"),
+                "These dependencies form a cycle: 'shard-1' runs after 'publish', 'publish' requires 'shard-1'."),
+        ]);
+    }
+
+    [Test]
+    public void Two_cycles_are_two_problems_and_a_cycle_many_tasks_close_is_reported_once()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => Task.CompletedTask);
+        var verify = builder.Task("verify", _ => Task.CompletedTask);
+        var shard = builder.Group("shard-1");
+        var publish = builder.Task("publish", _ => Task.CompletedTask);
+
+        load.Requires(verify);
+        verify.Requires(load);
+        foreach (var tenant in (string[])["tenant-a", "tenant-b", "tenant-c"])
+        {
+            shard.Task(tenant, _ => Task.CompletedTask).Requires(publish);
+        }
+
+        publish.Requires(shard);
+
+        ProblemsOf(builder).Select(problem => problem.Message).ShouldBe(
+        [
+            "These dependencies form a cycle: 'load' requires 'verify', 'verify' requires 'load'.",
+            "These dependencies form a cycle: 'shard-1/tenant-a' requires 'publish', 'publish' requires 'shard-1'.",
+        ]);
+    }
+
+    [Test]
+    public void Dependencies_that_only_share_nodes_are_not_a_cycle()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => Task.CompletedTask);
+        var shard = builder.Group("shard-1").Requires(load);
+        var prepare = shard.Task("prepare", _ => Task.CompletedTask);
+        var tenant = shard.Group("tenant-a").After(prepare);
+        var verify = tenant.Task("verify", _ => Task.CompletedTask).Requires([load, prepare]);
+        var empty = builder.Group("shard-2").Requires(shard);
+        builder.Task("publish", _ => Task.CompletedTask).Requires([shard, empty]).After(verify);
+        builder.Task("report", _ => Task.CompletedTask).After([tenant, empty, load]);
+
+        builder.Build().Count.ShouldBe(8);
+    }
+
+    [Test]
+    public void A_chain_of_dependencies_as_long_as_a_large_graph_builds()
+    {
+        var builder = new GraphBuilder();
+        var previous = builder.Task("task-0", _ => Task.CompletedTask);
+        for (var index = 1; index < 20_000; index++)
+        {
+            previous = builder.Task($"task-{index}", _ => Task.CompletedTask).Requires(previous);
+        }
+
+        builder.Build().Count.ShouldBe(20_000);
+    }
+
     private static IReadOnlyList<GraphProblem> ProblemsOf(GraphBuilder builder)
         => Should.Throw<GraphException>(() => builder.Build()).Problems;
 }
