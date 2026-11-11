@@ -4,7 +4,25 @@ namespace Dagline;
 /// A record of one thing that happened in a run, with the time it happened.
 /// Every reporter receives a run's events in the same order, causes before effects.
 /// </summary>
-/// <remarks>The set of event kinds is closed: a type outside Dagline cannot add one.</remarks>
+/// <remarks>
+/// <para>
+/// The set of event kinds is closed: a type outside Dagline cannot add one.
+/// </para>
+/// <para>
+/// A change and everything that follows from it at once are one step, and the events of a step come in a fixed order,
+/// all with the same <see cref="At"/>:
+/// </para>
+/// <list type="number">
+/// <item><description>The change itself: the run starting, or a task settling.</description></item>
+/// <item><description>Every task that this blocks, pending to blocked, in declaration order.</description></item>
+/// <item><description>Every task whose dependencies are now all met, pending to ready, in declaration order.</description></item>
+/// <item><description>Every group that is now settled, the deepest first, then in declaration order.</description></item>
+/// <item><description>Every task that now starts, ready to running, in declaration order.</description></item>
+/// </list>
+/// <para>
+/// The events of one step are never mixed with those of another.
+/// </para>
+/// </remarks>
 public abstract record RunEvent
 {
     private protected RunEvent(DateTimeOffset at)
@@ -22,7 +40,7 @@ public abstract record RunEvent
 public sealed record RunStarted(DateTimeOffset At, ISnapshotSource Source) : RunEvent(At);
 
 /// <summary>
-/// A task changed status. One is published for every change, pending to ready included.
+/// A task changed status. One is published for every change, pending to ready and pending to blocked included.
 /// </summary>
 /// <param name="At">When the status changed.</param>
 /// <param name="Node">The task as it is after the change. When the task has settled, this carries its whole outcome.</param>
@@ -36,8 +54,9 @@ public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, Nod
 /// <remarks>
 /// <para>
 /// The event comes after the last <see cref="TaskStatusChanged"/> of every task beneath the group. Within the step in which
-/// a task settles, it follows the tasks that became ready and precedes the tasks that start. When several groups settle in one step,
-/// the deepest comes first, then declaration order, so a group's event follows those of the groups beneath it.
+/// a task settles, it follows the tasks that were blocked and those that became ready, and precedes the tasks that start.
+/// When several groups settle in one step, the deepest comes first, then declaration order, so a group's event follows those
+/// of the groups beneath it. One failure can settle many groups in one step, since every task it blocks settles with it.
 /// </para>
 /// <para>
 /// A group that is settled from the start of the run, because no task is beneath it, gets no event.

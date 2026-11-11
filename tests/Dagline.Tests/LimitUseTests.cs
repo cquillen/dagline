@@ -85,6 +85,45 @@ public class LimitUseTests
     }
 
     [Test]
+    public async Task A_task_that_fails_gives_its_slots_back_so_a_task_held_behind_it_starts_and_a_blocked_task_takes_none()
+    {
+        var builder = new GraphBuilder();
+        var failing = builder.Task("load-1", _ => throw new InvalidOperationException("no entities to load")).Limit("database");
+        builder.Task("load-2", _ => Task.CompletedTask).Limit("database");
+        builder.Task("publish", _ => Task.CompletedTask).Requires(failing).Limit("database");
+        builder.Task("export", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(
+            builder.Build(),
+            new RunOptions
+            {
+                Journal = Journal.None,
+                Cap = 1,
+                Limits = new Dictionary<string, int> { ["database"] = 1 },
+                Reporters = [reporter],
+            });
+
+        // load-2 is held by the cap and by the limit, and export by the cap alone, until the failed task gives both back.
+        result.Outcome.ShouldBe(RunOutcome.Incomplete);
+        reporter.Lines.Zip(reporter.Snapshots, (line, snapshot) => (line, snapshot.Cap.InUse, snapshot.Limits["database"].InUse)).ShouldBe(
+        [
+            ("run started", 0, 0),
+            ("load-1: pending -> ready", 0, 0),
+            ("load-2: pending -> ready", 0, 0),
+            ("export: pending -> ready", 0, 0),
+            ("load-1: ready -> running", 1, 1),
+            ("load-1: running -> failed", 0, 0),
+            ("publish: pending -> blocked", 0, 0),
+            ("load-2: ready -> running", 1, 1),
+            ("load-2: running -> succeeded", 0, 0),
+            ("export: ready -> running", 1, 0),
+            ("export: running -> succeeded", 0, 0),
+            ("run ended: incomplete", 0, 0),
+        ]);
+    }
+
+    [Test]
     public async Task Each_node_shows_the_limits_named_on_it_and_not_those_it_inherits()
     {
         var builder = new GraphBuilder();

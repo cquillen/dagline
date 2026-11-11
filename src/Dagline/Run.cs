@@ -59,23 +59,79 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private void Settle(GraphTask task, NodeStatus status)
+    private void Settle(GraphTask task, TaskOutcome outcome)
     {
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
             _slots.GiveBack(task);
-            Move(task, status, now);
-            Advance(WaitingFor(task), now);
+            Move(task, outcome, now);
+            var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
+            Advance(WaitingFor([task, .. blocked]), now);
         }
     }
 
     /// <summary>
-    /// The tasks, in declaration order, that wait for a task that has just settled or for a group that settled with it.
+    /// Blocks every pending task that requires a task that has just failed: directly, through a group that holds it,
+    /// or through a task that this blocks. Each records the failed task as its cause.
     /// </summary>
-    private IEnumerable<GraphTask> WaitingFor(GraphTask settled)
-        => _settledInThisStep
-            .Prepend<GraphNode>(settled)
+    /// <returns>The tasks blocked, in declaration order.</returns>
+    private List<GraphTask> Block(GraphTask failed, DateTimeOffset now)
+    {
+        List<GraphTask> blocked = [.. PendingTasksThatRequire(failed).Order().Select(_graph.TaskAt)];
+        var outcome = TaskOutcome.Blocked(failed.Path);
+        foreach (var task in blocked)
+        {
+            Move(task, outcome, now);
+        }
+
+        return blocked;
+    }
+
+    /// <summary>
+    /// The positions of the pending tasks that cannot run now that a task has failed. A task that is already blocked is passed over,
+    /// with everything that requires it: an earlier failure reached it first.
+    /// </summary>
+    private HashSet<int> PendingTasksThatRequire(GraphTask failed)
+    {
+        HashSet<int> found = [];
+        HashSet<int> cannotSucceed = [];
+        Queue<GraphNode> unvisited = new();
+        Reach(failed);
+        while (unvisited.TryDequeue(out var node))
+        {
+            foreach (var dependent in _graph.Requiring(node).Where(IsPending))
+            {
+                if (found.Add(dependent.Position))
+                {
+                    Reach(dependent);
+                }
+            }
+        }
+
+        return found;
+
+        // A group is visited once, however many of the tasks beneath it the failure reaches.
+        void Reach(GraphTask task)
+        {
+            foreach (var taskOrGroup in _graph.WithItsGroups(task))
+            {
+                if (cannotSucceed.Add(taskOrGroup.Position))
+                {
+                    unvisited.Enqueue(taskOrGroup);
+                }
+            }
+        }
+    }
+
+    private bool IsPending(GraphTask task) => _nodes[task.Position].Status is NodeStatus.Pending;
+
+    /// <summary>
+    /// The tasks, in declaration order, that wait for one of the tasks that have just settled or for a group that settled with them.
+    /// </summary>
+    private IEnumerable<GraphTask> WaitingFor(IEnumerable<GraphTask> settled)
+        => settled
+            .Concat<GraphNode>(_settledInThisStep)
             .SelectMany(node => node.Dependents)
             .Distinct()
             .Order()
@@ -143,8 +199,26 @@ internal sealed class Run : ISnapshotSource
     // No token: a run cannot be stopped, and a task body takes none.
     private async Task RunBodyAsync(GraphTask task)
     {
-        await task.Body(new TaskContext(task.Path, _timeProvider)).ConfigureAwait(false);
-        Settle(task, NodeStatus.Succeeded);
+        var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
+        Settle(task, outcome);
+    }
+
+    /// <summary>
+    /// Invokes the body of a task and says how it ended. This is the one place consumer code of a task is invoked,
+    /// and so the one catch-all: whatever escapes the body, a cancellation exception included, is an unexpected failure
+    /// of that task and of nothing else.
+    /// </summary>
+    private async Task<TaskOutcome> InvokeBodyAsync(GraphTask task)
+    {
+        try
+        {
+            await task.Body(new TaskContext(task.Path, _timeProvider)).ConfigureAwait(false);
+            return TaskOutcome.Succeeded;
+        }
+        catch (Exception escaped)
+        {
+            return TaskOutcome.UnexpectedFailure(escaped);
+        }
     }
 
     private void End(DateTimeOffset now)
@@ -157,25 +231,47 @@ internal sealed class Run : ISnapshotSource
         _ended.SetResult(outcome);
     }
 
+    /// <summary>Moves a task on to a status in which it has not settled: ready, or running.</summary>
     private void Move(GraphTask task, NodeStatus to, DateTimeOffset now)
     {
         var before = _nodes[task.Position];
-        var after = before with
+        Replace(task, before with { Status = to, Started = to is NodeStatus.Running ? now : before.Started }, now);
+    }
+
+    /// <summary>Settles a task: moves it to the status of its outcome and freezes that outcome on it.</summary>
+    private void Move(GraphTask task, TaskOutcome outcome, DateTimeOffset now)
+    {
+        var settled = _nodes[task.Position] with
         {
-            Status = to,
-            Counts = StatusCounts.OfOneTask(to),
-            Started = to is NodeStatus.Running ? now : before.Started,
-            Settled = to.IsSettled() ? now : before.Settled,
+            Status = outcome.Status,
+            Settled = now,
+            Failure = outcome.Failure,
+            BlockedBy = outcome.BlockedBy,
+            Message = outcome.Message,
+            Detail = outcome.Detail,
         };
 
+        Replace(task, settled, now);
+    }
+
+    /// <summary>
+    /// Puts a task as it is after a change of status in place of the task as it was, counts the change in the run
+    /// and in every group that holds the task, and publishes it.
+    /// </summary>
+    private void Replace(GraphTask task, NodeSnapshot changed, DateTimeOffset now)
+    {
+        var from = _nodes[task.Position].Status;
+        var to = changed.Status;
+        var after = changed with { Counts = StatusCounts.OfOneTask(to) };
+
         _nodes[task.Position] = after;
-        _counts.Move(before.Status, to);
+        _counts.Move(from, to);
         foreach (var group in task.Groups.Select(_graph.GroupAt))
         {
-            MoveBeneath(group, before.Status, to);
+            MoveBeneath(group, from, to);
         }
 
-        Publish(new TaskStatusChanged(now, after, before.Status, to));
+        Publish(new TaskStatusChanged(now, after, from, to));
     }
 
     /// <summary>

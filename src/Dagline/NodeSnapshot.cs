@@ -65,14 +65,45 @@ public sealed record NodeSnapshot
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; internal init; }
 
     /// <summary>
+    /// Why the task failed, or <see langword="null"/> for a task that has not failed and for a group.
+    /// </summary>
+    /// <remarks>
+    /// An exception that escapes a task body, a cancellation exception included, is <see cref="FailureKind.Unexpected"/>.
+    /// </remarks>
+    public FailureKind? Failure { get; internal init; }
+
+    /// <summary>
+    /// The path of the failed task that blocked this task, or <see langword="null"/> for a task that is not blocked and for a group.
+    /// </summary>
+    /// <remarks>
+    /// It is always a failed task, never a blocked one: a task blocked through a chain of blocked tasks names the one failure
+    /// that started the cascade. It is the first failure to reach the task, and a later failure of another upstream does not change it.
+    /// </remarks>
+    public NodePath? BlockedBy { get; internal init; }
+
+    /// <summary>
+    /// The one-line message of the task's outcome, or <see langword="null"/> when it has none and for a group.
+    /// For an unexpected failure it is the message of the exception that escaped the task body, with each line break in it
+    /// replaced by a space.
+    /// </summary>
+    public string? Message { get; internal init; }
+
+    /// <summary>
+    /// The detail lines of the task's outcome, in the order added. Empty when it has none and for a group.
+    /// For an unexpected failure they are the full name of the exception's type, then each line of its stack trace
+    /// as the runtime wrote it.
+    /// </summary>
+    public IReadOnlyList<string> Detail { get; internal init; } = [];
+
+    /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
-    /// or <see langword="null"/> while it has not started.
+    /// or <see langword="null"/> while it has not started. A blocked task never starts, so it has no start time.
     /// </summary>
     public DateTimeOffset? Started { get; internal init; }
 
     /// <summary>
     /// When the task settled, read from the run's <see cref="RunOptions.TimeProvider"/>,
-    /// or <see langword="null"/> while it has not settled.
+    /// or <see langword="null"/> while it has not settled. A blocked task settles at the time the task that blocked it failed.
     /// </summary>
     public DateTimeOffset? Settled { get; internal init; }
 }
