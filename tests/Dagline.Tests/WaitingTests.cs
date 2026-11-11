@@ -237,4 +237,129 @@ public class WaitingTests
 
         result.Snapshot[jobTask.Path].WaitingSince.ShouldBeNull();
     }
+
+    [Test]
+    public async Task A_waiting_task_is_running_and_its_group_and_the_run_are_what_they_would_be_without_the_marker()
+    {
+        var poll = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var jobTask = shard.Task("job", async context =>
+        {
+            using (context.Waiting("job 17 to finish"))
+            {
+                await poll.Body(context);
+            }
+        });
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var source = await reporter.Source;
+        await poll.Started;
+        var waiting = source.Current;
+        poll.Release();
+        var result = await run;
+
+        waiting[jobTask.Path].WaitingSince.ShouldNotBeNull();
+        waiting[jobTask.Path].Status.ShouldBe(NodeStatus.Running);
+        waiting[shard.Path].Status.ShouldBe(NodeStatus.Running);
+        waiting[shard.Path].Counts[NodeStatus.Running].ShouldBe(1);
+        waiting.Counts[NodeStatus.Running].ShouldBe(1);
+        waiting.Cap.InUse.ShouldBe(1);
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        result.Snapshot[shard.Path].Status.ShouldBe(NodeStatus.Succeeded);
+    }
+
+    [Test]
+    public async Task A_waiting_task_keeps_its_slots_so_a_second_task_that_holds_the_limit_stays_ready()
+    {
+        var poll = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("job", async context =>
+        {
+            using (context.Waiting("job 17 to finish"))
+            {
+                await poll.Body(context);
+            }
+        }).Limit("external");
+        var otherTask = builder.Task("other", _ => Task.CompletedTask).Limit("external");
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, Reporters = [reporter], Limits = new Dictionary<string, int> { ["external"] = 1 } });
+        var source = await reporter.Source;
+        await poll.Started;
+        var waiting = source.Current;
+        poll.Release();
+        await run;
+
+        waiting[otherTask.Path].Status.ShouldBe(NodeStatus.Ready);
+        waiting.Limits["external"].ShouldBe(new LimitUse(Size: 1, InUse: 1));
+        reporter.Lines.ShouldBe(
+        [
+            "run started",
+            "job: pending -> ready",
+            "other: pending -> ready",
+            "job: ready -> running",
+            "waiting job: job 17 to finish",
+            "waited job",
+            "job: running -> succeeded",
+            "other: ready -> running",
+            "other: running -> succeeded",
+            "run ended: complete",
+        ]);
+    }
+
+    [Test]
+    public async Task Progress_set_while_waiting_is_in_the_snapshot()
+    {
+        var poll = new PausedBody();
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", async context =>
+        {
+            using (context.Waiting("job 17 to finish"))
+            {
+                context.Status("job 17 is 40% done");
+                context.Count(40, 100);
+                await poll.Body(context);
+            }
+        });
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var source = await reporter.Source;
+        await poll.Started;
+        var waiting = source.Current[jobTask.Path];
+        poll.Release();
+        await run;
+
+        waiting.WaitingText.ShouldBe("job 17 to finish");
+        waiting.StatusText.ShouldBe("job 17 is 40% done");
+        waiting.Count.ShouldBe(40);
+        waiting.Total.ShouldBe(100);
+    }
+
+    [Test]
+    public async Task A_scope_opened_after_the_task_has_settled_does_nothing()
+    {
+        TaskContext? kept = null;
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", context =>
+        {
+            kept = context;
+            return Task.CompletedTask;
+        });
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var late = kept!.Waiting("job 17 to finish");
+        late.Dispose();
+        late.Dispose();
+
+        late.ShouldNotBeNull();
+        reporter.Events.OfType<WaitingChanged>().ShouldBeEmpty();
+        result.Snapshot[jobTask.Path].WaitingSince.ShouldBeNull();
+        (await reporter.Source).Current[jobTask.Path].WaitingSince.ShouldBeNull();
+    }
 }
