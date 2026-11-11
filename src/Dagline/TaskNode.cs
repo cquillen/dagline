@@ -38,9 +38,20 @@ public sealed class TaskNode : Node
     /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
     public TaskNode Requires(Node upstream)
     {
-        ArgumentNullException.ThrowIfNull(upstream);
+        Declare(upstream, DependencyKind.Requires);
+        return this;
+    }
 
-        Builder.Declare(this, upstream, DependencyKind.Requires);
+    /// <summary>
+    /// Declares that this task runs <em>after</em> <paramref name="upstream"/>: it becomes ready once the upstream has settled,
+    /// whatever the outcome.
+    /// </summary>
+    /// <param name="upstream">The node this task runs after.</param>
+    /// <returns>This handle.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="upstream"/> is <see langword="null"/>.</exception>
+    public TaskNode After(Node upstream)
+    {
+        Declare(upstream, DependencyKind.After);
         return this;
     }
 }

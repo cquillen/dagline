@@ -35,4 +35,11 @@ public abstract class Node
 
         TitleText = title;
     }
+
+    private protected void Declare(Node upstream, DependencyKind kind)
+    {
+        ArgumentNullException.ThrowIfNull(upstream);
+
+        Builder.Declare(this, upstream, kind);
+    }
 }
