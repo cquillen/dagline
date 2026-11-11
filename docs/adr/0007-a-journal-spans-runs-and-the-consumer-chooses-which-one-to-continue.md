@@ -33,7 +33,7 @@ How a journal is identified and held:
 
 ## Consequences
 
-- An app with more than one kind of graph gives each its own directory. Continuing a journal with an unrelated graph is not an error: every task runs as new and the two records share one file. The count of unmatched paths (ADR 0008) is the visible symptom.
+- An app with more than one kind of graph gives each its own directory. Continuing a journal with an unrelated graph is not an error: every task runs as new and the two records share one file. The counts of unmatched paths (ADR 0008) are the visible symptom.
 - Continuing a finished journal is allowed and has no special case. With an unchanged graph every task is an earlier success and the run is complete at once. If the graph gained paths, those run, and the journal is finished or not by the new run's outcome.
 - The listing needs no graph. It reports what the journal says.
 - There is no API for the per-task detail of a past journal in the first release. The file is readable text (ADR 0009).
