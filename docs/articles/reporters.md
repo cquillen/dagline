@@ -295,7 +295,12 @@ The summary follows the `run ended` line and has no timestamps. It has up to thr
 
 ### The writer and the clock
 
-All the lines about one event are written with one call to the writer, which is then flushed. A writer your app also writes to therefore never puts a line of its own in the middle of a failure's detail lines or of the summary. The reporter's own writes never overlap either: the line of counts comes from a timer, and it waits for a write that is in progress. Writes are synchronous.
+All the lines about one event are written with one call to the writer, <xref:System.IO.TextWriter.Write(System.String)>, which is then flushed. The reporter's own writes never overlap: the line of counts comes from a timer, and it waits for a write that is in progress. Writes are synchronous.
+
+That is all the reporter can promise, because it guards only its own calls. Whether a line your app writes to the same writer can land in the middle of a failure's detail lines or of the summary depends on the writer:
+
+- **A synchronized writer keeps the lines of one event together.** It lets one call in at a time, so the reporter's one call is written whole. `Console.Out` and `Console.Error` are synchronized. `TextWriter.Synchronized(writer)` wraps any other writer: give the wrapper to the reporter and write through the same wrapper everywhere else in your app.
+- **Any other writer does not.** A `StreamWriter` or a `StringWriter` is not safe to call from two threads at once, so sharing one with the reporter can mix the two outputs or corrupt the writer. Wrap it as above, or give the reporter a writer that nothing else writes to while the run is going.
 
 The quiet minute is measured on a clock of the reporter's own, which is the system clock unless you pass another. That clock drives only the line of counts, and gives it its time. In a test, pass the reporter the same fake clock as the run:
 

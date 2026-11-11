@@ -52,8 +52,12 @@ public sealed class RecordingReporter : IReporter
     public IReadOnlyList<string> Lines => [.. Events.Select(EventLine.Describe)];
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentNullException"><paramref name="runEvent"/> or <paramref name="snapshot"/> is <see langword="null"/>.</exception>
     public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(runEvent);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
         lock (_gate)
         {
             _events.Add(runEvent);

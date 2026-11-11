@@ -283,9 +283,10 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Invokes the body of a task and says how it ended. This is the one place consumer code of a task is invoked,
-    /// and so the one catch-all: whatever escapes the body, a cancellation exception included, is an unexpected failure
-    /// of that task and of nothing else.
+    /// Invokes the body of a task and says how it ended. This is the one place a task body is invoked,
+    /// and so the one catch-all for it: whatever escapes the body, a cancellation exception included, is an unexpected failure
+    /// of that task and of nothing else. The exception is read here, outside the lock and before the task settles,
+    /// because its members are consumer code too.
     /// </summary>
     private async Task<TaskOutcome> InvokeBodyAsync(BuiltTask task)
     {

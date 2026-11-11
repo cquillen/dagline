@@ -16,8 +16,11 @@ public sealed class PausedBody
     public Task<TaskContext> Started => _started.Task;
 
     /// <summary>The body to give to the builder. It ends, and its task succeeds, once the test calls <see cref="Release"/>.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
     public Task Body(TaskContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
         _started.TrySetResult(context);
         return _released.Task;
     }

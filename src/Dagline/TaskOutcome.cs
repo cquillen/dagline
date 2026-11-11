@@ -22,17 +22,29 @@ internal sealed record TaskOutcome
 
     public NodePath? BlockedBy { get; private init; }
 
-    private Exception? Escaped { get; init; }
+    private string? EscapedMessage { get; init; }
+
+    private IReadOnlyList<string> EscapedDetail { get; init; } = [];
 
     /// <summary>
     /// The outcome of a task whose body let an exception escape: the exception's message becomes the task's message,
     /// and its type, then each line of its stack trace, are added to the task's detail lines.
     /// </summary>
-    public static TaskOutcome UnexpectedFailure(Exception exception) => new(NodeStatus.Failed)
+    /// <remarks>
+    /// The exception is read here, once, before anything about the run changes, and not again when the task settles.
+    /// A message that cannot be read is replaced by the name of the exception's type, and a stack trace that cannot be read is left out.
+    /// </remarks>
+    public static TaskOutcome UnexpectedFailure(Exception exception)
     {
-        Failure = FailureKind.Unexpected,
-        Escaped = exception,
-    };
+        var type = exception.GetType().ToString();
+
+        return new(NodeStatus.Failed)
+        {
+            Failure = FailureKind.Unexpected,
+            EscapedMessage = Read(exception, static escaped => escaped.Message) ?? type,
+            EscapedDetail = Read(exception, static escaped => escaped.StackTrace) is { } trace ? [type, trace] : [type],
+        };
+    }
 
     /// <summary>
     /// The outcome of a task that will not run because the task at <paramref name="cause"/> failed and this one requires it,
@@ -47,10 +59,23 @@ internal sealed record TaskOutcome
     {
         var settled = task with { Status = Status, Settled = now, Failure = Failure, BlockedBy = BlockedBy };
 
-        return Escaped is null
+        return EscapedMessage is null
             ? settled
-            : settled.WithMessage(Escaped.Message).WithDetail([Escaped.GetType().ToString(), .. StackTrace(Escaped)]);
+            : settled.WithMessage(EscapedMessage).WithDetail(EscapedDetail);
     }
 
-    private static string[] StackTrace(Exception exception) => exception.StackTrace is { } trace ? [trace] : [];
+    /// <returns>What the member gave, or <see langword="null"/> when it gave nothing or threw.</returns>
+    private static string? Read(Exception exception, Func<Exception, string?> member)
+    {
+        // Message and StackTrace are virtual, so reading one runs code of the consumer's exception type.
+        // Whatever that code throws stops here: it must not cost the task its outcome, or the run would never end.
+        try
+        {
+            return member(exception);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 }

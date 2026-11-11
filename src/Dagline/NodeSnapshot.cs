@@ -90,8 +90,9 @@ public sealed record NodeSnapshot
     /// <remarks>
     /// It is the message the task last set with <see cref="TaskContext.Message"/> or <see cref="TaskContext.Fail"/>,
     /// and shows from the moment it is set, while the task is still running. For an unexpected failure it is the message
-    /// of the exception that escaped the task body, which replaces any the task had set. Each line break in the text given
-    /// is replaced by a space.
+    /// of the exception that escaped the task body, which replaces any the task had set. When the exception's
+    /// <see cref="Exception.Message"/> itself throws or gives <see langword="null"/>, it is the full name of the exception's type.
+    /// Each line break in the text given is replaced by a space.
     /// </remarks>
     public string? Message { get; internal init; }
 
@@ -102,6 +103,7 @@ public sealed record NodeSnapshot
     /// They are the lines the task added with <see cref="TaskContext.Detail"/> and <see cref="TaskContext.Fail"/>,
     /// each shown from the moment it is added. An unexpected failure adds, after any lines the task had already added,
     /// the full name of the exception's type, then each line of its stack trace as the runtime wrote it.
+    /// The stack trace is left out when the exception has none or when its <see cref="Exception.StackTrace"/> itself throws.
     /// Only the first 100 detail lines of a task are kept, whichever way they were added:
     /// <see cref="DetailOmitted"/> counts the rest.
     /// </remarks>

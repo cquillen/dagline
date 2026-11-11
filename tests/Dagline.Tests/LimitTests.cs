@@ -21,12 +21,24 @@ public class LimitTests
                 builder.Task($"verify-{shard}", async _ => await Task.Yield());
             }
 
+            var reporter = new RecordingReporter();
+
             var result = await Runner.RunAsync(
                 builder.Build(),
-                new RunOptions { Journal = Journal.None, Limits = new Dictionary<string, int> { ["database"] = size } });
+                new RunOptions
+                {
+                    Journal = Journal.None,
+                    Limits = new Dictionary<string, int> { ["database"] = size },
+                    Reporters = [reporter],
+                });
 
             result.Outcome.ShouldBe(RunOutcome.Complete);
             loads.Highest.ShouldBe(size);
+
+            // A body the run should not have started can begin after the others have left, and then it is not counted above.
+            // The snapshot handed with its start counts it whenever its body gets a thread.
+            reporter.Snapshots.Max(RunningHoldersOfDatabase).ShouldBe(size);
+            reporter.Snapshots.Max(snapshot => snapshot.Limits["database"].InUse).ShouldBe(size);
         }
     }
 
@@ -50,13 +62,23 @@ public class LimitTests
 
             // The limit covers the tasks added before it was named as well.
             shard.Limit("database");
+            var reporter = new RecordingReporter();
 
             var result = await Runner.RunAsync(
                 builder.Build(),
-                new RunOptions { Journal = Journal.None, Limits = new Dictionary<string, int> { ["database"] = size } });
+                new RunOptions
+                {
+                    Journal = Journal.None,
+                    Limits = new Dictionary<string, int> { ["database"] = size },
+                    Reporters = [reporter],
+                });
 
             result.Outcome.ShouldBe(RunOutcome.Complete);
             loads.Highest.ShouldBe(size);
+
+            // Every task of this graph is beneath the group, so every running task holds the limit.
+            reporter.Snapshots.Max(snapshot => snapshot.Counts[NodeStatus.Running]).ShouldBe(size);
+            reporter.Snapshots.Max(snapshot => snapshot.Limits["database"].InUse).ShouldBe(size);
         }
     }
 
@@ -185,4 +207,7 @@ public class LimitTests
             "load-2: ready -> running",
         ]);
     }
+
+    private static int RunningHoldersOfDatabase(Snapshot snapshot)
+        => snapshot.Nodes.Count(node => node.Limits.Contains("database") && node.Status is NodeStatus.Running);
 }

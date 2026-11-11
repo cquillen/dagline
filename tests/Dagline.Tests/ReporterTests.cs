@@ -269,6 +269,42 @@ public class ReporterTests
     }
 
     [Test]
+    public async Task The_events_still_queued_for_a_reporter_when_it_is_dropped_are_let_go()
+    {
+        var builder = new GraphBuilder();
+        var prepare = builder.Task("prepare", _ => Task.CompletedTask);
+        builder.Task("publish", _ => Task.CompletedTask).Requires(prepare);
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var behind = new FailingReporter("run started", async () =>
+        {
+            await released.Task;
+            throw new InvalidOperationException("the reporter is broken");
+        });
+        var watching = new WeaklyWatchingReporter();
+
+        var run = Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, Reporters = [behind, watching] });
+        await watching.Ended;
+        released.SetResult();
+        var result = await run;
+
+        // The thread that handed over the last event may still be leaving that call with the event on its stack,
+        // so one collection can come too early. Events the queue still held would survive every one of them.
+        for (var collection = 0; collection < 100 && watching.StillHeld > 0; collection++)
+        {
+            await Task.Yield();
+            GC.Collect();
+        }
+
+        behind.Lines.ShouldBe(["run started"]);
+        result.ReporterErrors.ShouldHaveSingleItem().Reporter.ShouldBeSameAs(behind);
+        watching.Watched.ShouldBe(7);
+        watching.StillHeld.ShouldBe(0);
+        watching.Source.Current.ShouldBeSameAs(result.Snapshot);
+    }
+
+    [Test]
     public async Task A_run_with_no_reporters_works()
     {
         var builder = new GraphBuilder();
@@ -340,6 +376,66 @@ public class ReporterTests
             }
 
             return line == failsOn ? fail() : ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Keeps the snapshot source of the run, as a reporter that shows progress does, and so keeps the run itself reachable.
+    /// It keeps no event after <see cref="RunStarted"/>: it only watches whether something else still holds each one.
+    /// </summary>
+    private sealed class WeaklyWatchingReporter : IReporter
+    {
+        private readonly Lock _gate = new();
+        private readonly List<WeakReference<RunEvent>> _watched = [];
+        private readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private ISnapshotSource? _source;
+
+        public Task Ended => _ended.Task;
+
+        public ISnapshotSource Source => _source ?? throw new InvalidOperationException("The run has not started.");
+
+        public int Watched
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _watched.Count;
+                }
+            }
+        }
+
+        /// <summary>How many of the events watched are still reachable from somewhere. Collect garbage before asking.</summary>
+        public int StillHeld
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _watched.Count(watched => watched.TryGetTarget(out _));
+                }
+            }
+        }
+
+        public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
+        {
+            if (runEvent is RunStarted started)
+            {
+                _source = started.Source;
+                return ValueTask.CompletedTask;
+            }
+
+            lock (_gate)
+            {
+                _watched.Add(new WeakReference<RunEvent>(runEvent));
+            }
+
+            if (runEvent is RunEnded)
+            {
+                _ended.TrySetResult();
+            }
+
+            return ValueTask.CompletedTask;
         }
     }
 }
