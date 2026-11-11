@@ -57,7 +57,7 @@ A task becomes **blocked** when something it requires failed or was blocked: it 
 
 A task whose status will not change again is **settled**. A group has no status of its own: it is derived from the tasks beneath it, and a group is settled once all of them are.
 
-The glossary also defines a seventh status, **cancelled**, for a task that was running when its run was stopped. Stopping a run is not available yet, so no task ends that way so far.
+The glossary also defines a seventh status, **cancelled**, for a task that was running when its run was stopped. A task ends that way when its body ends with a cancellation exception after a stop: see [Stopping a run](running-and-stopping.md#stopping-a-run).
 
 More in [When a task fails](running-and-stopping.md#when-a-task-fails) and [Groups in a run](defining-a-graph.md#groups-in-a-run). Definitions: [Status](../../GLOSSARY.md#status).
 
