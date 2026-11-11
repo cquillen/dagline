@@ -20,8 +20,9 @@ namespace Dagline;
 /// <item><description>Every task that now starts, ready to running, in declaration order.</description></item>
 /// </list>
 /// <para>
-/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own,
-/// and so is a <see cref="StopRequested"/>. Once a stop has been applied, no step starts a task.
+/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own, and so is
+/// a <see cref="StopRequested"/>, and so is a <see cref="WaitingChanged"/>, except the end of a wait that a task settling forces,
+/// which comes just before that task's change. Once a stop has been applied, no step starts a task.
 /// </para>
 /// </remarks>
 public abstract record RunEvent
@@ -82,6 +83,32 @@ public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warni
     /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
     public string Warning { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Warning);
 }
+
+/// <summary>
+/// A running task began or stopped waiting: its waiting marker, opened with <see cref="TaskContext.Waiting"/>, began or ended.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The event follows the marker, not the scopes. It is published when the task's first open scope opens and when its last
+/// open scope closes, so scopes that overlap give one begin and one end, with the text and the time of the scope that opened first.
+/// Every begin has exactly one end, and a task may wait several times in one run, each wait with its own pair.
+/// </para>
+/// <para>
+/// A change of the marker is a step of its own, like <see cref="WarningAdded"/>. When a task settles with a scope still open,
+/// the end is published immediately before the <see cref="TaskStatusChanged"/> of that task settling, in the same step,
+/// so a settled task is never waiting. The snapshot handed with a begin shows the marker on the task in
+/// <see cref="NodeSnapshot.WaitingSince"/> and <see cref="NodeSnapshot.WaitingText"/>, and the one handed with an end shows neither.
+/// </para>
+/// <para>
+/// Waiting is a marker and never a status: the task is running throughout, and keeps its slots.
+/// </para>
+/// </remarks>
+/// <param name="At">When the marker began or ended.</param>
+/// <param name="Path">The path of the task.</param>
+/// <param name="Waiting"><see langword="true"/> when the wait began, <see langword="false"/> when it ended.</param>
+/// <param name="Text">What the task is waiting for, as given to the scope that began the wait, or <see langword="null"/> when it gave none.</param>
+/// <param name="Since">When the wait began. On a begin it equals <paramref name="At"/>; on an end it is the begin's time.</param>
+public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) : RunEvent(At);
 
 /// <summary>
 /// A group settled: the last task beneath it, at any depth, settled.

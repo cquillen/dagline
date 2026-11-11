@@ -8,6 +8,7 @@ public static class EventLine
 {
     /// <summary>
     /// <c>run started</c>, <c>prepare: pending -> ready</c>, <c>warning prepare: entity 9 has no region</c>,
+    /// <c>waiting job: job 17 to finish</c> (or <c>waiting job</c> with no text), <c>waited job</c>,
     /// <c>group shard-1 settled: succeeded</c>, <c>stop requested</c> or <c>run ended: complete</c>.
     /// A kind of event this does not know is written with its own <c>ToString</c>.
     /// </summary>
@@ -21,9 +22,12 @@ public static class EventLine
             RunStarted => "run started",
             TaskStatusChanged changed => $"{changed.Node.Path}: {Lower(changed.From)} -> {Lower(changed.To)}",
             WarningAdded added => $"warning {added.Path}: {added.Warning}",
+            WaitingChanged { Waiting: true, Text: null } began => $"waiting {began.Path}",
+            WaitingChanged { Waiting: true } began => $"waiting {began.Path}: {began.Text}",
+            WaitingChanged ended => $"waited {ended.Path}",
             GroupSettled settled => $"group {settled.Path} settled: {Lower(settled.Status)}",
             StopRequested => "stop requested",
-            RunEnded ended =>$"run ended: {Lower(ended.Outcome)}",
+            RunEnded ended => $"run ended: {Lower(ended.Outcome)}",
             _ => runEvent.ToString(),
         };
     }

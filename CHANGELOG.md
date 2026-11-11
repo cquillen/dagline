@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Waiting: `TaskContext.Waiting(text)` opens a waiting scope that marks a running task as idle until an external system changes. Reporters get a `WaitingChanged` event when the wait begins and when it ends, once each however many scopes overlap, and `NodeSnapshot.WaitingSince` and `NodeSnapshot.WaitingText` show the wait on the node while it lasts. Waiting is never a status: a waiting task is running and keeps its slots. A task that settles with a scope open ends its wait just before it settles.
+- Docs: the waiting event and snapshot members in the Reporters article.
+
 - Repository scaffold: `Dagline` and `Dagline.Spectre` packages, tests, sample, docs site and CI.
 - `GraphBuilder` builds a `Graph` of root-level tasks, each a `TaskBody` delegate, joined by `TaskNode.Requires`.
 - `Runner.RunAsync` runs a graph to its end: each task goes pending, ready, running, succeeded in dependency order, ready tasks start on the thread pool in declaration order, and one built graph can be run any number of times.
