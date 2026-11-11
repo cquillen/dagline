@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace Dagline;
 
 /// <summary>
@@ -18,6 +20,8 @@ internal sealed class Run : ISnapshotSource
     private readonly ReporterDelivery _delivery;
     private readonly NodeSnapshot[] _nodes;
     private readonly StatusCounts _counts;
+    private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
+    private readonly List<GraphGroup> _settledInThisStep = [];
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
     private DateTimeOffset? _endedAt;
@@ -29,8 +33,11 @@ internal sealed class Run : ISnapshotSource
         _graph = graph;
         _timeProvider = timeProvider;
         _delivery = delivery;
-        _nodes = [.. graph.Tasks.Select(task => new NodeSnapshot(task.Path, task.Dependencies))];
         _counts = new StatusCounts(pending: graph.Tasks.Length);
+        _groupCounts = graph.Nodes.OfType<GraphGroup>().ToFrozenDictionary(
+            group => group.Position,
+            group => new StatusCounts(pending: group.TaskCount));
+        _nodes = [.. graph.Nodes.Select(AtTheStart)];
         _startedAt = timeProvider.GetUtcNow();
         _current = TakeSnapshot();
     }
@@ -55,17 +62,30 @@ internal sealed class Run : ISnapshotSource
         {
             var now = _timeProvider.GetUtcNow();
             Move(task, status, now);
-            Advance(task.Dependents.Select(_graph.TaskAt), now);
+            Advance(WaitingFor(task), now);
         }
     }
 
     /// <summary>
+    /// The tasks, in declaration order, that wait for a task that has just settled or for a group that settled with it.
+    /// </summary>
+    private IEnumerable<GraphTask> WaitingFor(GraphTask settled)
+        => _settledInThisStep
+            .Prepend<GraphNode>(settled)
+            .SelectMany(node => node.Dependents)
+            .Distinct()
+            .Order()
+            .Select(_graph.TaskAt);
+
+    /// <summary>
     /// Applies what follows from one change, causes before effects: the tasks among <paramref name="waiting"/>
-    /// whose dependencies are now met become ready, the ready tasks start, and the run ends when nothing is left to do.
+    /// whose dependencies are now met become ready, the groups that the step settled are announced,
+    /// the ready tasks start, and the run ends when nothing is left to do.
     /// </summary>
     private void Advance(IEnumerable<GraphTask> waiting, DateTimeOffset now)
     {
         var ready = MakeReady(waiting, now);
+        AnnounceSettledGroups(now);
         StartAll(ready, now);
 
         if (_counts[NodeStatus.Running] == 0 && _counts[NodeStatus.Ready] == 0)
@@ -87,6 +107,18 @@ internal sealed class Run : ISnapshotSource
 
     private bool DependenciesAreMet(GraphTask task)
         => task.Upstreams.All(upstream => _nodes[upstream.Position].Status.Meets(upstream.Kind));
+
+    /// <summary>Publishes one event for each group the current step settled: the deepest first, then in declaration order.</summary>
+    private void AnnounceSettledGroups(DateTimeOffset now)
+    {
+        foreach (var group in _settledInThisStep.OrderByDescending(group => group.Depth).ThenBy(group => group.Position))
+        {
+            var settled = _nodes[group.Position];
+            Publish(new GroupSettled(now, group.Path, settled.Status, settled.Counts));
+        }
+
+        _settledInThisStep.Clear();
+    }
 
     private void StartAll(List<GraphTask> ready, DateTimeOffset now)
     {
@@ -120,14 +152,42 @@ internal sealed class Run : ISnapshotSource
         var after = before with
         {
             Status = to,
+            Counts = StatusCounts.OfOneTask(to),
             Started = to is NodeStatus.Running ? now : before.Started,
             Settled = to.IsSettled() ? now : before.Settled,
         };
 
         _nodes[task.Position] = after;
         _counts.Move(before.Status, to);
+        foreach (var group in task.Groups.Select(_graph.GroupAt))
+        {
+            MoveBeneath(group, before.Status, to);
+        }
+
         Publish(new TaskStatusChanged(now, after, before.Status, to));
     }
+
+    /// <summary>
+    /// Counts one task's change of status in a group that holds it, and derives the group's status again.
+    /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
+    /// </summary>
+    private void MoveBeneath(GraphGroup group, NodeStatus from, NodeStatus to)
+    {
+        var counts = _groupCounts[group.Position];
+        counts.Move(from, to);
+        var status = counts.GroupStatus;
+        _nodes[group.Position] = _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() };
+
+        if (status.IsSettled())
+        {
+            _settledInThisStep.Add(group);
+        }
+    }
+
+    private NodeSnapshot AtTheStart(GraphNode node)
+        => _groupCounts.TryGetValue(node.Position, out var counts)
+            ? new NodeSnapshot(node, counts.GroupStatus, counts.ToDictionary())
+            : new NodeSnapshot(node, NodeStatus.Pending, StatusCounts.OfOneTask(NodeStatus.Pending));
 
     private void Publish(RunEvent runEvent)
     {

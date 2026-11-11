@@ -17,6 +17,7 @@ An **event** is a record of one thing that happened in the run, with the time it
 | --- | --- | --- |
 | <xref:Dagline.RunStarted> | First, once per run. | The snapshot source of the run. |
 | <xref:Dagline.TaskStatusChanged> | Every time a task changes status, pending to ready included. | The task as it is after the change, and the status before and after. |
+| <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it. | The path of the group, its status and its count of tasks per status. |
 | <xref:Dagline.RunEnded> | Last, once per run. | The run outcome. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
