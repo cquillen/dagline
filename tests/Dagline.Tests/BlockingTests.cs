@@ -167,6 +167,153 @@ public class BlockingTests
     }
 
     [Test]
+    public async Task Tasks_that_do_not_require_the_failed_task_keep_running_and_succeed_and_the_run_is_incomplete()
+    {
+        var verify = new PausedBody();
+        var loadSettled = new PausedBody();
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => throw new InvalidOperationException("no entities to load"));
+        var verifyTask = builder.Task("verify", verify.Body);
+        var archive = builder.Task("archive", _ => Task.CompletedTask).Requires(verifyTask);
+        var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(load);
+        var loadSettledTask = builder.Task("load-settled", loadSettled.Body).After(load);
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var source = await reporter.Source;
+        await loadSettled.Started;
+        var afterTheFailure = source.Current;
+        loadSettled.Release();
+        verify.Release();
+        var result = await run;
+
+        afterTheFailure[load.Path].Status.ShouldBe(NodeStatus.Failed);
+        afterTheFailure[verifyTask.Path].Status.ShouldBe(NodeStatus.Running);
+        afterTheFailure[archive.Path].Status.ShouldBe(NodeStatus.Pending);
+        result.Outcome.ShouldBe(RunOutcome.Incomplete);
+        result.Snapshot.Outcome.ShouldBe(RunOutcome.Incomplete);
+        reporter.Events[^1].ShouldBe(new RunEnded(result.Snapshot.Ended!.Value, RunOutcome.Incomplete));
+        result.Snapshot[verifyTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
+        result.Snapshot[archive.Path].Status.ShouldBe(NodeStatus.Succeeded);
+        result.Snapshot[loadSettledTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
+        result.Snapshot[publish.Path].Status.ShouldBe(NodeStatus.Blocked);
+        result.Snapshot.Counts.ShouldBe(new Dictionary<NodeStatus, int>
+        {
+            [NodeStatus.Pending] = 0,
+            [NodeStatus.Ready] = 0,
+            [NodeStatus.Running] = 0,
+            [NodeStatus.Succeeded] = 3,
+            [NodeStatus.Failed] = 1,
+            [NodeStatus.Blocked] = 1,
+            [NodeStatus.Cancelled] = 0,
+        });
+    }
+
+    [Test]
+    public async Task An_after_task_runs_when_its_upstream_failed_and_when_its_upstream_was_blocked()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => throw new InvalidOperationException("no entities to load"));
+        var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(load);
+        var report = builder.Task("report", _ => Task.CompletedTask).After(load);
+        var audit = builder.Task("audit", _ => Task.CompletedTask).After(publish);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        reporter.Lines.Take(9).ShouldBe(
+        [
+            "run started",
+            "load: pending -> ready",
+            "load: ready -> running",
+            "load: running -> failed",
+            "publish: pending -> blocked",
+            "report: pending -> ready",
+            "audit: pending -> ready",
+            "report: ready -> running",
+            "audit: ready -> running",
+        ]);
+        result.Snapshot[publish.Path].Status.ShouldBe(NodeStatus.Blocked);
+        result.Snapshot[report.Path].Status.ShouldBe(NodeStatus.Succeeded);
+        result.Snapshot[audit.Path].Status.ShouldBe(NodeStatus.Succeeded);
+        result.Outcome.ShouldBe(RunOutcome.Incomplete);
+    }
+
+    [Test]
+    public async Task An_after_task_runs_once_a_group_it_waits_for_has_settled_failed_or_blocked()
+    {
+        var builder = new GraphBuilder();
+        var checks = builder.Group("checks");
+        checks.Task("verify", _ => throw new InvalidOperationException("entity 3 has a bad date"));
+        var release = builder.Group("release").Requires(checks);
+        release.Task("publish", _ => Task.CompletedTask);
+        var report = builder.Task("report", _ => Task.CompletedTask).After(checks);
+        var audit = builder.Task("audit", _ => Task.CompletedTask).After(release);
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+
+        result.Snapshot[checks.Path].Status.ShouldBe(NodeStatus.Failed);
+        result.Snapshot[release.Path].Status.ShouldBe(NodeStatus.Blocked);
+        result.Snapshot[report.Path].Status.ShouldBe(NodeStatus.Succeeded);
+        result.Snapshot[audit.Path].Status.ShouldBe(NodeStatus.Succeeded);
+    }
+
+    [Test]
+    public async Task A_group_is_failed_when_a_task_beneath_it_failed_and_blocked_when_none_failed_and_one_is_blocked()
+    {
+        var builder = new GraphBuilder();
+        var checks = builder.Group("checks");
+        checks.Task("count", _ => Task.CompletedTask);
+        var verify = checks.Group("tenant-a").Task("verify", _ => throw new InvalidOperationException("entity 3 has a bad date"));
+        checks.Task("sign", _ => Task.CompletedTask).Requires(verify);
+        var release = builder.Group("release");
+        release.Task("notes", _ => Task.CompletedTask);
+        release.Group("tenant-a").Task("publish", _ => Task.CompletedTask).Requires(checks);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        var failedGroup = result.Snapshot[checks.Path];
+        failedGroup.Status.ShouldBe(NodeStatus.Failed);
+        failedGroup.Counts[NodeStatus.Succeeded].ShouldBe(1);
+        failedGroup.Counts[NodeStatus.Failed].ShouldBe(1);
+        failedGroup.Counts[NodeStatus.Blocked].ShouldBe(1);
+        failedGroup.Failure.ShouldBeNull();
+        result.Snapshot[NodePath.Parse("checks/tenant-a")].Status.ShouldBe(NodeStatus.Failed);
+        var blockedGroup = result.Snapshot[release.Path];
+        blockedGroup.Status.ShouldBe(NodeStatus.Blocked);
+        blockedGroup.Counts[NodeStatus.Succeeded].ShouldBe(1);
+        blockedGroup.Counts[NodeStatus.Failed].ShouldBe(0);
+        blockedGroup.Counts[NodeStatus.Blocked].ShouldBe(1);
+        blockedGroup.BlockedBy.ShouldBeNull();
+        result.Snapshot[NodePath.Parse("release/tenant-a")].Status.ShouldBe(NodeStatus.Blocked);
+        reporter.Lines.ShouldContain("group checks/tenant-a settled: failed");
+        reporter.Lines.ShouldContain("group checks settled: failed");
+        reporter.Lines.ShouldContain("group release/tenant-a settled: blocked");
+        reporter.Lines.ShouldContain("group release settled: blocked");
+    }
+
+    [Test]
+    public async Task A_task_with_both_kinds_on_one_upstream_one_from_its_group_and_one_of_its_own_is_blocked_when_that_upstream_fails()
+    {
+        var builder = new GraphBuilder();
+        var prepare = builder.Task("prepare", _ => throw new InvalidOperationException("the store is offline"));
+        var waitsAfter = builder.Group("shard-1").After(prepare);
+        var ownRequires = waitsAfter.Task("load", _ => Task.CompletedTask).Requires(prepare);
+        var inheritsAfter = waitsAfter.Task("report", _ => Task.CompletedTask);
+        var needs = builder.Group("shard-2").Requires(prepare);
+        var ownAfter = needs.Task("report", _ => Task.CompletedTask).After(prepare);
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+
+        result.Snapshot[ownRequires.Path].Status.ShouldBe(NodeStatus.Blocked);
+        result.Snapshot[ownRequires.Path].BlockedBy.ShouldBe(prepare.Path);
+        result.Snapshot[inheritsAfter.Path].Status.ShouldBe(NodeStatus.Succeeded);
+        result.Snapshot[ownAfter.Path].Status.ShouldBe(NodeStatus.Blocked);
+        result.Snapshot[ownAfter.Path].BlockedBy.ShouldBe(prepare.Path);
+    }
+
+    [Test]
     public async Task A_blocked_task_names_the_failed_task_and_has_a_settle_time_and_no_start_time()
     {
         var builder = new GraphBuilder();
