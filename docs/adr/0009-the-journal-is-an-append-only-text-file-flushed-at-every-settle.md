@@ -13,12 +13,12 @@ The process can die in the middle of a write. The final line of the file may the
 What is recorded:
 
 - **For the journal:** the format version, its id, its creation time and its description.
-- **For each run:** its start time, the operating system user and the machine name, the cap and the limit sizes, the count of journal paths not found in the graph, each earlier success it set aside (ADR 0008), and its end time and run outcome. A run with no end entry is either still going, and then holds the journal (ADR 0007), or one whose process died.
+- **For each run:** its start time, the operating system user and the machine name, the cap and the limit sizes, the count of journal paths not found in the graph, each earlier success it set aside (ADR 0008), and its end time and run outcome. A run with no end entry is either still going, and then holds the journal (ADR 0007), or one that ended without recording it: its process died, or a failed write ended it.
 - **For each task:** its start time; its settle time with the full outcome (status, message, detail lines, warnings and, for an unexpected failure, the error's type, message and stack trace, all within the outcome's volume limit); and each save or clearing of its checkpoint, with the time.
 
 Progress, waiting, pending and ready are never recorded, and neither is the status of a group, which is derived. Every time is UTC.
 
-When a write fails during a run, because the disk is full or the file is gone, Dagline treats it as a stop: nothing new starts, running tasks are signalled, and the run waits the grace period (ADR 0004). The run then ends with an error and not with a run outcome. A run that can no longer record must not keep starting work, and what it did is not reliably complete, incomplete or stopped. A checkpoint save that fails also throws to the task that called it.
+When a write fails during a run, because the disk is full or the file is gone, Dagline treats it as a stop: nothing new starts, running tasks are signalled, and the run waits the grace period (ADR 0004). The run then ends with an error and not with a run outcome. A run that can no longer record must not keep starting work, and what it did is not reliably complete, incomplete or stopped. A checkpoint save that fails also throws to the task that called it. Such a run usually cannot record its end either, so the listing shows it as died, the same as a killed process (ADR 0007).
 
 ## Considered options
 
