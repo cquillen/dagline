@@ -49,4 +49,192 @@ public class WaitingTests
         waits[0].ShouldBe(new WaitingChanged(waitBegan, NodePath.Parse("job"), Waiting: true, "job 17 to finish", Since: waitBegan));
         waits[1].ShouldBe(new WaitingChanged(waitEnded, NodePath.Parse("job"), Waiting: false, "job 17 to finish", Since: waitBegan));
     }
+
+    [Test]
+    public async Task The_node_shows_the_start_time_and_text_while_the_scope_is_open_and_neither_once_it_has_closed()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var poll = new PausedBody();
+        var tidy = new PausedBody();
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", async context =>
+        {
+            using (context.Waiting("job 17 to finish"))
+            {
+                await poll.Body(context);
+            }
+
+            await tidy.Body(context);
+        });
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        var source = await reporter.Source;
+        await poll.Started;
+        var waiting = source.Current[jobTask.Path];
+        clock.Advance(TimeSpan.FromSeconds(30));
+        poll.Release();
+        await tidy.Started;
+        var working = source.Current[jobTask.Path];
+        tidy.Release();
+        await run;
+
+        waiting.WaitingSince.ShouldBe(_runStart);
+        waiting.WaitingText.ShouldBe("job 17 to finish");
+        working.WaitingSince.ShouldBeNull();
+        working.WaitingText.ShouldBeNull();
+        var began = reporter.Events.OfType<WaitingChanged>().First();
+        reporter.Snapshots[reporter.Events.ToList().IndexOf(began)][jobTask.Path].WaitingSince.ShouldBe(_runStart);
+    }
+
+    [Test]
+    public async Task Overlapping_scopes_make_one_wait_with_the_first_scopes_text_and_time_that_ends_when_the_last_scope_closes()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var firstOpen = new PausedBody();
+        var secondOpen = new PausedBody();
+        var onlySecondOpen = new PausedBody();
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", async context =>
+        {
+            var first = context.Waiting("job 17 to finish");
+            await firstOpen.Body(context);
+            using (context.Waiting("job 18 to finish"))
+            {
+                await secondOpen.Body(context);
+                first.Dispose();
+                await onlySecondOpen.Body(context);
+            }
+        });
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        var source = await reporter.Source;
+        await firstOpen.Started;
+        clock.Advance(TimeSpan.FromSeconds(10));
+        firstOpen.Release();
+        await secondOpen.Started;
+        clock.Advance(TimeSpan.FromSeconds(10));
+        secondOpen.Release();
+        await onlySecondOpen.Started;
+        var afterTheFirstClosed = source.Current[jobTask.Path];
+        clock.Advance(TimeSpan.FromSeconds(10));
+        onlySecondOpen.Release();
+        await run;
+
+        reporter.Lines.ShouldBe(
+        [
+            "run started",
+            "job: pending -> ready",
+            "job: ready -> running",
+            "waiting job: job 17 to finish",
+            "waited job",
+            "job: running -> succeeded",
+            "run ended: complete",
+        ]);
+        reporter.Events.OfType<WaitingChanged>().Last()
+            .ShouldBe(new WaitingChanged(_runStart.AddSeconds(30), jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
+        afterTheFirstClosed.WaitingSince.ShouldBe(_runStart);
+        afterTheFirstClosed.WaitingText.ShouldBe("job 17 to finish");
+    }
+
+    [Test]
+    public async Task Two_waits_one_after_the_other_give_two_pairs_of_events()
+    {
+        var builder = new GraphBuilder();
+        builder.Task("job", context =>
+        {
+            using (context.Waiting("job 17 to finish"))
+            {
+            }
+
+            using (context.Waiting())
+            {
+            }
+
+            return Task.CompletedTask;
+        });
+        var reporter = new RecordingReporter();
+
+        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        reporter.Lines.ShouldBe(
+        [
+            "run started",
+            "job: pending -> ready",
+            "job: ready -> running",
+            "waiting job: job 17 to finish",
+            "waited job",
+            "waiting job",
+            "waited job",
+            "job: running -> succeeded",
+            "run ended: complete",
+        ]);
+    }
+
+    [Test]
+    public async Task Disposing_a_scope_twice_closes_it_once()
+    {
+        var stillOpen = new PausedBody();
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", async context =>
+        {
+            using (context.Waiting("job 17 to finish"))
+            {
+                var inner = context.Waiting("job 18 to finish");
+                inner.Dispose();
+                inner.Dispose();
+                await stillOpen.Body(context);
+            }
+        });
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var source = await reporter.Source;
+        await stillOpen.Started;
+        var waiting = source.Current[jobTask.Path];
+        stillOpen.Release();
+        await run;
+
+        waiting.WaitingText.ShouldBe("job 17 to finish");
+        reporter.Lines.Count(line => line.StartsWith("waiting", StringComparison.Ordinal)).ShouldBe(1);
+        reporter.Lines.Count(line => line.StartsWith("waited", StringComparison.Ordinal)).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task A_task_that_settles_with_a_scope_open_ends_its_wait_immediately_before_its_status_change()
+    {
+        IDisposable? leftOpen = null;
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", context =>
+        {
+            leftOpen = context.Waiting("job 17 to finish");
+            throw new InvalidOperationException("job 17 was rejected");
+        });
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        leftOpen!.Dispose();
+
+        reporter.Lines.ShouldBe(
+        [
+            "run started",
+            "job: pending -> ready",
+            "job: ready -> running",
+            "waiting job: job 17 to finish",
+            "waited job",
+            "job: running -> failed",
+            "run ended: incomplete",
+        ]);
+        var settledAt = reporter.Events.OfType<TaskStatusChanged>().Single(changed => changed.To is NodeStatus.Failed);
+        reporter.Events.OfType<WaitingChanged>().Last().At.ShouldBe(settledAt.At);
+        settledAt.Node.WaitingSince.ShouldBeNull();
+        foreach (var snapshot in reporter.Snapshots.Where(snapshot => snapshot[jobTask.Path].Status is NodeStatus.Failed))
+        {
+            snapshot[jobTask.Path].WaitingSince.ShouldBeNull();
+            snapshot[jobTask.Path].WaitingText.ShouldBeNull();
+        }
+
+        result.Snapshot[jobTask.Path].WaitingSince.ShouldBeNull();
+    }
 }

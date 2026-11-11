@@ -208,6 +208,7 @@ internal sealed class Run : ISnapshotSource
             var now = _timeProvider.GetUtcNow();
             var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure : ended;
             _slots.GiveBack(task);
+            EndWaiting(task, now);
             Move(task, outcome, now);
             var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
             Advance(DependentsOf([task, .. blocked]), now);
