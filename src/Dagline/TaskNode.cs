@@ -8,8 +8,8 @@ namespace Dagline;
 /// </remarks>
 public sealed class TaskNode : Node
 {
-    internal TaskNode(GraphBuilder builder, NodePath path, TaskBody body)
-        : base(builder, path)
+    internal TaskNode(GraphBuilder builder, GroupNode? parent, string segment, TaskBody body)
+        : base(builder, parent, segment)
     {
         Body = body;
     }

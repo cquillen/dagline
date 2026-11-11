@@ -12,26 +12,37 @@ namespace Dagline;
 /// </remarks>
 public sealed class Graph
 {
-    internal Graph(IReadOnlyList<TaskNode> tasks, IReadOnlyList<DeclaredDependency> dependencies)
+    internal Graph(ImmutableArray<Node> nodes, IReadOnlyList<DeclaredDependency> dependencies)
     {
-        var positions = tasks.Index().ToDictionary(task => (Node)task.Item, task => task.Index);
+        var positions = nodes.Index().ToDictionary(node => node.Item, node => node.Index);
         var declaredOn = dependencies.ToLookup(dependency => dependency.Dependent);
         var dependentsOf = dependencies.ToLookup(
             dependency => positions[dependency.Upstream],
             dependency => positions[dependency.Dependent]);
 
-        Tasks =
-        [
-            .. tasks.Select((task, position) => new GraphTask(
-                position,
-                task.Path,
-                task.Body,
-                [.. declaredOn[task].Select(dependency => new Dependency(dependency.Upstream.Path, dependency.Kind))],
-                [.. declaredOn[task].Select(dependency => new Upstream(positions[dependency.Upstream], dependency.Kind))],
-                [.. dependentsOf[position].Distinct().Order()])),
-        ];
-        Positions = Tasks.ToFrozenDictionary(task => task.Path, task => task.Position);
+        Nodes = [.. nodes.Select(ToGraphNode)];
+        Tasks = [.. Nodes.OfType<GraphTask>()];
+        Positions = Nodes.ToFrozenDictionary(node => node.Path, node => node.Position);
+
+        GraphNode ToGraphNode(Node node, int position)
+        {
+            IReadOnlyList<Dependency> declared =
+                [.. declaredOn[node].Select(dependency => new Dependency(dependency.Upstream.Path, dependency.Kind))];
+
+            return node is TaskNode task
+                ? new GraphTask(
+                    position,
+                    node.Path,
+                    declared,
+                    task.Body,
+                    [.. declaredOn[node].Select(dependency => new Upstream(positions[dependency.Upstream], dependency.Kind))],
+                    [.. dependentsOf[position].Distinct().Order()])
+                : new GraphGroup(position, node.Path, declared);
+        }
     }
+
+    /// <summary>Every node, in declaration order.</summary>
+    internal ImmutableArray<GraphNode> Nodes { get; }
 
     /// <summary>Every task, in declaration order.</summary>
     internal ImmutableArray<GraphTask> Tasks { get; }
@@ -40,5 +51,5 @@ public sealed class Graph
     internal FrozenDictionary<NodePath, int> Positions { get; }
 
     /// <summary>The task at a position among the nodes of the graph.</summary>
-    internal GraphTask TaskAt(int position) => Tasks[position];
+    internal GraphTask TaskAt(int position) => (GraphTask)Nodes[position];
 }

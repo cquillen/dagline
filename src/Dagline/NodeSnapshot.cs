@@ -3,14 +3,18 @@ namespace Dagline;
 /// <summary>One node of a run at one instant. Immutable.</summary>
 public sealed record NodeSnapshot
 {
-    internal NodeSnapshot(NodePath path, IReadOnlyList<Dependency> dependencies)
+    internal NodeSnapshot(NodePath path, bool isGroup, IReadOnlyList<Dependency> dependencies)
     {
         Path = path;
+        IsGroup = isGroup;
         Dependencies = dependencies;
     }
 
     /// <summary>The identity of the node.</summary>
     public NodePath Path { get; }
+
+    /// <summary><see langword="true"/> for a group and <see langword="false"/> for a task.</summary>
+    public bool IsGroup { get; }
 
     /// <summary>The dependencies declared on this node, in the order they were declared.</summary>
     public IReadOnlyList<Dependency> Dependencies { get; }

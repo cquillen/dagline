@@ -77,6 +77,8 @@ public readonly record struct NodePath
 
     internal static NodePath AtRoot(string segment) => new(segment);
 
+    internal NodePath Child(string segment) => new($"{_text}{_separator}{segment}");
+
     private static bool IsSegment(string segment)
         => segment.Length > 0 && !segment.AsSpan().ContainsAnyExcept(_segmentCharacters);
 }
