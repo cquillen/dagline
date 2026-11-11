@@ -193,19 +193,43 @@ The first request is a stop. The run applies it like any other change, one at a 
 
 - **Nothing starts**, *after* tasks included. A stop means the run winds down, never that cleanup work starts.
 - **Every running task sees its token signalled**: <xref:Dagline.TaskContext.CancellationToken> on its context. [Writing tasks](writing-tasks.md#when-the-run-is-stopped) says how a task ends once a stop has been requested.
-- **The run waits for its running tasks to end**, then returns. The wait has no time bound yet.
+- **The run waits for its running tasks to end**, for at most the [grace period](#the-grace-period), then returns.
 
 Only starting is suspended. While the run waits, a task that succeeds still moves its dependents from pending to ready, where they stay, and a task that fails still blocks its dependents at once.
 
-A stop does not undo anything, does not cancel work in other systems, and does not run *after* tasks. A task that ignores its token keeps the run waiting.
+A stop does not undo anything, does not cancel work in other systems, and does not run *after* tasks. A task that ignores its token keeps the run waiting until the grace period runs out.
 
 A signal requested before the run starts stops the run from its start: every task with no dependency becomes ready, the stop is applied, and the run ends with nothing started. A signal is not tied to one run: a run reads the requests made up to its end and ignores later ones, and a signal passed to a second run after the first has ended stops that run from its start.
+
+### The grace period
+
+<xref:Dagline.RunOptions.GracePeriod> bounds the wait for the running tasks. It is 30 seconds by default, and is measured on the run's `TimeProvider` from the moment the stop is applied. <xref:Dagline.Snapshot.Stop> carries the grace period and the deadline, so a display can show the time left.
+
+The wait ends in one of three ways:
+
+- **The last running task ends.** The run ends at once, before the grace period is over.
+- **The grace period runs out** with tasks still running.
+- **A second stop:** a second `Request` on the same signal ends the wait at once, so an operator who presses Ctrl+C twice is not held for the whole grace period. A third request changes nothing.
+
+In the last two cases the run publishes a <xref:Dagline.StoppedWaiting> event with the reason, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
+
+Both extremes are a setting:
+
+```csharp
+// Let go of running tasks the moment a stop is applied.
+new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero };
+
+// Wait for the running tasks however long they take. A second stop still ends the wait.
+new RunOptions { Journal = Journal.None, GracePeriod = Timeout.InfiniteTimeSpan };
+```
+
+A signal requested twice before the run starts gives the same result as one requested once: nothing starts, so there is nothing to wait for.
 
 ### Cancelled and never reached
 
 A stopped run leaves two kinds of unfinished work, and the snapshot tells them apart:
 
-- **Cancelled** tasks were running and ended because of the stop: their body ended with a cancellation exception. Cancelled is a settled status. <xref:Dagline.Snapshot.Cancelled> lists them in declaration order. A cancelled task never blocks: a task that requires it stays pending.
+- **Cancelled** tasks were running and ended because of the stop: their body ended with a cancellation exception, or was still running when the run stopped waiting. Cancelled is a settled status. <xref:Dagline.Snapshot.Cancelled> lists them in declaration order. A cancelled task never blocks: a task that requires it stays pending.
 - **Never reached** tasks had not started: they keep their status, pending or ready, and are not settled. <xref:Dagline.Snapshot.NeverReached> lists them in declaration order once the run has ended, and is empty before then. A group with such a task beneath it does not settle.
 
 A task that finished in spite of the stop keeps its real status, succeeded or failed. <xref:Dagline.Snapshot.Stop> holds when the stop was applied, from the `StopRequested` snapshot on.
@@ -241,7 +265,8 @@ Dagline never sets the exit code of your process. <xref:Dagline.RunOutcomeExtens
 
 - the cap is below 1,
 - a size in `Limits` is below 1,
-- the graph names a limit that `Limits` gives no size.
+- the graph names a limit that `Limits` gives no size,
+- the grace period is below zero and is not `Timeout.InfiniteTimeSpan`.
 
 Its message lists every problem, one to a line, so you can fix them all in one pass:
 
