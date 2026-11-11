@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Groups: `GraphBuilder.Group` and `GroupNode.Group` return a `GroupNode` that is also the scope for its children, so groups nest to any depth with plain loops. `Title` on a task or group gives it a readable name, carried to `NodeSnapshot.Title`.
 - `After` beside `Requires`, on tasks and on groups, each taking one handle or a collection of handles. A dependency against a group covers every task beneath it, one declared on a group applies to every task beneath it, an empty group is met at once, both kinds on one upstream are treated as *requires*, and exact duplicates collapse.
 - Declaration order is a depth-first walk of the tree with each group's children in the order added to that group. `Graph` is an `IReadOnlyList<Node>` in that order and finds a node by path with `TryGetNode`.
+- Build validation: `GraphBuilder.Build` checks the whole graph and throws one `GraphException` (a `DaglineException`) whose `Problems` lists every `GraphProblem`: an invalid segment, a duplicate path, siblings that differ only by case, a handle from another builder, a node that depends on itself, a dependency between a node and its own ancestor or descendant, and a cycle with every dependency of it spelled out. Adding a node still returns a handle when its segment is invalid or already taken.
+- A builder is single use: once `Build` has returned a graph, the builder and every handle it made throw `InvalidOperationException` from any call that would change the graph.
+- Docs: build errors in the Defining a graph article.
 - `NodeSnapshot.IsGroup`, a derived `Status` for a group, and `NodeSnapshot.Counts`: the tasks per status beneath a group. The `GroupSettled` event is published when the last task beneath a group settles, deepest group first.
 - Docs: the Defining a graph article.
 
