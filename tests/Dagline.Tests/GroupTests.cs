@@ -65,6 +65,31 @@ public class GroupTests
     }
 
     [Test]
+    public async Task A_group_is_ready_while_every_task_beneath_it_is_held_ready_by_a_full_cap()
+    {
+        var prepare = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("prepare", prepare.Body);
+        var held = builder.Group("shard-1");
+        held.Task("load", _ => Task.CompletedTask);
+        held.Group("tenant-a").Task("verify", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Cap = 1, Reporters = [reporter] });
+        var source = await reporter.Source;
+        await prepare.Started;
+        var prepareRunning = source.Current;
+        prepare.Release();
+        var result = await run;
+
+        prepareRunning[NodePath.Parse("shard-1/load")].Status.ShouldBe(NodeStatus.Ready);
+        prepareRunning[held.Path].Status.ShouldBe(NodeStatus.Ready);
+        prepareRunning[NodePath.Parse("shard-1/tenant-a")].Status.ShouldBe(NodeStatus.Ready);
+        prepareRunning[held.Path].Counts[NodeStatus.Ready].ShouldBe(2);
+        result.Snapshot[held.Path].Status.ShouldBe(NodeStatus.Succeeded);
+    }
+
+    [Test]
     public async Task An_empty_group_is_succeeded_from_the_start_to_the_end_of_the_run()
     {
         var prepare = new PausedBody();

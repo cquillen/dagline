@@ -29,6 +29,7 @@ public class ArgumentTests
         Should.Throw<ArgumentNullException>(() => new RunOptions { Journal = null! });
         Should.Throw<ArgumentNullException>(() => new RunOptions { Journal = Journal.None, TimeProvider = null! });
         Should.Throw<ArgumentNullException>(() => new RunOptions { Journal = Journal.None, Reporters = null! });
+        Should.Throw<ArgumentNullException>(() => new RunOptions { Journal = Journal.None, Limits = null! });
     }
 
     [Test]
@@ -38,6 +39,28 @@ public class ArgumentTests
 
         options.TimeProvider.ShouldBeSameAs(TimeProvider.System);
         options.Reporters.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void RunOptions_defaults_to_a_cap_of_sixteen_and_no_sizes()
+    {
+        var options = new RunOptions { Journal = Journal.None };
+
+        options.Cap.ShouldBe(16);
+        options.Limits.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void A_limit_name_that_is_null_or_empty_is_rejected_on_a_task_and_on_a_group()
+    {
+        var builder = new GraphBuilder();
+        var task = builder.Task("prepare", _ => Task.CompletedTask);
+        var group = builder.Group("shard-1");
+
+        Should.Throw<ArgumentNullException>(() => task.Limit(null!)).ParamName.ShouldBe("name");
+        Should.Throw<ArgumentException>(() => task.Limit(string.Empty)).ParamName.ShouldBe("name");
+        Should.Throw<ArgumentNullException>(() => group.Limit(null!)).ParamName.ShouldBe("name");
+        Should.Throw<ArgumentException>(() => group.Limit(string.Empty)).ParamName.ShouldBe("name");
     }
 
     [Test]

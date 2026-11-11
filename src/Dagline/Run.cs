@@ -33,7 +33,7 @@ internal sealed class Run : ISnapshotSource
     public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery)
     {
         _graph = graph;
-        _slots = new Slots(sizes);
+        _slots = new Slots(graph.LimitNames, sizes);
         _timeProvider = timeProvider;
         _delivery = delivery;
         _counts = new StatusCounts(pending: graph.Tasks.Length);
@@ -205,5 +205,6 @@ internal sealed class Run : ISnapshotSource
         _delivery.Publish(runEvent, _current);
     }
 
-    private Snapshot TakeSnapshot() => new(_startedAt, _endedAt, _outcome, [.. _nodes], _graph.Positions, _counts.ToDictionary());
+    private Snapshot TakeSnapshot()
+        => new(_startedAt, _endedAt, _outcome, [.. _nodes], _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
 }
