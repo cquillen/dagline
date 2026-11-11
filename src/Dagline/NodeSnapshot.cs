@@ -96,6 +96,32 @@ public sealed record NodeSnapshot
     public IReadOnlyList<string> Detail { get; internal init; } = [];
 
     /// <summary>
+    /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
+    /// <see langword="null"/> when the task has set none or has cleared it, and for a group.
+    /// </summary>
+    /// <remarks>
+    /// Progress is never an event: read it from a snapshot. It is frozen when the task settles, so a settled task
+    /// still shows how far it got.
+    /// </remarks>
+    public string? StatusText { get; internal init; }
+
+    /// <summary>
+    /// The count of the task's progress: the number the task last gave <see cref="TaskContext.Count"/>.
+    /// <see langword="null"/> when the task has given none, and for a group.
+    /// </summary>
+    /// <remarks>Like <see cref="StatusText"/>, it is never an event and is frozen when the task settles.</remarks>
+    public long? Count { get; internal init; }
+
+    /// <summary>
+    /// The total that <see cref="Count"/> is counting towards, as the task last gave it to <see cref="TaskContext.Count"/>.
+    /// <see langword="null"/> when the last count came with no total, when the task has given no count, and for a group.
+    /// </summary>
+    /// <remarks>
+    /// Dagline does not compare the two numbers, so the count can be above the total.
+    /// </remarks>
+    public long? Total { get; internal init; }
+
+    /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
     /// or <see langword="null"/> while it has not started. A blocked task never starts, so it has no start time.
     /// </summary>

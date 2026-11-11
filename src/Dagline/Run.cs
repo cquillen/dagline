@@ -28,7 +28,7 @@ internal sealed class Run : ISnapshotSource
     private readonly DateTimeOffset _startedAt;
     private DateTimeOffset? _endedAt;
     private RunOutcome? _outcome;
-    private volatile Snapshot _current;
+    private volatile Snapshot? _current;
 
     public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery)
     {
@@ -42,10 +42,9 @@ internal sealed class Run : ISnapshotSource
             group => new StatusCounts(pending: group.TaskCount));
         _nodes = [.. graph.Nodes.Select(AtTheStart)];
         _startedAt = timeProvider.GetUtcNow();
-        _current = TakeSnapshot();
     }
 
-    public Snapshot Current => _current;
+    public Snapshot Current => _current ?? TakeCurrent();
 
     /// <summary>Completes with the run outcome once no task is running and none is ready.</summary>
     public Task<RunOutcome> Ended => _ended.Task;
@@ -56,6 +55,23 @@ internal sealed class Run : ISnapshotSource
         {
             Publish(new RunStarted(_startedAt, this));
             Advance(_graph.Tasks, _startedAt);
+        }
+    }
+
+    /// <summary>
+    /// Applies what a running task reports about itself. A report from a task that has settled changes nothing.
+    /// </summary>
+    /// <param name="task">The task that reports.</param>
+    /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
+    public void Report(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    {
+        lock (_gate)
+        {
+            if (_nodes[task.Position].Status is NodeStatus.Running)
+            {
+                _nodes[task.Position] = report(_nodes[task.Position]);
+                _current = null;
+            }
         }
     }
 
@@ -212,7 +228,7 @@ internal sealed class Run : ISnapshotSource
     {
         try
         {
-            await task.Body(new TaskContext(task.Path, _timeProvider)).ConfigureAwait(false);
+            await task.Body(new TaskContext(this, task, _timeProvider)).ConfigureAwait(false);
             return TaskOutcome.Succeeded;
         }
         catch (Exception escaped)
@@ -298,8 +314,19 @@ internal sealed class Run : ISnapshotSource
 
     private void Publish(RunEvent runEvent)
     {
-        _current = TakeSnapshot();
-        _delivery.Publish(runEvent, _current);
+        var snapshot = TakeSnapshot();
+        _current = snapshot;
+        _delivery.Publish(runEvent, snapshot);
+    }
+
+    // A progress report only marks the current snapshot as out of date, so a task that reports often costs
+    // one snapshot for each read and not one for each report.
+    private Snapshot TakeCurrent()
+    {
+        lock (_gate)
+        {
+            return _current ??= TakeSnapshot();
+        }
     }
 
     private Snapshot TakeSnapshot()
