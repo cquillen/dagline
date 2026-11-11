@@ -138,7 +138,7 @@ Console.WriteLine($"{result.Snapshot.Counts[NodeStatus.Succeeded]} tasks succeed
 
 ## When a task fails
 
-A failure costs only the work that needs it. An exception that escapes a task body fails that task and nothing else: it is never thrown from `RunAsync`, and the run carries on.
+A failure costs only the work that requires it. An exception that escapes a task body fails that task and nothing else: it is never thrown from `RunAsync`, and the run carries on.
 
 - The task ends **failed**, as an *unexpected failure*. Its message is the exception's message, and the exception's type and stack trace are added to its detail lines. A cancellation exception is treated the same way, since a run cannot be stopped.
 - A task that declares a failure itself, with `throw context.Fail(...)`, ends **failed** as a *reported failure*, and everything below applies to it too: see [Failures](writing-tasks.md#failures).

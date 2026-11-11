@@ -60,7 +60,7 @@ A reporter gets snapshots in two ways:
 - **With each event.** The snapshot handed to <xref:Dagline.IReporter.OnEventAsync*> is the run as of that event. It includes that event and none after it, however far the run has moved on since. Use it to show totals beside the event.
 - **From the snapshot source.** <xref:Dagline.RunStarted> carries an <xref:Dagline.ISnapshotSource>, and its `Current` is the run as it is now. Use it to show the run on a timer of your own.
 
-Dagline keeps the snapshot, so a reporter never rebuilds the state of the run from events, and two reporters never disagree about it.
+Dagline keeps the snapshot, so a reporter never pieces it together from events, and two reporters never disagree about it.
 
 A snapshot also answers the questions a summary asks, each in declaration order, so every reporter's summary agrees:
 
