@@ -1,42 +1,47 @@
-using System.Threading.Channels;
-
 namespace Dagline;
 
 /// <summary>
-/// Hands a run's events to its reporters, in the order published and one call at a time,
-/// on a thread that never holds the run's state.
+/// Hands a run's events to its reporters. Each reporter has a queue of its own, so every reporter receives
+/// the same events in the same order, and one that is slow or fails holds up neither the run nor another reporter.
 /// </summary>
 internal sealed class ReporterDelivery
 {
-    private readonly Channel<(RunEvent Event, Snapshot Snapshot)> _queue =
-        Channel.CreateUnbounded<(RunEvent, Snapshot)>(new UnboundedChannelOptions { SingleReader = true });
-
-    private readonly IReadOnlyList<IReporter> _reporters;
+    private readonly ReporterQueue[] _queues;
 
     public ReporterDelivery(IReadOnlyList<IReporter> reporters)
     {
-        _reporters = reporters;
-
         // Nothing can stop a run or cut short the wait at its end, so no token is ever cancelled.
-        Delivered = Task.Run(() => DeliverAsync(CancellationToken.None));
+        var cancellationToken = CancellationToken.None;
+        _queues = [.. reporters.Select(reporter => new ReporterQueue(reporter, cancellationToken))];
+        Delivered = CollectErrorsAsync(cancellationToken);
     }
 
-    /// <summary>Completes once <see cref="Complete"/> has been called and every reporter has handled every event.</summary>
-    public Task Delivered { get; }
+    /// <summary>
+    /// Completes once <see cref="Complete"/> has been called and every reporter that was not dropped has handled every event,
+    /// with the error of each reporter that was dropped, in the order the reporters were given. It never faults.
+    /// </summary>
+    public Task<IReadOnlyList<ReporterError>> Delivered { get; }
 
-    /// <summary>Queues an event and returns at once: the caller never waits for a reporter.</summary>
-    public void Publish(RunEvent runEvent, Snapshot snapshot) => _queue.Writer.TryWrite((runEvent, snapshot));
-
-    public void Complete() => _queue.Writer.Complete();
-
-    private async Task DeliverAsync(CancellationToken cancellationToken)
+    /// <summary>Queues an event for every reporter and returns at once: the caller never waits for a reporter.</summary>
+    public void Publish(RunEvent runEvent, Snapshot snapshot)
     {
-        await foreach (var (runEvent, snapshot) in _queue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        foreach (var queue in _queues)
         {
-            foreach (var reporter in _reporters)
-            {
-                await reporter.OnEventAsync(runEvent, snapshot, cancellationToken).ConfigureAwait(false);
-            }
+            queue.Publish(runEvent, snapshot);
         }
+    }
+
+    public void Complete()
+    {
+        foreach (var queue in _queues)
+        {
+            queue.Complete();
+        }
+    }
+
+    private async Task<IReadOnlyList<ReporterError>> CollectErrorsAsync(CancellationToken cancellationToken)
+    {
+        var errors = await Task.WhenAll(_queues.Select(queue => queue.Delivered)).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return [.. errors.OfType<ReporterError>()];
     }
 }

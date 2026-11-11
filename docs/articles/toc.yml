@@ -6,6 +6,8 @@
   href: running-and-stopping.md
 - name: Terminal UI
   href: terminal-ui.md
+- name: Reporters
+  href: reporters.md
 - name: Contributing
   href: contributing.md
 - name: Glossary
