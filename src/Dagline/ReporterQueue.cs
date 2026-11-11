@@ -4,8 +4,8 @@ namespace Dagline;
 
 /// <summary>
 /// One reporter's own unbounded queue of events, and the loop that hands them to it in the order published, one call at a time.
-/// A reporter that fails is dropped: it is handed nothing more, the events still queued for it are let go,
-/// and its error is the result of <see cref="Delivered"/>.
+/// A reporter that fails, or is still busy when the stop token is cancelled, is dropped: it is handed nothing more,
+/// the events still queued for it are let go, and its error is the result of <see cref="Delivered"/>.
 /// </summary>
 internal sealed class ReporterQueue
 {
@@ -14,15 +14,22 @@ internal sealed class ReporterQueue
 
     private readonly IReporter _reporter;
 
-    public ReporterQueue(IReporter reporter, CancellationToken cancellationToken)
+    /// <param name="reporter">The reporter this queue hands events to.</param>
+    /// <param name="stopWaiting">
+    /// Passed to every call of the reporter. Once it is cancelled the reporter is dropped: a call that has not come back
+    /// is no longer waited for, and no further call is made.
+    /// </param>
+    public ReporterQueue(IReporter reporter, CancellationToken stopWaiting)
     {
         _reporter = reporter;
-        Delivered = Task.Run(() => DeliverAsync(cancellationToken), cancellationToken);
+
+        // Not started with the token: a cancelled token must drop the reporter with an error, never cancel the loop itself.
+        Delivered = Task.Run(() => DeliverAsync(stopWaiting), CancellationToken.None);
     }
 
     /// <summary>
     /// Completes with <see langword="null"/> once <see cref="Complete"/> has been called and the reporter has handled every event,
-    /// or with the reporter's error as soon as it fails. It never faults.
+    /// or with the reporter's error as soon as it fails or is dropped by the stop token. It never faults.
     /// </summary>
     public Task<ReporterError?> Delivered { get; }
 
@@ -34,13 +41,15 @@ internal sealed class ReporterQueue
 
     public void Complete() => _queue.Writer.TryComplete();
 
-    private async Task<ReporterError?> DeliverAsync(CancellationToken cancellationToken)
+    private async Task<ReporterError?> DeliverAsync(CancellationToken stopWaiting)
     {
-        await foreach (var (runEvent, snapshot) in _queue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        // Read without the token: the events still queued when it is cancelled are dropped below, as for a reporter that failed.
+        await foreach (var (runEvent, snapshot) in _queue.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
         {
             try
             {
-                await _reporter.OnEventAsync(runEvent, snapshot, cancellationToken).ConfigureAwait(false);
+                stopWaiting.ThrowIfCancellationRequested();
+                await HandAsync(runEvent, snapshot, stopWaiting).ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -53,6 +62,28 @@ internal sealed class ReporterQueue
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Hands one event to the reporter and waits for the call to come back, or for <paramref name="stopWaiting"/>,
+    /// whichever is first. A call no longer waited for may still fail later, and that failure is observed and dropped.
+    /// </summary>
+    private async Task HandAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken stopWaiting)
+    {
+        var handed = _reporter.OnEventAsync(runEvent, snapshot, stopWaiting);
+        if (handed.IsCompleted)
+        {
+            await handed.ConfigureAwait(false);
+            return;
+        }
+
+        var call = handed.AsTask();
+        _ = call.ContinueWith(
+            static ended => _ = ended.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        await call.WaitAsync(stopWaiting).ConfigureAwait(false);
     }
 
     /// <summary>
