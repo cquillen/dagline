@@ -45,6 +45,13 @@ namespace Dagline;
 /// the line of counts, which is written from a timer, waits for a write that is in progress. The writes are synchronous.
 /// </para>
 /// <para>
+/// The reporter guards only its own calls to the writer, so it cannot keep the app's own output out of its lines.
+/// When the app writes to the same writer while the run is going, use a writer that lets one call in at a time, so that
+/// the one call for an event is written whole: <c>Console.Out</c> is one, and <see cref="TextWriter.Synchronized"/>
+/// wraps any other, when the reporter and the app both write through the wrapper. A writer that is not safe to call from
+/// several threads at once, such as a <see cref="StreamWriter"/>, must not be shared without one.
+/// </para>
+/// <para>
 /// When the writer throws while an event is handled, the exception leaves <see cref="OnEventAsync"/>, so the run drops
 /// the reporter and lists the error in <see cref="RunResult.ReporterErrors"/>, and no further line of counts is printed.
 /// When the writer throws on a line of counts, no further line of counts is printed either, and the exception is thrown
@@ -177,7 +184,7 @@ public sealed class PlainTextReporter : IReporter
             return;
         }
 
-        // One call for all the lines of one event, so that a writer the app also writes to cannot put a line of its own among them.
+        // One call for all the lines of one event, so that a synchronized writer the app also writes to keeps them together.
         _writer.Write(string.Concat(lines.Select(line => line + _writer.NewLine)));
         _writer.Flush();
 
