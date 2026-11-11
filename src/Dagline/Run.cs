@@ -259,20 +259,32 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Tries every ready task in declaration order and starts each one that finds a slot free in the cap and in every limit it holds.
+    /// Tries the ready tasks in declaration order and starts each one that finds a slot free in the cap and in every limit it holds.
     /// One that does not fit is passed over and stays ready, so it never holds up the tasks behind it.
+    /// The walk ends as soon as the cap is full, since every task holds the cap and none after that point could start.
     /// </summary>
     private void StartWhatFits(DateTimeOffset now)
     {
-        foreach (var task in _ready.Select(_graph.TaskAt).ToList())
+        List<int>? started = null;
+        foreach (var position in _ready)
         {
+            if (_slots.CapIsFull)
+            {
+                break;
+            }
+
+            var task = _graph.TaskAt(position);
             if (_slots.TryTake(task))
             {
-                _ready.Remove(task.Position);
+                // Moved at once, not after the walk, so the snapshot with each start counts only the slots taken so far.
                 Move(task, NodeStatus.Running, now);
                 _ = Task.Run(() => RunBodyAsync(task));
+                (started ??= []).Add(position);
             }
         }
+
+        // The ready set cannot change while it is walked, so the tasks that started leave it here.
+        started?.ForEach(position => _ready.Remove(position));
     }
 
     // No token: a run cannot be stopped, and a task body takes none.
