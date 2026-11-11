@@ -27,7 +27,7 @@ internal sealed class Run : ISnapshotSource
     private readonly NodeSnapshot[] _nodes;
     private readonly StatusCounts _counts;
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
-    private readonly List<GraphGroup> _settledInThisStep = [];
+    private readonly List<BuiltGroup> _settledInThisStep = [];
     private readonly SortedSet<int> _ready = [];
     private readonly HashSet<int> _reportedFailures = [];
     private readonly Slots _slots;
@@ -44,7 +44,7 @@ internal sealed class Run : ISnapshotSource
         _timeProvider = timeProvider;
         _delivery = delivery;
         _counts = new StatusCounts(pending: graph.Tasks.Length);
-        _groupCounts = graph.Nodes.OfType<GraphGroup>().ToFrozenDictionary(
+        _groupCounts = graph.Nodes.OfType<BuiltGroup>().ToFrozenDictionary(
             group => group.Position,
             group => new StatusCounts(pending: group.TaskCount));
         _nodes = [.. graph.Nodes.Select(AtTheStart)];
@@ -70,7 +70,7 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     /// <param name="task">The task that reports.</param>
     /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
-    public void Report(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    public void Report(BuiltTask task, Func<NodeSnapshot, NodeSnapshot> report)
     {
         lock (_gate)
         {
@@ -83,7 +83,7 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     /// <param name="task">The task that reports.</param>
     /// <param name="report">Gives the task as it is with the report applied, from the task as it was.</param>
-    public void ReportFailure(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    public void ReportFailure(BuiltTask task, Func<NodeSnapshot, NodeSnapshot> report)
     {
         lock (_gate)
         {
@@ -98,7 +98,7 @@ internal sealed class Run : ISnapshotSource
     /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
     /// </summary>
     /// <exception cref="ArgumentException">The task does not depend on the node.</exception>
-    public NodeStatus StatusOf(GraphTask task, Node dependency)
+    public NodeStatus StatusOf(BuiltTask task, Node dependency)
     {
         if (!_graph.TryGetDependency(task, dependency, out var position))
         {
@@ -115,7 +115,7 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
-    private bool Apply(GraphTask task, Func<NodeSnapshot, NodeSnapshot> report)
+    private bool Apply(BuiltTask task, Func<NodeSnapshot, NodeSnapshot> report)
     {
         var before = _nodes[task.Position];
         if (before.Status is not NodeStatus.Running)
@@ -137,7 +137,7 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>Settles a task whose body has ended. A reported failure the task recorded wins over the way the body ended.</summary>
-    private void Settle(GraphTask task, TaskOutcome ended)
+    private void Settle(BuiltTask task, TaskOutcome ended)
     {
         lock (_gate)
         {
@@ -155,9 +155,9 @@ internal sealed class Run : ISnapshotSource
     /// or through a task that this blocks. Each records the failed task as its cause.
     /// </summary>
     /// <returns>The tasks blocked, in declaration order.</returns>
-    private List<GraphTask> Block(GraphTask failed, DateTimeOffset now)
+    private List<BuiltTask> Block(BuiltTask failed, DateTimeOffset now)
     {
-        List<GraphTask> blocked = [.. PendingTasksThatRequire(failed).Order().Select(_graph.TaskAt)];
+        List<BuiltTask> blocked = [.. PendingTasksThatRequire(failed).Order().Select(_graph.TaskAt)];
         var outcome = TaskOutcome.Blocked(failed.Path);
         foreach (var task in blocked)
         {
@@ -171,11 +171,11 @@ internal sealed class Run : ISnapshotSource
     /// The positions of the pending tasks that cannot run now that a task has failed. A task that is already blocked is passed over,
     /// with everything that requires it: an earlier failure reached it first.
     /// </summary>
-    private HashSet<int> PendingTasksThatRequire(GraphTask failed)
+    private HashSet<int> PendingTasksThatRequire(BuiltTask failed)
     {
         HashSet<int> found = [];
         HashSet<int> cannotSucceed = [];
-        Queue<GraphNode> unvisited = new();
+        Queue<BuiltNode> unvisited = new();
         Reach(failed);
         while (unvisited.TryDequeue(out var node))
         {
@@ -191,7 +191,7 @@ internal sealed class Run : ISnapshotSource
         return found;
 
         // A group is visited once, however many of the tasks beneath it the failure reaches.
-        void Reach(GraphTask task)
+        void Reach(BuiltTask task)
         {
             foreach (var taskOrGroup in _graph.WithItsGroups(task))
             {
@@ -203,14 +203,14 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private bool IsPending(GraphTask task) => _nodes[task.Position].Status is NodeStatus.Pending;
+    private bool IsPending(BuiltTask task) => _nodes[task.Position].Status is NodeStatus.Pending;
 
     /// <summary>
     /// The tasks, in declaration order, that depend on one of the tasks that have just settled or on a group that settled with them.
     /// </summary>
-    private IEnumerable<GraphTask> DependentsOf(IEnumerable<GraphTask> settled)
+    private IEnumerable<BuiltTask> DependentsOf(IEnumerable<BuiltTask> settled)
         => settled
-            .Concat<GraphNode>(_settledInThisStep)
+            .Concat<BuiltNode>(_settledInThisStep)
             .SelectMany(node => node.Dependents)
             .Distinct()
             .Order()
@@ -221,7 +221,7 @@ internal sealed class Run : ISnapshotSource
     /// whose dependencies are now met become ready, the groups that the step settled are announced,
     /// the ready tasks that fit start, and the run ends when nothing is left to do.
     /// </summary>
-    private void Advance(IEnumerable<GraphTask> candidates, DateTimeOffset now)
+    private void Advance(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
     {
         MakeReady(candidates, now);
         AnnounceSettledGroups(now);
@@ -233,9 +233,9 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private void MakeReady(IEnumerable<GraphTask> candidates, DateTimeOffset now)
+    private void MakeReady(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
     {
-        List<GraphTask> ready = [.. candidates.Where(DependenciesAreMet)];
+        List<BuiltTask> ready = [.. candidates.Where(DependenciesAreMet)];
         foreach (var task in ready)
         {
             Move(task, NodeStatus.Ready, now);
@@ -243,7 +243,7 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private bool DependenciesAreMet(GraphTask task)
+    private bool DependenciesAreMet(BuiltTask task)
         => task.Upstreams.All(upstream => _nodes[upstream.Position].Status.Meets(upstream.Kind));
 
     /// <summary>Publishes one event for each group the current step settled: the deepest first, then in declaration order.</summary>
@@ -276,7 +276,7 @@ internal sealed class Run : ISnapshotSource
     }
 
     // No token: a run cannot be stopped, and a task body takes none.
-    private async Task RunBodyAsync(GraphTask task)
+    private async Task RunBodyAsync(BuiltTask task)
     {
         var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
         Settle(task, outcome);
@@ -287,7 +287,7 @@ internal sealed class Run : ISnapshotSource
     /// and so the one catch-all: whatever escapes the body, a cancellation exception included, is an unexpected failure
     /// of that task and of nothing else.
     /// </summary>
-    private async Task<TaskOutcome> InvokeBodyAsync(GraphTask task)
+    private async Task<TaskOutcome> InvokeBodyAsync(BuiltTask task)
     {
         try
         {
@@ -311,14 +311,14 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>Moves a task on to a status in which it has not settled: ready, or running.</summary>
-    private void Move(GraphTask task, NodeStatus to, DateTimeOffset now)
+    private void Move(BuiltTask task, NodeStatus to, DateTimeOffset now)
     {
         var before = _nodes[task.Position];
         Replace(task, before with { Status = to, Started = to is NodeStatus.Running ? now : before.Started }, now);
     }
 
     /// <summary>Settles a task: moves it to the status of its outcome and freezes that outcome on it.</summary>
-    private void Move(GraphTask task, TaskOutcome outcome, DateTimeOffset now)
+    private void Move(BuiltTask task, TaskOutcome outcome, DateTimeOffset now)
     {
         Replace(task, outcome.Settle(_nodes[task.Position], now), now);
     }
@@ -327,7 +327,7 @@ internal sealed class Run : ISnapshotSource
     /// Puts a task as it is after a change of status in place of the task as it was, counts the change in the run
     /// and in every group that holds the task, and publishes it.
     /// </summary>
-    private void Replace(GraphTask task, NodeSnapshot changed, DateTimeOffset now)
+    private void Replace(BuiltTask task, NodeSnapshot changed, DateTimeOffset now)
     {
         var from = _nodes[task.Position].Status;
         var to = changed.Status;
@@ -347,7 +347,7 @@ internal sealed class Run : ISnapshotSource
     /// Counts one task's change of status in a group that holds it, and derives the group's status again.
     /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
     /// </summary>
-    private void MoveBeneath(GraphGroup group, NodeStatus from, NodeStatus to)
+    private void MoveBeneath(BuiltGroup group, NodeStatus from, NodeStatus to)
     {
         var counts = _groupCounts[group.Position];
         counts.Move(from, to);
@@ -360,7 +360,7 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private NodeSnapshot AtTheStart(GraphNode node)
+    private NodeSnapshot AtTheStart(BuiltNode node)
         => _groupCounts.TryGetValue(node.Position, out var counts)
             ? new NodeSnapshot(node, counts.GroupStatus, counts.ToDictionary())
             : new NodeSnapshot(node, NodeStatus.Pending, StatusCounts.OfOneTask(NodeStatus.Pending));

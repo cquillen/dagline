@@ -3,11 +3,11 @@ namespace Dagline;
 /// <summary>One node of a run at one instant. Immutable.</summary>
 public sealed record NodeSnapshot
 {
-    internal NodeSnapshot(GraphNode node, NodeStatus status, IReadOnlyDictionary<NodeStatus, int> counts)
+    internal NodeSnapshot(BuiltNode node, NodeStatus status, IReadOnlyDictionary<NodeStatus, int> counts)
     {
         Path = node.Path;
         Title = node.Title;
-        IsGroup = node is GraphGroup;
+        IsGroup = node is BuiltGroup;
         Dependencies = node.Dependencies;
         Limits = node.Limits;
         Status = status;

@@ -38,9 +38,9 @@ namespace Dagline;
 public sealed class TaskContext
 {
     private readonly Run _run;
-    private readonly GraphTask _task;
+    private readonly BuiltTask _task;
 
-    internal TaskContext(Run run, GraphTask task, TimeProvider timeProvider)
+    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider)
     {
         _run = run;
         _task = task;
