@@ -11,21 +11,19 @@ Where all three are silent, Microsoft's [Framework Design Guidelines](https://le
 
 ## Severity
 
-- **Hard**: a breach is fixed before merge. Every rule below is hard unless marked otherwise.
-- **Judgement**: a prompt to look closer. The author may have a good reason, and gives it in the PR.
-
-An exception to a hard rule is written into this file in the same PR, usually under Endorsed patterns, so the next review sees it.
+- **Hard**: a breach is fixed before merge. Every rule below is hard unless marked otherwise. An exception is written into this file in the same PR, usually under Endorsed patterns, so the next review sees it.
+- **Judgement**: the rule is the default, and a departure is justified. The author gives the reason in a `//` comment at the site, or in the PR description when the departure has no single site. A departure with no reason given, or with a reason that does not hold, is fixed before merge.
 
 A departure from the Microsoft guidelines is a judgement call.
 
 ## Factoring
 
-- **One home per decision.** Each rule, format and calculation is written once in production code and called from everywhere else. The same logic shape twice under `src/` is a breach, in one file or across packages.
+- **One home per decision** (judgement). Each rule, format and calculation is written once in production code and called from everywhere else. The same logic shape twice under `src/` is a departure, in one file or across packages.
 - **One answer per question.** A question asked of a closed set (a status, a dependency kind, a run outcome) is answered by one member, such as `IsSettled`, and every caller uses it. The same `switch` or pattern over that set at two sites is a breach.
-- **Changes travel together.** Adding one concept (a status, an option, an event) is one edit in the type that owns it, plus whatever genuinely new behaviour its callers need. When one logical change repeats the same kind of edit across three or more production files, gather that knowledge into one module first.
+- **Changes travel together** (judgement). Adding one concept (a status, an option, an event) is one edit in the type that owns it, plus whatever genuinely new behaviour its callers need. One logical change that repeats the same kind of edit across three or more production files is a departure: gather that knowledge into one module first.
 - **Glossary names.** An identifier for a domain concept uses that concept's `GLOSSARY.md` term. Naming a concept with a term its own entry lists under _Avoid_ is a breach.
 - **One reason to change** (judgement). A type serves one purpose that fits in a sentence without "and". A file edited in one PR for unrelated reasons is ready to split.
-- **One level per method** (judgement). A method either coordinates steps or performs one. Look closer at a method over 40 lines, nesting deeper than three levels, more than four parameters, or a `bool` parameter that selects behaviour.
+- **One level per method** (judgement). A method either coordinates steps or performs one. Look closer at a method over 40 lines, nesting deeper than three levels, more than four parameters, or a `bool` parameter that selects behaviour. These are triggers to look, not departures in themselves.
 - **Types for glossary concepts** (judgement). A concept with rules of its own, such as a path or a segment, becomes a small type once validated, so the rule is checked in one place. Raw strings stop at the public boundary.
 
 ## Types and surface
@@ -43,7 +41,7 @@ Design follows the SOLID principles. Each one applies here through a rule a revi
 
 - **Single responsibility** is _One reason to change_.
 - **Open/closed** (judgement). Behaviour that varies by consumer or by reporter sits behind an extension point, so a new variant adds a type and leaves the engine untouched. For a closed set, _One answer per question_ keeps the change to one place.
-- **Liskov substitution.** An implementation honours the whole contract it implements: it accepts every input the contract allows and provides every member. A member that throws `NotSupportedException` or `NotImplementedException` is a breach, unless it implements a framework contract that documents the exception, such as `Stream.Seek`.
+- **Liskov substitution** (judgement). An implementation honours the whole contract it implements: it accepts every input the contract allows and provides every member. A member that throws `NotSupportedException` or `NotImplementedException` is a departure, unless it implements a framework contract that documents the exception, such as `Stream.Seek`.
 - **Interface segregation** (judgement). An interface holds only the members every implementer provides and its callers use together. One whose callers each use a different half is ready to split.
 - **Dependency inversion** is _State is passed in_, within the limit of _Abstractions are earned_: a type depends on an abstraction where one is earned, and directly on the concrete type otherwise.
 
