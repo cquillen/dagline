@@ -237,6 +237,20 @@ Before any stop, a cancellation exception is an unexpected failure like any othe
 
 A cancelled task keeps its outcome: its message, detail lines, warnings and frozen progress. Cancelled is settled and never blocks: a task that requires a cancelled task stays pending, and a task that runs after it becomes ready. Neither starts, since nothing starts once a stop has been requested.
 
+### A task the run has let go of
+
+The run waits for its running tasks for at most the grace period, and a second stop ends the wait at once: see [The grace period](running-and-stopping.md#the-grace-period). A task still running when the wait ends is recorded as **cancelled** and the run **lets go** of it: `RunAsync` returns while its body may still be running.
+
+Such a task has the message `still running when the run stopped waiting`, in place of any message it set. It keeps its warnings, detail lines and frozen progress, and is listed in `Snapshot.Cancelled` like any other cancelled task. If it was waiting, its wait ends just before it is cancelled.
+
+Its body may go on, but nothing it does changes the run:
+
+- `Status`, `Count`, `Warn`, `Message`, `Detail` and `Fail` do nothing and do not throw. `Waiting` returns a scope that does nothing, and disposing a scope does nothing.
+- `StatusOf`, `Path`, `TimeProvider` and `CancellationToken` keep working, and the token stays signalled.
+- When the body ends, however it ends, no event is published and no snapshot changes. An exception from it is observed and dropped, so it never surfaces as an unobserved task exception.
+
+A body that honours its token never gets here. Pass the token to everything you await, and keep any cleanup short enough to fit in the grace period.
+
 ## After the task has settled
 
 Once a task has settled, its outcome is fixed. If a body leaves work running that still holds the context, `Status`, `Count`, `Warn`, `Message`, `Detail` and `Fail` then change nothing and publish nothing. They still check their arguments, and `Fail` still returns an exception. `StatusOf` still answers.

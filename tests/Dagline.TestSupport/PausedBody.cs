@@ -27,4 +27,15 @@ public sealed class PausedBody
 
     /// <summary>Lets the body end. The task settles soon after, on another thread: await a signal before asserting on it.</summary>
     public void Release() => _released.TrySetResult();
+
+    /// <summary>
+    /// Lets the body end by throwing <paramref name="exception"/>. The body ignores its cancellation token until then,
+    /// so a test can keep it running after a stop.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
+    public void Throw(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        _released.TrySetException(exception);
+    }
 }

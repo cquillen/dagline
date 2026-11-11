@@ -24,11 +24,15 @@ internal sealed class LimitSizes
     /// Reads the cap and the sizes from the options of a run of <paramref name="graph"/>.
     /// A size for a limit the graph does not name is left out.
     /// </summary>
-    /// <exception cref="RunConfigurationException">
-    /// The cap or a size is below 1, or the graph names a limit that has no size. The message lists every problem.
-    /// </exception>
-    public static LimitSizes For(Graph graph, RunOptions options)
+    /// <param name="graph">The graph to run.</param>
+    /// <param name="options">The options of the run.</param>
+    /// <param name="problems">
+    /// Gains a line for each problem found: the cap or a size is below 1, or the graph names a limit that has no size.
+    /// </param>
+    /// <returns>The sizes, or <see langword="null"/> when a problem was found.</returns>
+    public static LimitSizes? For(Graph graph, RunOptions options, List<string> problems)
     {
+        var before = problems.Count;
         // Read into a dictionary of our own, so that names compare as limit names do whatever comparer the consumer's dictionary uses.
         Dictionary<LimitName, int> given = [];
         foreach (var (name, size) in options.Limits)
@@ -36,7 +40,6 @@ internal sealed class LimitSizes
             given[new LimitName(name)] = size;
         }
 
-        List<string> problems = [];
         if (options.Cap < 1)
         {
             problems.Add(Invariant($"The cap is {options.Cap}. It must be at least 1."));
@@ -49,8 +52,8 @@ internal sealed class LimitSizes
             .Where(name => !given.ContainsKey(name))
             .Select(name => $"The graph names the limit '{name}', and the options give it no size."));
 
-        return problems.Count == 0
+        return problems.Count == before
             ? new LimitSizes(options.Cap, [.. graph.LimitNames.Select(name => given[name])])
-            : throw new RunConfigurationException(problems);
+            : null;
     }
 }

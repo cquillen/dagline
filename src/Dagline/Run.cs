@@ -38,29 +38,33 @@ internal sealed class Run : ISnapshotSource
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly StopSignal? _signal;
+    private readonly TimeSpan _gracePeriod;
 
     private readonly CancellationTokenSource _stopping = new();
     private readonly DateTimeOffset _startedAt;
-    private CancellationTokenRegistration _hearsTheSignal;
+    private CancellationTokenRegistration _hearsTheFirstRequest;
+    private CancellationTokenRegistration _hearsTheSecondRequest;
+    private ITimer? _gracePeriodTimer;
     private StopState? _stop;
     private ChunkedList<NodeSnapshot> _nodes;
     private DateTimeOffset? _endedAt;
     private RunOutcome? _outcome;
     private volatile Snapshot? _current;
 
-    public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery, StopSignal? signal)
+    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, StopSignal? signal)
     {
         _signal = signal;
         _graph = graph;
-        _slots = new Slots(graph.LimitNames, sizes);
-        _timeProvider = timeProvider;
+        _slots = new Slots(graph.LimitNames, settings.Sizes);
+        _timeProvider = settings.TimeProvider;
+        _gracePeriod = settings.GracePeriod;
         _delivery = delivery;
         _counts = new StatusCounts(pending: graph.Tasks.Length);
         _groupCounts = graph.Nodes.OfType<BuiltGroup>().ToFrozenDictionary(
             group => group.Position,
             group => new StatusCounts(pending: group.TaskCount));
         _nodes = ChunkedList<NodeSnapshot>.From(graph.Nodes.Select(AtTheStart));
-        _startedAt = timeProvider.GetUtcNow();
+        _startedAt = _timeProvider.GetUtcNow();
     }
 
     public Snapshot Current => _current ?? TakeCurrent();
@@ -92,8 +96,8 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Listens for the first request on the run's signal until the run ends. It is registered once the run has started,
-    /// outside the lock, since a signal already requested calls back at once: a request made in between is heard then,
+    /// Listens for the first and the second request on the run's signal until the run ends. Each is registered once the run
+    /// has started, outside the lock, since a signal already requested calls back at once: a request made in between is heard then,
     /// and one already applied changes nothing.
     /// </summary>
     private void HearTheSignal()
@@ -103,36 +107,50 @@ internal sealed class Run : ISnapshotSource
             return;
         }
 
-        var registration = _signal.FirstRequest.UnsafeRegister(static run => ((Run)run!).Stop(), this);
+        var first = _signal.FirstRequest.UnsafeRegister(static run => ((Run)run!).Hear(), this);
+        var second = _signal.SecondRequest.UnsafeRegister(static run => ((Run)run!).Hear(), this);
         lock (_gate)
         {
             if (_outcome is null)
             {
-                _hearsTheSignal = registration;
+                _hearsTheFirstRequest = first;
+                _hearsTheSecondRequest = second;
                 return;
             }
         }
 
         // The run ended before it could listen, so nothing else will let the signal forget it.
-        registration.Unregister();
+        first.Unregister();
+        second.Unregister();
     }
 
     /// <summary>
-    /// Applies the first request on the run's signal: from this step on nothing starts, and the run ends once nothing is running.
-    /// A request heard after a stop has been applied, or after the run has ended, changes nothing.
+    /// Applies the requests made so far on the run's signal. The first is a stop: from this step on nothing starts,
+    /// and the run ends once nothing is running. The second also ends the wait for the running tasks.
+    /// It reads the count, not which token called back, so requests heard in either order are applied in order.
+    /// A request already applied, or heard after the run has ended, changes nothing.
     /// </summary>
-    private void Stop()
+    private void Hear()
     {
         lock (_gate)
         {
-            if (_stop is not null || _outcome is not null)
+            if (_outcome is not null)
             {
                 return;
             }
 
             var now = _timeProvider.GetUtcNow();
-            ApplyStop(now);
-            StartWhatFitsOrEnd(now);
+            if (_stop is null)
+            {
+                ApplyStop(now);
+                StartWhatFitsOrEnd(now);
+                WaitForTheRunningTasks(now);
+            }
+
+            if (_signal!.Requests >= 2)
+            {
+                LetGo(StoppedWaitingReason.SecondStop, now);
+            }
         }
 
         SignalTheTasksIfStopped();
@@ -140,9 +158,66 @@ internal sealed class Run : ISnapshotSource
 
     private void ApplyStop(DateTimeOffset now)
     {
-        // The wait for running tasks has no bound yet.
-        _stop = new StopState(now, Timeout.InfiniteTimeSpan, Deadline: null);
-        Publish(new StopRequested(now, _stop.GracePeriod));
+        DateTimeOffset? deadline = _gracePeriod == Timeout.InfiniteTimeSpan ? null : now + _gracePeriod;
+        _stop = new StopState(now, _gracePeriod, deadline);
+        Publish(new StopRequested(now, _gracePeriod));
+    }
+
+    /// <summary>
+    /// Bounds the wait for the running tasks once a stop has been applied: a grace period of zero lets go of them at once,
+    /// and a limited one sets a timer on the run's clock that lets go of those still running when it fires.
+    /// </summary>
+    private void WaitForTheRunningTasks(DateTimeOffset now)
+    {
+        if (_outcome is not null || _gracePeriod == Timeout.InfiniteTimeSpan)
+        {
+            return;
+        }
+
+        if (_gracePeriod == TimeSpan.Zero)
+        {
+            LetGo(StoppedWaitingReason.GracePeriodOver, now);
+            return;
+        }
+
+        _gracePeriodTimer = _timeProvider.CreateTimer(
+            static run => ((Run)run!).GracePeriodOver(),
+            this,
+            _gracePeriod,
+            Timeout.InfiniteTimeSpan);
+    }
+
+    private void GracePeriodOver()
+    {
+        lock (_gate)
+        {
+            LetGo(StoppedWaitingReason.GracePeriodOver, _timeProvider.GetUtcNow());
+        }
+    }
+
+    /// <summary>
+    /// Ends the wait for the running tasks after a stop, if the run is still waiting for any: publishes
+    /// <see cref="StoppedWaiting"/>, then records each running task as cancelled in declaration order and lets go of it.
+    /// What follows is applied as after any task settles, and the run ends, since nothing is left running.
+    /// </summary>
+    private void LetGo(StoppedWaitingReason reason, DateTimeOffset now)
+    {
+        if (_outcome is not null || _counts[NodeStatus.Running] == 0)
+        {
+            return;
+        }
+
+        Publish(new StoppedWaiting(now, reason));
+        List<BuiltTask> leftBehind = [.. _graph.Tasks.Where(task => _nodes[task.Position].Status is NodeStatus.Running)];
+        foreach (var task in leftBehind)
+        {
+            _slots.GiveBack(task);
+            _reportedFailures.Remove(task.Position);
+            EndWaiting(task, now);
+            Move(task, TaskOutcome.LeftBehind, now);
+        }
+
+        Advance(DependentsOf(leftBehind), now);
     }
 
     /// <summary>
@@ -300,11 +375,19 @@ internal sealed class Run : ISnapshotSource
         return true;
     }
 
-    /// <summary>Settles a task whose body has ended. A reported failure the task recorded wins over the way the body ended.</summary>
+    /// <summary>
+    /// Settles a task whose body has ended. A reported failure the task recorded wins over the way the body ended.
+    /// A task the run has let go of has settled already, and its body ending changes nothing.
+    /// </summary>
     private void Settle(BuiltTask task, TaskOutcome ended)
     {
         lock (_gate)
         {
+            if (_nodes[task.Position].Status is not NodeStatus.Running)
+            {
+                return;
+            }
+
             var now = _timeProvider.GetUtcNow();
             var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure
                 : _stop is not null ? ended.OnceStopped()
@@ -498,8 +581,10 @@ internal sealed class Run : ISnapshotSource
             : _stop is not null ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
 
-        // Unregister does not wait for a callback that is running, which may be waiting for this lock.
-        _hearsTheSignal.Unregister();
+        // Unregister and Dispose do not wait for a callback that is running, which may be waiting for this lock.
+        _hearsTheFirstRequest.Unregister();
+        _hearsTheSecondRequest.Unregister();
+        _gracePeriodTimer?.Dispose();
         _endedAt = now;
         _outcome = outcome;
         Publish(new RunEnded(now, outcome));

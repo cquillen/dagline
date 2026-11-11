@@ -30,6 +30,15 @@ namespace Dagline;
 /// <see cref="StatusOf"/> still answers. A body sees this only when it leaves work running after it has ended.
 /// </para>
 /// <para>
+/// The same holds for a task the run has <em>let go of</em>: one still running when the run stopped waiting for it after a stop
+/// (<see cref="RunOptions.GracePeriod"/>). The run records it as <see cref="NodeStatus.Cancelled"/> with the message
+/// <c>still running when the run stopped waiting</c>, in place of any message it set, and keeps its warnings, detail lines and
+/// frozen progress. Its body may still be running, and nothing it does changes the run: the reporting members do nothing
+/// and do not throw, <see cref="Waiting"/> returns a scope that does nothing, and disposing a scope does nothing.
+/// <see cref="StatusOf"/>, <see cref="Path"/>, <see cref="TimeProvider"/> and <see cref="CancellationToken"/> keep working.
+/// When the body ends, however it ends, nothing is published and no snapshot changes, and an exception from it is dropped.
+/// </para>
+/// <para>
 /// Dagline keeps the first 100 warnings and the first 100 detail lines of a task, counted separately, and only counts the rest,
 /// in <see cref="NodeSnapshot.WarningsOmitted"/> and <see cref="NodeSnapshot.DetailOmitted"/>. A task that finds three thousand
 /// problems therefore does not flood the run: report the count in the message and the first few in the detail.

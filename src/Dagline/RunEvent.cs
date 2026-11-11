@@ -166,6 +166,25 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
 /// </param>
 public sealed record StopRequested(DateTimeOffset At, TimeSpan GracePeriod) : RunEvent(At);
 
+/// <summary>
+/// The run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
+/// </summary>
+/// <remarks>
+/// <para>
+/// It is published at most once, and only when tasks are still running as the wait ends. A wait that ends because the last
+/// running task ended has no such event. In the same step, each task left behind follows in declaration order: the end of its wait
+/// if it was waiting, then its <see cref="TaskStatusChanged"/> to <see cref="NodeStatus.Cancelled"/>, with the message
+/// <c>still running when the run stopped waiting</c>. The tasks that this makes ready and the groups it settles come after them,
+/// then <see cref="RunEnded"/>.
+/// </para>
+/// <para>
+/// Nothing a task's body does after this changes the run, and nothing is published when the body ends.
+/// </para>
+/// </remarks>
+/// <param name="At">When the run stopped waiting.</param>
+/// <param name="Reason">Why the run stopped waiting.</param>
+public sealed record StoppedWaiting(DateTimeOffset At, StoppedWaitingReason Reason) : RunEvent(At);
+
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <param name="At">When the run ended.</param>
 /// <param name="Outcome">How the run ended.</param>

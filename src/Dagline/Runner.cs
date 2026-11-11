@@ -1,3 +1,5 @@
+using static System.FormattableString;
+
 namespace Dagline;
 
 /// <summary>The entry point: runs a graph to its end.</summary>
@@ -29,7 +31,8 @@ public static class Runner
     /// </para>
     /// <para>
     /// The options are checked before anything else happens: <see cref="RunOptions.Cap"/> and every size in
-    /// <see cref="RunOptions.Limits"/> must be at least 1, and every limit the graph names must have a size.
+    /// <see cref="RunOptions.Limits"/> must be at least 1, every limit the graph names must have a size, and
+    /// <see cref="RunOptions.GracePeriod"/> must be zero or more, or <see cref="Timeout.InfiniteTimeSpan"/>.
     /// A size for a limit the graph does not name is ignored.
     /// </para>
     /// <para>
@@ -42,8 +45,11 @@ public static class Runner
     /// <para>
     /// A run is stopped through <paramref name="stop"/>, not through a <see cref="CancellationToken"/>. Once the first request
     /// on it has been applied, which publishes <see cref="StopRequested"/>, nothing starts, <em>after</em> tasks included,
-    /// and <see cref="TaskContext.CancellationToken"/> is signalled on every running task. The run then waits, with no time bound,
-    /// for its running tasks to end. While it waits a task that succeeds still makes its dependents ready, where they stay,
+    /// and <see cref="TaskContext.CancellationToken"/> is signalled on every running task. The run then waits for its running tasks
+    /// to end, for at most <see cref="RunOptions.GracePeriod"/> on the run's clock, and a second request on <paramref name="stop"/>
+    /// ends the wait at once. When the wait ends with tasks still running, <see cref="StoppedWaiting"/> is published, each of them
+    /// is recorded as cancelled in declaration order, and the run lets go of it: this method returns while its body may still be
+    /// running, and nothing the body does afterwards changes the run. While it waits a task that succeeds still makes its dependents ready, where they stay,
     /// and a task that fails still blocks its dependents. <see cref="TaskContext.CancellationToken"/> says how a task ends
     /// once a stop has been requested. Tasks the run never reached keep their status, pending or ready, and are listed in
     /// <see cref="Snapshot.NeverReached"/>.
@@ -59,7 +65,8 @@ public static class Runner
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="RunConfigurationException">
-    /// The cap or a size is below 1, or the graph names a limit that the options give no size. The message lists every problem.
+    /// The cap or a size is below 1, the graph names a limit that the options give no size, or the grace period is below zero
+    /// and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
     /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
     /// </exception>
     public static Task<RunResult> RunAsync(Graph graph, RunOptions options, StopSignal? stop = null)
@@ -70,19 +77,31 @@ public static class Runner
         IReporter[] reporters = [.. options.Reporters];
         Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));
 
-        return RunToEndAsync(graph, LimitSizes.For(graph, options), options.TimeProvider, reporters, stop);
+        List<string> problems = [];
+        var sizes = LimitSizes.For(graph, options, problems);
+        if (options.GracePeriod < TimeSpan.Zero && options.GracePeriod != Timeout.InfiniteTimeSpan)
+        {
+            problems.Add(Invariant(
+                $"The grace period is {options.GracePeriod}. It must be zero or more, or Timeout.InfiniteTimeSpan to wait with no limit."));
+        }
+
+        if (sizes is null || problems.Count > 0)
+        {
+            throw new RunConfigurationException(problems);
+        }
+
+        return RunToEndAsync(graph, new RunSettings(sizes, options.GracePeriod, options.TimeProvider), reporters, stop);
     }
 
     // No token, by design: a run is stopped through its StopSignal, not a CancellationToken, so there is none to pass on.
     private static async Task<RunResult> RunToEndAsync(
         Graph graph,
-        LimitSizes sizes,
-        TimeProvider timeProvider,
+        RunSettings settings,
         IReporter[] reporters,
         StopSignal? stop)
     {
         var delivery = new ReporterDelivery(reporters);
-        var run = new Run(graph, sizes, timeProvider, delivery, stop);
+        var run = new Run(graph, settings, delivery, stop);
 
         run.Start();
         var outcome = await run.Ended.ConfigureAwait(false);
