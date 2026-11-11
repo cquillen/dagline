@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace Dagline;
 
 /// <summary>
@@ -16,8 +14,10 @@ namespace Dagline;
 /// The second request ends that wait at once. Later requests are counted in <see cref="Requests"/> and change nothing.
 /// </para>
 /// <para>
-/// Once a run has ended it waits for its reporters to handle every event. Any request made during that wait,
-/// the first or a later one, ends it and drops the reporters still busy, without changing the run outcome.
+/// Once a run has ended it waits for its reporters to handle every event. Any request the run itself did not apply,
+/// the first or a later one, ends that wait and drops the reporters still busy, without changing the run outcome.
+/// Every request is therefore either applied by the run or ends the wait for its reporters, however close to the end
+/// of the run it is made.
 /// </para>
 /// <para>
 /// A signal is not tied to one run. A run reads the requests made up to its end and ignores later ones,
@@ -28,18 +28,10 @@ namespace Dagline;
 /// The class is not sealed so that a UI package can offer a signal hooked to the console. Its members are not virtual.
 /// </para>
 /// </remarks>
-[SuppressMessage(
-    "Reliability",
-    "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The sources have no timer and no wait handle is ever taken from them, so they hold nothing to free, and a signal an app forgets to dispose must still work.")]
 public class StopSignal
 {
-    // Cancelled on the first and the second request. No source here is ever disposed, so cancelling one cannot throw.
-    private readonly CancellationTokenSource _firstRequest = new();
-    private readonly CancellationTokenSource _secondRequest = new();
-
-    // Swapped for a fresh source on every request, then cancelled, so it answers whichever request comes next.
-    private CancellationTokenSource _nextRequest = new();
+    private readonly Lock _gate = new();
+    private readonly List<Listener> _listeners = [];
     private int _requests;
 
     /// <summary><see langword="true"/> once <see cref="Request"/> has been called at least once.</summary>
@@ -48,52 +40,69 @@ public class StopSignal
     /// <summary>How many times <see cref="Request"/> has been called. It never goes down.</summary>
     public int Requests => Volatile.Read(ref _requests);
 
-    /// <summary>A token cancelled on the first request, through which a run hears of it.</summary>
-    internal CancellationToken FirstRequest => _firstRequest.Token;
-
-    /// <summary>A token cancelled on the second request, through which a run hears that it should stop waiting.</summary>
-    internal CancellationToken SecondRequest => _secondRequest.Token;
-
-    /// <summary>
-    /// A token cancelled by the first request made after it was read, whichever request that is.
-    /// Requests made before it was read do not cancel it.
-    /// </summary>
-    internal CancellationToken NextRequest => Volatile.Read(ref _nextRequest).Token;
-
     /// <summary>Requests a stop, or counts one more request.</summary>
     /// <remarks>
     /// It is safe to call from any thread, including a console's cancel handler, and from several threads at once:
-    /// every call is counted. It never blocks and never throws. A run that hears of the request applies it on a thread
+    /// every call is counted. It never blocks and never throws: a run that hears of the request applies it on a thread
     /// of its own, so no work of the run happens on the caller's thread.
     /// </remarks>
     public void Request()
     {
-        // Cancelled asynchronously, so a run's work in hearing of a request never runs on the caller's thread.
-        _ = CountOneMore() switch
+        Listener[] listeners;
+        lock (_gate)
         {
-            1 => _firstRequest.CancelAsync(),
-            2 => _secondRequest.CancelAsync(),
-            _ => Task.CompletedTask,
-        };
-
-        _ = Interlocked.Exchange(ref _nextRequest, new CancellationTokenSource()).CancelAsync();
-    }
-
-    // Saturates instead of wrapping, so the count never goes down and never reads as no request.
-    private int CountOneMore()
-    {
-        var seen = Volatile.Read(ref _requests);
-        while (seen < int.MaxValue)
-        {
-            var before = Interlocked.CompareExchange(ref _requests, seen + 1, seen);
-            if (before == seen)
+            // Saturates instead of wrapping, so the count never goes down and never reads as no request.
+            if (_requests < int.MaxValue)
             {
-                return seen + 1;
+                Volatile.Write(ref _requests, _requests + 1);
             }
 
-            seen = before;
+            listeners = [.. _listeners];
         }
 
-        return seen;
+        foreach (var listener in listeners)
+        {
+            listener.Call();
+        }
+    }
+
+    /// <summary>
+    /// Calls <paramref name="listener"/> on the thread pool after every request made from now on, and once more at once
+    /// when a request has already been made, so that a listener registered late misses nothing. A listener reads
+    /// <see cref="Requests"/> to learn what has been asked, and may be called more than once for the same requests.
+    /// </summary>
+    /// <returns>The registration. Disposing it stops the calls, though a call already queued may still come.</returns>
+    internal IDisposable OnRequest(Action listener)
+    {
+        var registered = new Listener(this, listener);
+        bool requested;
+        lock (_gate)
+        {
+            _listeners.Add(registered);
+            requested = _requests > 0;
+        }
+
+        if (requested)
+        {
+            registered.Call();
+        }
+
+        return registered;
+    }
+
+    private void Remove(Listener listener)
+    {
+        lock (_gate)
+        {
+            _listeners.Remove(listener);
+        }
+    }
+
+    private sealed class Listener(StopSignal signal, Action listener) : IDisposable
+    {
+        // Queued, never called in place, so a listener neither runs on the requester's thread nor throws into it.
+        public void Call() => ThreadPool.UnsafeQueueUserWorkItem(static heard => heard(), listener, preferLocal: false);
+
+        public void Dispose() => signal.Remove(this);
     }
 }

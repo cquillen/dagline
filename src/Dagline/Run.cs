@@ -42,8 +42,8 @@ internal sealed class Run : ISnapshotSource
 
     private readonly CancellationTokenSource _stopping = new();
     private readonly DateTimeOffset _startedAt;
-    private CancellationTokenRegistration _hearsTheFirstRequest;
-    private CancellationTokenRegistration _hearsTheSecondRequest;
+    private IDisposable? _hearsTheSignal;
+    private int _requestsApplied;
     private ITimer? _gracePeriodTimer;
     private StopState? _stop;
     private ChunkedList<NodeSnapshot> _nodes;
@@ -83,7 +83,10 @@ internal sealed class Run : ISnapshotSource
             Publish(new RunStarted(_startedAt, this));
             MakeReady(_graph.Tasks, _startedAt);
             AnnounceSettledGroups(_startedAt);
-            if (_signal?.IsRequested == true)
+
+            // A second request needs nothing more here: once stopped from its start, the run has no task to stop waiting for.
+            _requestsApplied = _signal?.Requests ?? 0;
+            if (_requestsApplied > 0)
             {
                 ApplyStop(_startedAt);
             }
@@ -96,8 +99,8 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Listens for the first and the second request on the run's signal until the run ends. Each is registered once the run
-    /// has started, outside the lock, since a signal already requested calls back at once: a request made in between is heard then,
+    /// Listens to the run's signal until the run ends. It registers once the run has started, outside the lock,
+    /// since a signal already requested calls back at once: a request made in between is heard then,
     /// and one already applied changes nothing.
     /// </summary>
     private void HearTheSignal()
@@ -107,28 +110,25 @@ internal sealed class Run : ISnapshotSource
             return;
         }
 
-        var first = _signal.FirstRequest.UnsafeRegister(static run => ((Run)run!).Hear(), this);
-        var second = _signal.SecondRequest.UnsafeRegister(static run => ((Run)run!).Hear(), this);
+        var hearing = _signal.OnRequest(Hear);
         lock (_gate)
         {
             if (_outcome is null)
             {
-                _hearsTheFirstRequest = first;
-                _hearsTheSecondRequest = second;
+                _hearsTheSignal = hearing;
                 return;
             }
         }
 
         // The run ended before it could listen, so nothing else will let the signal forget it.
-        first.Unregister();
-        second.Unregister();
+        hearing.Dispose();
     }
 
     /// <summary>
     /// Applies the requests made so far on the run's signal. The first is a stop: from this step on nothing starts,
     /// and the run ends once nothing is running. The second also ends the wait for the running tasks.
-    /// It reads the count, not which token called back, so requests heard in either order are applied in order.
-    /// A request already applied, or heard after the run has ended, changes nothing.
+    /// It reads the count, so however many calls it takes to hear them, requests are applied in order and once.
+    /// A request already applied, or heard after the run has ended, changes nothing here: the wait for reporters hears it.
     /// </summary>
     private void Hear()
     {
@@ -139,15 +139,16 @@ internal sealed class Run : ISnapshotSource
                 return;
             }
 
+            _requestsApplied = _signal!.Requests;
             var now = _timeProvider.GetUtcNow();
             if (_stop is null)
             {
                 ApplyStop(now);
                 StartWhatFitsOrEnd(now);
-                WaitForTheRunningTasks(now);
+                BoundTheGracePeriod(now);
             }
 
-            if (_signal!.Requests >= 2)
+            if (_requestsApplied >= 2)
             {
                 LetGo(StoppedWaitingReason.SecondStop, now);
             }
@@ -158,18 +159,17 @@ internal sealed class Run : ISnapshotSource
 
     private void ApplyStop(DateTimeOffset now)
     {
-        DateTimeOffset? deadline = _gracePeriod == Timeout.InfiniteTimeSpan ? null : now + _gracePeriod;
-        _stop = new StopState(now, _gracePeriod, deadline);
+        _stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod));
         Publish(new StopRequested(now, _gracePeriod));
     }
 
     /// <summary>
-    /// Bounds the wait for the running tasks once a stop has been applied: a grace period of zero lets go of them at once,
+    /// Bounds the grace period once a stop has been applied: a grace period of zero lets go of the running tasks at once,
     /// and a limited one sets a timer on the run's clock that lets go of those still running when it fires.
     /// </summary>
-    private void WaitForTheRunningTasks(DateTimeOffset now)
+    private void BoundTheGracePeriod(DateTimeOffset now)
     {
-        if (_outcome is not null || _gracePeriod == Timeout.InfiniteTimeSpan)
+        if (_outcome is not null || GracePeriodRules.IsUnlimited(_gracePeriod))
         {
             return;
         }
@@ -581,12 +581,12 @@ internal sealed class Run : ISnapshotSource
             : _stop is not null ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
 
-        // Unregister and Dispose do not wait for a callback that is running, which may be waiting for this lock.
-        _hearsTheFirstRequest.Unregister();
-        _hearsTheSecondRequest.Unregister();
+        // Neither Dispose waits for a callback that is running, which may be waiting for this lock.
+        _hearsTheSignal?.Dispose();
         _gracePeriodTimer?.Dispose();
         _endedAt = now;
         _outcome = outcome;
+        _delivery.ListenBeyond(_requestsApplied);
         Publish(new RunEnded(now, outcome));
         _delivery.Complete();
         _ended.SetResult(outcome);

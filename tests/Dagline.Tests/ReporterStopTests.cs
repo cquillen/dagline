@@ -119,6 +119,42 @@ public class ReporterStopTests
         }
     }
 
+    [Test]
+    public async Task A_request_made_as_the_run_ends_is_heard_by_the_run_or_ends_the_wait_for_reporters()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var prepare = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("prepare", prepare.Body);
+            var stuck = new HeldReporter("run ended: complete");
+            var stop = new StopSignal();
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck] }, stop);
+            await prepare.Started;
+            var request = Task.Run(stop.Request);
+            prepare.Release();
+            await request;
+            await Task.WhenAny(run, stuck.Held);
+            if (stuck.Held.IsCompleted && stuck.Lines.Contains("stop requested"))
+            {
+                // The run applied the request, so it was not one made during the wait for reporters: make one that is.
+                stop.Request();
+            }
+
+            var result = await run;
+            stuck.Release();
+            if (stuck.Held.IsCompleted)
+            {
+                // The request can drop the reporter before it is handed the event it holds on, and then it holds nothing.
+                await stuck.Returned;
+            }
+
+            result.Outcome.ShouldBe(RunOutcome.Complete);
+            result.ReporterErrors.ShouldHaveSingleItem().Reporter.ShouldBeSameAs(stuck);
+        }
+    }
+
     /// <summary>
     /// Keeps a line and the token for every event it is handed, and holds the call for the event whose line is
     /// <paramref name="holdsOn"/> open until the test releases it, ignoring its token as a stuck reporter would.
