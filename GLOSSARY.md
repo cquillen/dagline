@@ -48,6 +48,24 @@ _Avoid_: Finally, always
 Said of a task whose status is succeeded, failed, blocked or cancelled: it will not change status again in this run. A group is settled once every task beneath it is.
 _Avoid_: Done, finished, complete
 
+### Scheduling
+
+**Limit**:
+A named ceiling on how many of the tasks that hold it may be running at once.
+_Avoid_: Semaphore, lock, pool, throttle
+
+**Slot**:
+One unit of a limit's size, held by one task from the moment it starts until it settles.
+_Avoid_: Permit, token, lease
+
+**Cap**:
+The most tasks that may be running at once in a run, whatever limits they hold.
+_Avoid_: Max parallelism, degree of parallelism, global limit
+
+**Declaration order**:
+The order in which nodes were added to the graph, read from the top of the tree down. It decides both what the display shows first and which ready task starts first.
+_Avoid_: Priority, sort order
+
 ### Status
 
 **Status**:
@@ -79,7 +97,7 @@ The status of a task that will not run in this run because a node it requires fa
 _Avoid_: Skipped, cancelled
 
 **Cancelled**:
-The status of a task that was running and ended because the run was stopped.
+The status of a task that was running when the run was stopped and either ended because of it or was left behind when the grace period ran out.
 _Avoid_: Stopped, aborted, interrupted
 
 ### Outcomes
@@ -105,6 +123,14 @@ _Avoid_: Crash, fault, exception
 **Run**:
 One execution of a graph by one process.
 _Avoid_: Execution, session, job
+
+**Stop**:
+A request, usually from the operator, that the run start nothing new and that its running tasks end. A second stop ends the wait.
+_Avoid_: Cancel, abort, kill, shut down
+
+**Grace period**:
+How long a run waits after a stop for its running tasks to end.
+_Avoid_: Timeout, drain time
 
 **Run outcome**:
 How a run ended: complete, incomplete or stopped.
