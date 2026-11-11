@@ -14,7 +14,7 @@ public interface IReporter
     /// <returns>A task that completes when the reporter has handled the event.</returns>
     /// <remarks>
     /// Events arrive in the order they happened, and a reporter is never called for an event while it is still handling an earlier one.
-    /// The call is made on a thread-pool thread, never on a thread that is running a task body.
+    /// Calls are made from the thread pool, and the run ends only once every event has been handled.
     /// </remarks>
     ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken);
 }

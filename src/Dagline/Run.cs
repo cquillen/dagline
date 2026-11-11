@@ -5,6 +5,11 @@ namespace Dagline;
 /// Every change is applied under one lock, one at a time, so the order of the run's events
 /// is a function of the order in which task bodies end.
 /// </summary>
+/// <remarks>
+/// A change and everything that follows from it are one step: the step publishes its events in order, each with
+/// the snapshot as of that event, before the next change is looked at. No consumer code runs under the lock:
+/// task bodies are started on the thread pool, and reporters are called by <see cref="ReporterDelivery"/>.
+/// </remarks>
 internal sealed class Run : ISnapshotSource
 {
     private readonly Lock _gate = new();

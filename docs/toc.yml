@@ -1,6 +1,5 @@
 - name: Docs
   href: articles/
-# TODO: once src/ has public types, change this to `href: api/` so the nav
-# uses the generated API table of contents (api/index.md stays as its homepage).
 - name: API
-  href: api/index.md
+  href: api/
+  homepage: api/index.md

@@ -6,7 +6,7 @@ namespace Dagline.TestSupport;
 /// <summary>Helpers for tests that control time with <see cref="FakeTimeProvider"/>.</summary>
 public static class FakeClock
 {
-    private static readonly TimeSpan StuckAfter = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _stuckAfter = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Advances the clock one <paramref name="step"/> at a time until <paramref name="signal"/> completes,
@@ -29,7 +29,7 @@ public static class FakeClock
         var waited = Stopwatch.StartNew();
         while (!signal.IsCompleted)
         {
-            if (waited.Elapsed > StuckAfter)
+            if (waited.Elapsed > _stuckAfter)
             {
                 throw new TimeoutException($"The signal did not complete while the clock was advanced to {clock.GetUtcNow():O}.");
             }

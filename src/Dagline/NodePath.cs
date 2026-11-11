@@ -21,9 +21,9 @@ namespace Dagline;
 /// </remarks>
 public readonly record struct NodePath
 {
-    private const char Separator = '/';
+    private const char _separator = '/';
 
-    private static readonly SearchValues<char> SegmentCharacters =
+    private static readonly SearchValues<char> _segmentCharacters =
         SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-");
 
     private readonly string? _text;
@@ -31,14 +31,14 @@ public readonly record struct NodePath
     private NodePath(string text) => _text = text;
 
     /// <summary>The segments of the path, from the root down. The last one names the node among its siblings.</summary>
-    public IReadOnlyList<string> Segments => _text is null ? [] : _text.Split(Separator);
+    public IReadOnlyList<string> Segments => _text is null ? [] : _text.Split(_separator);
 
     /// <summary>The path of the group that holds the node, or <see langword="null"/> for a node at the root.</summary>
     public NodePath? Parent
     {
         get
         {
-            var lastSeparator = _text?.LastIndexOf(Separator) ?? -1;
+            var lastSeparator = _text?.LastIndexOf(_separator) ?? -1;
             return lastSeparator < 0 ? null : new NodePath(_text![..lastSeparator]);
         }
     }
@@ -66,7 +66,7 @@ public readonly record struct NodePath
     /// <returns><see langword="true"/> when <paramref name="text"/> is a valid path.</returns>
     public static bool TryParse(string? text, out NodePath path)
     {
-        var isPath = text is not null && text.Split(Separator).All(IsSegment);
+        var isPath = text is not null && text.Split(_separator).All(IsSegment);
         path = isPath ? new NodePath(text!) : default;
         return isPath;
     }
@@ -78,5 +78,5 @@ public readonly record struct NodePath
     internal static NodePath AtRoot(string segment) => new(segment);
 
     private static bool IsSegment(string segment)
-        => segment.Length > 0 && !segment.AsSpan().ContainsAnyExcept(SegmentCharacters);
+        => segment.Length > 0 && !segment.AsSpan().ContainsAnyExcept(_segmentCharacters);
 }
