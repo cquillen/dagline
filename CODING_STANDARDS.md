@@ -74,4 +74,4 @@ These are deliberate here and override general code-smell heuristics:
 - **Fluent chains.** LINQ, builder APIs and Spectre.Console calls chain by design.
 - **Repetition in tests.** Each test reads top to bottom on its own, so repeated arrange code under `tests/` is fine. Extract a helper when it names a concept, not to save lines.
 - **ADR seams.** A seam recorded in `docs/adr/` is a decision already made, even while it has one implementation.
-- **Samples.** Code under `samples/` is written for a newcomer to read: inline, in few files, with minimal abstraction.
+- **Samples.** Code under `samples/` is written for a newcomer to read: inline, in few files, with minimal abstraction. Graph building stays inline, so the shape of the graph reads top to bottom. A task body that is tested alone is a named method, because a test cannot reach a lambda written inside the graph-building code.
