@@ -4,14 +4,14 @@ namespace Dagline.Tests;
 
 public class LimitTests
 {
-    private const int Repeats = 50;
+    private const int _repeats = 50;
 
     [Test]
     public async Task The_number_of_running_tasks_that_hold_a_limit_never_exceeds_its_size()
     {
         const int size = 2;
 
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
             var loads = new OverlappingBodies(expected: size);
             var builder = new GraphBuilder();
@@ -35,7 +35,7 @@ public class LimitTests
     {
         const int size = 2;
 
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
             var loads = new OverlappingBodies(expected: size);
             var builder = new GraphBuilder();

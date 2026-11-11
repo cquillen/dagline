@@ -7,7 +7,7 @@ namespace Dagline.Tests;
 
 public class PlainTextReporterTests
 {
-    private const int Repeats = 50;
+    private const int _repeats = 50;
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
     [Test]
@@ -679,7 +679,7 @@ public class PlainTextReporterTests
     [Test]
     public async Task All_the_lines_about_one_event_are_written_with_one_call_and_no_two_writes_are_ever_in_progress_at_once()
     {
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
             var clock = new FakeTimeProvider(_runStart);
             var writer = new OverlapCountingWriter();

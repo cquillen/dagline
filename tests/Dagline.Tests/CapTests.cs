@@ -4,14 +4,14 @@ namespace Dagline.Tests;
 
 public class CapTests
 {
-    private const int Repeats = 50;
+    private const int _repeats = 50;
 
     [Test]
     public async Task The_number_of_task_bodies_running_at_once_never_exceeds_the_cap()
     {
         const int cap = 3;
 
-        for (var repeat = 0; repeat < Repeats; repeat++)
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
             var bodies = new OverlappingBodies(expected: cap);
             var builder = new GraphBuilder();
