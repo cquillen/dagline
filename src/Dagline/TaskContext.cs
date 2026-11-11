@@ -58,4 +58,35 @@ public sealed class TaskContext
 
         _run.Report(_task, task => task.WithWarning(warning));
     }
+
+    /// <summary>Sets the message of the task's outcome.</summary>
+    /// <param name="message">The new message, which replaces the last one. Each line break in it is replaced by a space.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="message"/> is <see langword="null"/>.</exception>
+    public void Message(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        _run.Report(_task, task => task.WithMessage(message));
+    }
+
+    /// <summary>Adds detail lines to the task's outcome.</summary>
+    /// <param name="lines">The lines to add after those already there. Text that holds line breaks is split into one line for each.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="lines"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A line in <paramref name="lines"/> is <see langword="null"/>. Nothing is added.</exception>
+    public void Detail(params string[] lines)
+    {
+        ThrowIfAnyNull(lines, nameof(lines));
+
+        _run.Report(_task, task => task.WithDetail(lines));
+    }
+
+    private static void ThrowIfAnyNull(string[] lines, string paramName)
+    {
+        ArgumentNullException.ThrowIfNull(lines, paramName);
+
+        if (lines.Contains(null))
+        {
+            throw new ArgumentException("A line is null.", paramName);
+        }
+    }
 }

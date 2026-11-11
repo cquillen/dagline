@@ -267,17 +267,7 @@ internal sealed class Run : ISnapshotSource
     /// <summary>Settles a task: moves it to the status of its outcome and freezes that outcome on it.</summary>
     private void Move(GraphTask task, TaskOutcome outcome, DateTimeOffset now)
     {
-        var settled = _nodes[task.Position] with
-        {
-            Status = outcome.Status,
-            Settled = now,
-            Failure = outcome.Failure,
-            BlockedBy = outcome.BlockedBy,
-            Message = outcome.Message,
-            Detail = outcome.Detail,
-        };
-
-        Replace(task, settled, now);
+        Replace(task, outcome.Settle(_nodes[task.Position], now), now);
     }
 
     /// <summary>

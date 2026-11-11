@@ -96,6 +96,11 @@ public sealed record NodeSnapshot
     public IReadOnlyList<string> Detail { get; internal init; } = [];
 
     /// <summary>
+    /// How many detail lines were added after the 100 that <see cref="Detail"/> keeps. Zero for a group.
+    /// </summary>
+    public int DetailOmitted { get; internal init; }
+
+    /// <summary>
     /// The warnings the task added with <see cref="TaskContext.Warn"/>, in the order added, each on one line.
     /// Empty when it added none and for a group.
     /// </summary>
