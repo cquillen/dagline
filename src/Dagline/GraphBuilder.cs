@@ -44,7 +44,7 @@ public sealed class GraphBuilder
     /// <returns>An immutable graph that can be run any number of times.</returns>
     public Graph Build()
     {
-        var problems = GraphValidation.Problems(_children);
+        var problems = GraphValidation.Problems(this, _children, _dependencies);
         if (problems.Count > 0)
         {
             throw new GraphException(problems);

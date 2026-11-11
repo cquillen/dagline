@@ -4,8 +4,10 @@ namespace Dagline;
 internal static class GraphValidation
 {
     /// <summary>The problems of a graph that is being built, or none when it can be built.</summary>
+    /// <param name="builder">The builder the graph is being built from.</param>
     /// <param name="root">The nodes at the root of the graph.</param>
-    public static IReadOnlyList<GraphProblem> Problems(ChildNodes root)
+    /// <param name="declared">Every dependency, in the order declared.</param>
+    public static IReadOnlyList<GraphProblem> Problems(GraphBuilder builder, ChildNodes root, IReadOnlyList<DeclaredDependency> declared)
     {
         Node[] nodes = [.. root.InDeclarationOrder()];
         ChildNodes[] scopes = [root, .. nodes.OfType<GroupNode>().Select(group => group.Children)];
@@ -15,6 +17,7 @@ internal static class GraphValidation
             .. nodes.Where(node => !NodePath.IsSegment(node.Segment)).Select(InvalidSegment),
             .. scopes.SelectMany(DuplicatePaths),
             .. scopes.SelectMany(SiblingsThatDifferOnlyByCase),
+            .. Merged(declared).Select(dependency => ProblemWith(dependency, builder)).OfType<GraphProblem>(),
         ];
     }
 
@@ -55,6 +58,26 @@ internal static class GraphValidation
         return new(
             alike[0].ValidPath,
             $"{allButLast} and {Quoted(alike[^1])} differ only by case: siblings must differ by more than case.");
+    }
+
+    /// <summary>One dependency for each dependent and upstream, in the order each pair was first declared.</summary>
+    private static IEnumerable<DeclaredDependency> Merged(IEnumerable<DeclaredDependency> declared)
+        => declared
+            .GroupBy(dependency => (dependency.Dependent, dependency.Upstream), dependency => dependency.Kind)
+            .Select(kinds => new DeclaredDependency(kinds.Key.Dependent, kinds.Key.Upstream, kinds.Strongest()));
+
+    /// <summary>The problem with one dependency taken alone, or <see langword="null"/> when it has none.</summary>
+    private static GraphProblem? ProblemWith(DeclaredDependency dependency, GraphBuilder builder)
+    {
+        var (dependent, upstream, kind) = dependency;
+        var what =
+            upstream.Builder != builder ? $"{Quoted(upstream)}, a handle from another builder"
+            : upstream == dependent ? "itself"
+            : dependent.Ancestors().Contains(upstream) ? $"{Quoted(upstream)}, its own ancestor"
+            : upstream.Ancestors().Contains(dependent) ? $"{Quoted(upstream)}, its own descendant"
+            : null;
+
+        return what is null ? null : new(dependent.ValidPath, $"{Quoted(dependent)} {kind.Verb()} {what}.");
     }
 
     private static string Quoted(Node node) => $"'{node.Path}'";

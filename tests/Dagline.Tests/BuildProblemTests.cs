@@ -159,6 +159,78 @@ public class BuildProblemTests
         ]);
     }
 
+    [Test]
+    public void A_dependency_on_a_handle_from_another_builder_is_reported()
+    {
+        var other = new GraphBuilder();
+        var load = other.Task("load", _ => Task.CompletedTask);
+        var shard = other.Group("shard-1");
+        var builder = new GraphBuilder();
+
+        builder.Task("load", _ => Task.CompletedTask);
+        builder.Task("publish", _ => Task.CompletedTask).Requires(load);
+        builder.Group("reports").After([shard]);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(NodePath.Parse("publish"), "'publish' requires 'load', a handle from another builder."),
+            new GraphProblem(NodePath.Parse("reports"), "'reports' runs after 'shard-1', a handle from another builder."),
+        ]);
+        other.Build().Count.ShouldBe(2);
+    }
+
+    [Test]
+    public void A_node_that_depends_on_itself_is_reported_once_however_often_it_was_declared()
+    {
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => Task.CompletedTask);
+        var shard = builder.Group("shard-1");
+
+        load.After(load).Requires(load);
+        shard.After([shard, shard]);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(NodePath.Parse("load"), "'load' requires itself."),
+            new GraphProblem(NodePath.Parse("shard-1"), "'shard-1' runs after itself."),
+        ]);
+    }
+
+    [Test]
+    public void A_dependency_of_a_node_on_its_own_ancestor_is_reported()
+    {
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var tenant = shard.Group("tenant-a");
+
+        tenant.Task("load", _ => Task.CompletedTask).Requires(shard);
+        tenant.After(shard);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(NodePath.Parse("shard-1/tenant-a/load"), "'shard-1/tenant-a/load' requires 'shard-1', its own ancestor."),
+            new GraphProblem(NodePath.Parse("shard-1/tenant-a"), "'shard-1/tenant-a' runs after 'shard-1', its own ancestor."),
+        ]);
+    }
+
+    [Test]
+    public void A_dependency_of_a_group_on_its_own_descendant_is_reported()
+    {
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var tenant = shard.Group("tenant-a");
+        var load = tenant.Task("load", _ => Task.CompletedTask);
+
+        shard.Requires(load);
+        shard.After(tenant);
+
+        ProblemsOf(builder).ShouldBe(
+        [
+            new GraphProblem(NodePath.Parse("shard-1"), "'shard-1' requires 'shard-1/tenant-a/load', its own descendant."),
+            new GraphProblem(NodePath.Parse("shard-1"), "'shard-1' runs after 'shard-1/tenant-a', its own descendant."),
+        ]);
+    }
+
     private static IReadOnlyList<GraphProblem> ProblemsOf(GraphBuilder builder)
         => Should.Throw<GraphException>(() => builder.Build()).Problems;
 }

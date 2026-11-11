@@ -38,7 +38,8 @@ public abstract class Node
     /// <summary>The title given to this node so far, or <see langword="null"/> when it has none.</summary>
     internal string? TitleText { get; private set; }
 
-    private protected GraphBuilder Builder { get; }
+    /// <summary>The builder this handle came from. A dependency joins two handles of one builder.</summary>
+    internal GraphBuilder Builder { get; }
 
     /// <summary>Every group that holds this node, the nearest first.</summary>
     internal IEnumerable<GroupNode> Ancestors()
