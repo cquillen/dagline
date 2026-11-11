@@ -34,7 +34,7 @@ internal sealed class Run : ISnapshotSource
     private readonly List<BuiltGroup> _settledInThisStep = [];
     private readonly SortedSet<int> _ready = [];
     private readonly HashSet<int> _reportedFailures = [];
-    private readonly Dictionary<int, int> _openWaitingScopes = [];
+    private readonly OpenWaitingScopes _openWaitingScopes = new();
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly StopSignal? _signal;
@@ -304,9 +304,7 @@ internal sealed class Run : ISnapshotSource
                 return false;
             }
 
-            var open = _openWaitingScopes.GetValueOrDefault(task.Position) + 1;
-            _openWaitingScopes[task.Position] = open;
-            if (open == 1)
+            if (_openWaitingScopes.Open(task.Position))
             {
                 var now = _timeProvider.GetUtcNow();
                 _nodes = _nodes.With(task.Position, before with { WaitingSince = now, WaitingText = text });
@@ -325,29 +323,24 @@ internal sealed class Run : ISnapshotSource
     {
         lock (_gate)
         {
-            if (!_openWaitingScopes.TryGetValue(task.Position, out var open))
+            if (_openWaitingScopes.Close(task.Position))
             {
-                return;
+                EndMarker(task, _timeProvider.GetUtcNow());
             }
-
-            if (open > 1)
-            {
-                _openWaitingScopes[task.Position] = open - 1;
-                return;
-            }
-
-            EndWaiting(task, _timeProvider.GetUtcNow());
         }
     }
 
     /// <summary>Ends the waiting marker of a task if it has one, however many of its scopes are still open.</summary>
     private void EndWaiting(BuiltTask task, DateTimeOffset now)
     {
-        if (!_openWaitingScopes.Remove(task.Position))
+        if (_openWaitingScopes.CloseAll(task.Position))
         {
-            return;
+            EndMarker(task, now);
         }
+    }
 
+    private void EndMarker(BuiltTask task, DateTimeOffset now)
+    {
         var waiting = _nodes[task.Position];
         _nodes = _nodes.With(task.Position, waiting with { WaitingSince = null, WaitingText = null });
         Publish(new WaitingChanged(now, task.Path, Waiting: false, waiting.WaitingText, waiting.WaitingSince!.Value));

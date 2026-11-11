@@ -4,7 +4,7 @@ namespace Dagline;
 
 /// <summary>
 /// One reporter's own unbounded queue of events, and the loop that hands them to it in the order published, one call at a time.
-/// A reporter that fails, or is still busy when the stop token is cancelled, is dropped: it is handed nothing more,
+/// A reporter that fails, or is still busy when the drop token is cancelled, is dropped: it is handed nothing more,
 /// the events still queued for it are let go, and its error is the result of <see cref="Delivered"/>.
 /// </summary>
 internal sealed class ReporterQueue
@@ -15,21 +15,21 @@ internal sealed class ReporterQueue
     private readonly IReporter _reporter;
 
     /// <param name="reporter">The reporter this queue hands events to.</param>
-    /// <param name="stopWaiting">
+    /// <param name="dropped">
     /// Passed to every call of the reporter. Once it is cancelled the reporter is dropped: a call that has not come back
     /// is no longer waited for, and no further call is made.
     /// </param>
-    public ReporterQueue(IReporter reporter, CancellationToken stopWaiting)
+    public ReporterQueue(IReporter reporter, CancellationToken dropped)
     {
         _reporter = reporter;
 
         // Not started with the token: a cancelled token must drop the reporter with an error, never cancel the loop itself.
-        Delivered = Task.Run(() => DeliverAsync(stopWaiting), CancellationToken.None);
+        Delivered = Task.Run(() => DeliverAsync(dropped), CancellationToken.None);
     }
 
     /// <summary>
     /// Completes with <see langword="null"/> once <see cref="Complete"/> has been called and the reporter has handled every event,
-    /// or with the reporter's error as soon as it fails or is dropped by the stop token. It never faults.
+    /// or with the reporter's error as soon as it fails or is dropped by the drop token. It never faults.
     /// </summary>
     public Task<ReporterError?> Delivered { get; }
 
@@ -41,15 +41,15 @@ internal sealed class ReporterQueue
 
     public void Complete() => _queue.Writer.TryComplete();
 
-    private async Task<ReporterError?> DeliverAsync(CancellationToken stopWaiting)
+    private async Task<ReporterError?> DeliverAsync(CancellationToken dropped)
     {
         // Read without the token: the events still queued when it is cancelled are dropped below, as for a reporter that failed.
         await foreach (var (runEvent, snapshot) in _queue.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
         {
             try
             {
-                stopWaiting.ThrowIfCancellationRequested();
-                await HandAsync(runEvent, snapshot, stopWaiting).ConfigureAwait(false);
+                dropped.ThrowIfCancellationRequested();
+                await HandAsync(runEvent, snapshot, dropped).ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -65,12 +65,12 @@ internal sealed class ReporterQueue
     }
 
     /// <summary>
-    /// Hands one event to the reporter and waits for the call to come back, or for <paramref name="stopWaiting"/>,
+    /// Hands one event to the reporter and waits for the call to come back, or for <paramref name="dropped"/>,
     /// whichever is first. A call no longer waited for may still fail later, and that failure is observed and dropped.
     /// </summary>
-    private async Task HandAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken stopWaiting)
+    private async Task HandAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken dropped)
     {
-        var handed = _reporter.OnEventAsync(runEvent, snapshot, stopWaiting);
+        var handed = _reporter.OnEventAsync(runEvent, snapshot, dropped);
         if (handed.IsCompleted)
         {
             await handed.ConfigureAwait(false);
@@ -83,7 +83,7 @@ internal sealed class ReporterQueue
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
-        await call.WaitAsync(stopWaiting).ConfigureAwait(false);
+        await call.WaitAsync(dropped).ConfigureAwait(false);
     }
 
     /// <summary>
