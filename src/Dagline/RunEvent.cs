@@ -13,14 +13,16 @@ namespace Dagline;
 /// all with the same <see cref="At"/>:
 /// </para>
 /// <list type="number">
-/// <item><description>The change itself: the run starting, or a task settling.</description></item>
+/// <item><description>The change itself: the run starting, a task settling, or a stop being applied.</description></item>
 /// <item><description>Every task that this blocks, pending to blocked, in declaration order.</description></item>
 /// <item><description>Every task whose dependencies are now all met, pending to ready, in declaration order.</description></item>
 /// <item><description>Every group that is now settled, the deepest first, then in declaration order.</description></item>
 /// <item><description>Every task that now starts, ready to running, in declaration order.</description></item>
 /// </list>
 /// <para>
-/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own.
+/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own, and so is
+/// a <see cref="StopRequested"/>, and so is a <see cref="WaitingChanged"/>, except the end of a wait that a task settling forces,
+/// which comes just before that task's change. Once a stop has been applied, no step starts a task.
 /// </para>
 /// </remarks>
 public abstract record RunEvent
@@ -83,6 +85,32 @@ public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warni
 }
 
 /// <summary>
+/// A running task began or stopped waiting: its waiting marker, opened with <see cref="TaskContext.Waiting"/>, began or ended.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The event follows the marker, not the scopes. It is published when the task's first open scope opens and when its last
+/// open scope closes, so scopes that overlap give one begin and one end, with the text and the time of the scope that opened first.
+/// Every begin has exactly one end, and a task may wait several times in one run, each wait with its own pair.
+/// </para>
+/// <para>
+/// A change of the marker is a step of its own, like <see cref="WarningAdded"/>. When a task settles with a scope still open,
+/// the end is published immediately before the <see cref="TaskStatusChanged"/> of that task settling, in the same step,
+/// so a settled task is never waiting. The snapshot handed with a begin shows the marker on the task in
+/// <see cref="NodeSnapshot.WaitingSince"/> and <see cref="NodeSnapshot.WaitingText"/>, and the one handed with an end shows neither.
+/// </para>
+/// <para>
+/// Waiting is a marker and never a status: the task is running throughout, and keeps its slots.
+/// </para>
+/// </remarks>
+/// <param name="At">When the marker began or ended.</param>
+/// <param name="Path">The path of the task.</param>
+/// <param name="Waiting"><see langword="true"/> when the wait began, <see langword="false"/> when it ended.</param>
+/// <param name="Text">What the task is waiting for, as given to the scope that began the wait, or <see langword="null"/> when it gave none.</param>
+/// <param name="Since">When the wait began. On a begin it equals <paramref name="At"/>; on an end it is the begin's time.</param>
+public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) : RunEvent(At);
+
+/// <summary>
 /// A group settled: the last task beneath it, at any depth, settled.
 /// </summary>
 /// <remarks>
@@ -115,6 +143,47 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
     /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
 }
+
+/// <summary>
+/// A stop was applied to the run: from this event on the run starts nothing, <em>after</em> tasks included,
+/// and every running task sees <see cref="TaskContext.CancellationToken"/> signalled.
+/// </summary>
+/// <remarks>
+/// <para>
+/// It is published once at most, when the run applies the first request on the <see cref="StopSignal"/> it was given.
+/// It is a step of its own. A signal already requested when the run starts gives <see cref="RunStarted"/>, the tasks that become ready,
+/// this event, then <see cref="RunEnded"/>, with no task started.
+/// </para>
+/// <para>
+/// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Stop"/> set.
+/// While the run waits for its running tasks to end, a task that succeeds still makes its dependents ready, where they stay,
+/// and a task that fails still blocks its dependents.
+/// </para>
+/// </remarks>
+/// <param name="At">When the stop was applied.</param>
+/// <param name="GracePeriod">
+/// How long the run waits for its running tasks to end. <see cref="Timeout.InfiniteTimeSpan"/> means the run waits until they have.
+/// </param>
+public sealed record StopRequested(DateTimeOffset At, TimeSpan GracePeriod) : RunEvent(At);
+
+/// <summary>
+/// The run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
+/// </summary>
+/// <remarks>
+/// <para>
+/// It is published at most once, and only when tasks are still running as the wait ends. A wait that ends because the last
+/// running task ended has no such event. In the same step, each task left behind follows in declaration order: the end of its wait
+/// if it was waiting, then its <see cref="TaskStatusChanged"/> to <see cref="NodeStatus.Cancelled"/>, with the message
+/// <c>still running when the run stopped waiting</c>. The tasks that this makes ready and the groups it settles come after them,
+/// then <see cref="RunEnded"/>.
+/// </para>
+/// <para>
+/// Nothing a task's body does after this changes the run, and nothing is published when the body ends.
+/// </para>
+/// </remarks>
+/// <param name="At">When the run stopped waiting.</param>
+/// <param name="Reason">Why the run stopped waiting.</param>
+public sealed record StoppedWaiting(DateTimeOffset At, StoppedWaitingReason Reason) : RunEvent(At);
 
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <param name="At">When the run ended.</param>

@@ -30,6 +30,15 @@ namespace Dagline;
 /// <see cref="StatusOf"/> still answers. A body sees this only when it leaves work running after it has ended.
 /// </para>
 /// <para>
+/// The same holds for a task the run has <em>let go of</em>: one still running when the run stopped waiting for it after a stop
+/// (<see cref="RunOptions.GracePeriod"/>). The run records it as <see cref="NodeStatus.Cancelled"/> with the message
+/// <c>still running when the run stopped waiting</c>, in place of any message it set, and keeps its warnings, detail lines and
+/// frozen progress. Its body may still be running, and nothing it does changes the run: the reporting members do nothing
+/// and do not throw, <see cref="Waiting"/> returns a scope that does nothing, and disposing a scope does nothing.
+/// <see cref="StatusOf"/>, <see cref="Path"/>, <see cref="TimeProvider"/> and <see cref="CancellationToken"/> keep working.
+/// When the body ends, however it ends, nothing is published and no snapshot changes, and an exception from it is dropped.
+/// </para>
+/// <para>
 /// Dagline keeps the first 100 warnings and the first 100 detail lines of a task, counted separately, and only counts the rest,
 /// in <see cref="NodeSnapshot.WarningsOmitted"/> and <see cref="NodeSnapshot.DetailOmitted"/>. A task that finds three thousand
 /// problems therefore does not flood the run: report the count in the message and the first few in the detail.
@@ -40,11 +49,12 @@ public sealed class TaskContext
     private readonly Run _run;
     private readonly BuiltTask _task;
 
-    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider)
+    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider, CancellationToken cancellationToken)
     {
         _run = run;
         _task = task;
         TimeProvider = timeProvider;
+        CancellationToken = cancellationToken;
     }
 
     /// <summary>The path of the task this body is running as.</summary>
@@ -55,6 +65,31 @@ public sealed class TaskContext
     /// Take any delay or timestamp of the task's own from it, so that a test of the task controls time.
     /// </summary>
     public TimeProvider TimeProvider { get; }
+
+    /// <summary>
+    /// The run's cancellation token, signalled when the run is stopped. Pass it to everything the body awaits, so that the task
+    /// ends promptly once a stop has been requested.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every task of a run sees the same token. It is signalled once, when the run applies a stop, and stays signalled.
+    /// A run that is never stopped never signals it. The token reads as signalled from the step that applies the stop, and so before
+    /// <see cref="Runner.RunAsync"/> returns. The callbacks registered on it run afterwards on the thread pool, never while the run
+    /// holds its lock, so a callback may call this context, and the run does not wait for them: it may return while one is still running.
+    /// </para>
+    /// <para>
+    /// Once a stop has been requested, a task ends as follows. A failure recorded with <see cref="Fail"/> wins: the task fails
+    /// as a reported failure. Otherwise a body that ends with any <see cref="OperationCanceledException"/>, whichever token caused it,
+    /// is <see cref="NodeStatus.Cancelled"/>, and keeps its message, detail lines, warnings and frozen progress. Otherwise the task
+    /// gets its real status: succeeded when the body returned, and failed as an unexpected failure when it threw anything else.
+    /// Before any stop a cancellation exception is an unexpected failure, like any other exception.
+    /// </para>
+    /// <para>
+    /// A cancelled task never blocks: a task that requires it stays pending, and a task that runs after it becomes ready.
+    /// Neither starts, since nothing starts once a stop has been requested.
+    /// </para>
+    /// </remarks>
+    public CancellationToken CancellationToken { get; }
 
     /// <summary>Sets the status text of the task's progress: a line that says what the task is doing now.</summary>
     /// <param name="text">The new status text, which replaces the last one. <see langword="null"/> clears it.</param>
@@ -190,6 +225,92 @@ public sealed class TaskContext
         return new ReportedFailureException(TaskReportRules.OneLine(message), [.. detail.SelectMany(TaskReportRules.Lines)]);
     }
 
+    /// <summary>
+    /// Opens a waiting scope: marks the task as idle until an external system changes, until the scope is disposed.
+    /// <c>using (context.Waiting("job 17 to finish")) { ... }</c>.
+    /// </summary>
+    /// <param name="text">
+    /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. It is kept as given.
+    /// </param>
+    /// <returns>The scope. Dispose it when the wait is over. Disposing it again does nothing.</returns>
+    /// <remarks>
+    /// <para>
+    /// Waiting is a marker on a running task and never a status. Dependencies, group status, the run outcome and the scheduler
+    /// ignore it, and a waiting task keeps the slots it holds in the cap and in its limits. Progress, warnings and the outcome
+    /// work as usual while the task waits.
+    /// </para>
+    /// <para>
+    /// The marker begins when the task's first open scope opens, with that scope's text and the time on the run's clock,
+    /// and ends when its last open scope closes. Scopes that overlap therefore make one wait, with the text and time of the one
+    /// that opened first. Each begin and end is published to reporters as a <see cref="WaitingChanged"/>, and while the task
+    /// waits its <see cref="NodeSnapshot.WaitingSince"/> and <see cref="NodeSnapshot.WaitingText"/> are set. A task may wait
+    /// several times in one run.
+    /// </para>
+    /// <para>
+    /// A task that settles with a scope still open stops waiting immediately before it settles, and disposing that scope later
+    /// does nothing. A scope opened once the task has settled does nothing at all.
+    /// </para>
+    /// </remarks>
+    public IDisposable Waiting(string? text = null)
+        => new WaitingScope(_run.OpenWaitingScope(_task, text) ? _run : null, _task);
+
+    /// <summary>
+    /// Waits for an external system: checks at once, then again one interval after each check ends, until the check
+    /// returns <see langword="true"/>. The task is marked as waiting throughout.
+    /// <c>await context.WaitUntil(TimeSpan.FromSeconds(30), async token => await jobs.IsFinishedAsync(17, token), "job 17 to finish");</c>
+    /// </summary>
+    /// <param name="interval">
+    /// How long to wait after a check that returned <see langword="false"/> before the next check starts, on the run's clock.
+    /// It is measured from the end of one check to the start of the next, so a slow check never makes checks pile up.
+    /// </param>
+    /// <param name="check">
+    /// Asks the external system whether the work is done. It receives <see cref="CancellationToken"/> to pass to what it awaits.
+    /// It may report progress, warnings and the outcome on this context, and may <c>throw context.Fail(...)</c>.
+    /// </param>
+    /// <param name="text">
+    /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. It is the text of the
+    /// waiting scope the helper opens, as <see cref="Waiting"/> takes it.
+    /// </param>
+    /// <returns>A task that completes once a check has returned <see langword="true"/>.</returns>
+    /// <remarks>
+    /// <para>
+    /// The helper opens a waiting scope with <paramref name="text"/> (see <see cref="Waiting"/>), calls the check, and while
+    /// the check returns <see langword="false"/> delays for <paramref name="interval"/> on <see cref="TimeProvider"/> and calls
+    /// it again. The scope closes however the helper ends: when the check returns <see langword="true"/>, when the check throws,
+    /// and on a stop. A task waits for as long as it is inside the helper, time spent in the check included. A hand-written loop
+    /// inside a <see cref="Waiting"/> scope is marked exactly the same way.
+    /// </para>
+    /// <para>
+    /// A stop ends the helper at once: a delay in progress ends when <see cref="CancellationToken"/> is signalled, and the
+    /// helper throws the <see cref="OperationCanceledException"/>, which makes the task <see cref="NodeStatus.Cancelled"/> if
+    /// the body lets it escape. When the token is already signalled on entry the helper throws without opening a scope or
+    /// calling the check. A check already running when the stop arrives is not interrupted: it sees the token and ends as it
+    /// chooses. The helper does nothing to the external work, which carries on.
+    /// </para>
+    /// <para>
+    /// An exception from the check is not caught, and ends the helper. An ordinary exception that escapes the body fails the
+    /// task as an unexpected failure, and <c>throw context.Fail(...)</c> inside the check fails it as a reported failure.
+    /// To ride out a transient error, catch it inside the check and return <see langword="false"/>: the wait goes on.
+    /// </para>
+    /// <para>
+    /// There is no deadline, backoff or jitter, and tasks waiting at the same interval are not staggered. To give up after a
+    /// while, compare the elapsed time on <see cref="TimeProvider"/> inside the check and fail the task.
+    /// While the task waits it keeps the slots it holds in the cap and in its limits.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="interval"/> is zero or negative. It is thrown by the call itself, before any task is returned.
+    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="check"/> is <see langword="null"/>. It is thrown by the call itself.</exception>
+    /// <exception cref="OperationCanceledException">The run was stopped before the check returned <see langword="true"/>.</exception>
+    public Task WaitUntil(TimeSpan interval, Func<CancellationToken, Task<bool>> check, string? text = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
+        ArgumentNullException.ThrowIfNull(check);
+
+        return CheckUntilDone(interval, check, text, CancellationToken);
+    }
+
     /// <summary>Reads the status, and nothing else, of a node this task depends on.</summary>
     /// <param name="dependency">The handle of the node, as the builder returned it. Handles stay valid for this after the graph is built.</param>
     /// <returns>
@@ -217,6 +338,23 @@ public sealed class TaskContext
         ArgumentNullException.ThrowIfNull(dependency);
 
         return _run.StatusOf(_task, dependency);
+    }
+
+    private async Task CheckUntilDone(
+        TimeSpan interval,
+        Func<CancellationToken, Task<bool>> check,
+        string? text,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using (Waiting(text))
+        {
+            while (!await check(cancellationToken).ConfigureAwait(false))
+            {
+                await Task.Delay(interval, TimeProvider, cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     private static void ThrowIfAnyNull(string[] lines, string paramName)

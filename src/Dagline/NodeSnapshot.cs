@@ -156,6 +156,26 @@ public sealed record NodeSnapshot
     public long? Total { get; internal init; }
 
     /// <summary>
+    /// When the task's current wait began, read from the run's <see cref="RunOptions.TimeProvider"/>,
+    /// or <see langword="null"/> while the task is not waiting, and for a group.
+    /// </summary>
+    /// <remarks>
+    /// A task waits from the moment its first <see cref="TaskContext.Waiting"/> scope opens until its last open scope closes.
+    /// Waiting is a marker on a running task and never a status. It is live only: it is cleared when the wait ends, and a task
+    /// that has settled is never waiting. <see cref="WaitingChanged"/> announces each begin and end.
+    /// </remarks>
+    public DateTimeOffset? WaitingSince { get; internal init; }
+
+    /// <summary>
+    /// What the task's current wait is for, as given to the scope that began it, or <see langword="null"/> when that scope gave no text,
+    /// while the task is not waiting, and for a group.
+    /// </summary>
+    /// <remarks>
+    /// While scopes overlap it stays the text of the one that opened first. Like <see cref="WaitingSince"/>, it is cleared when the wait ends.
+    /// </remarks>
+    public string? WaitingText { get; internal init; }
+
+    /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
     /// or <see langword="null"/> while it has not started. A blocked task never starts, so it has no start time.
     /// </summary>

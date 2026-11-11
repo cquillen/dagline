@@ -8,10 +8,19 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It prints a line when the run starts, when a task starts, when a task succeeds or fails (with its duration and its message),
-/// when a task adds a warning, when a group settles (with its count of tasks per status), and when the run ends.
+/// It prints a line when the run starts, when a task starts, when a task succeeds, fails or is cancelled (with its duration
+/// and its message), when a task adds a warning, when a group settles (with its count of tasks per status), and when the run ends.
 /// A failed task's detail lines follow its line. A task that becomes ready is not printed, and neither is progress.
 /// A path is printed and a title is not.
+/// </para>
+/// <para>
+/// A task that begins waiting prints <c>waiting job: job 17 to finish</c>, or <c>waiting job</c> when it gave no text, with
+/// each line break in the text printed as a space, and one that stops waiting prints <c>waited job for 1m38s</c>.
+/// A stop prints <c>stop requested: waiting up to 30.0s for 2 running tasks</c>, read from the snapshot handed with
+/// <see cref="StopRequested"/>, or <c>stop requested: waiting for 2 running tasks</c> when the grace period is unlimited.
+/// When the run stops waiting with tasks still running it prints <c>stopped waiting: grace period over, 1 task still running</c>
+/// or <c>stopped waiting: second stop, 1 task still running</c>, and then a <c>cancelled</c> line for each task it let go of.
+/// A count of one is singular.
 /// </para>
 /// <para>
 /// Consecutive events of tasks blocked by the same failed task are printed as one line, such as <c>blocked 2 tasks by checks/b</c>.
@@ -27,8 +36,10 @@ namespace Dagline;
 /// <para>
 /// After the line for the end of the run comes the summary, with no timestamps: the count of tasks per status,
 /// then every failed task (the kind of failure, when it failed, how long it ran, the progress it had reported, its message,
-/// its detail lines and what it blocked, named by the roots of <see cref="BlockedTasks"/>), then every warning that was kept,
-/// under its task. A section with nothing in it is left out, so a complete run with no warnings ends with the counts alone.
+/// its detail lines and what it blocked, named by the roots of <see cref="BlockedTasks"/>), then every cancelled task in the same
+/// shape without the kind of failure, then every warning that was kept, under its task. Tasks a stopped run never reached are in
+/// the counts as pending and ready and are not listed. A section with nothing in it is left out, so a complete run with
+/// no warnings ends with the counts alone.
 /// The progress is one line: each line break in the task's status text is printed as a space.
 /// </para>
 /// <para>

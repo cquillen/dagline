@@ -14,6 +14,8 @@ public sealed class Snapshot
 {
     private readonly FrozenDictionary<NodePath, int> _positions;
     private IReadOnlyList<NodeSnapshot>? _failed;
+    private IReadOnlyList<NodeSnapshot>? _cancelled;
+    private IReadOnlyList<NodeSnapshot>? _neverReached;
     private IReadOnlyList<BlockedTasks>? _blocked;
     private IReadOnlyList<NodeSnapshot>? _withWarnings;
 
@@ -21,6 +23,7 @@ public sealed class Snapshot
         DateTimeOffset started,
         DateTimeOffset? ended,
         RunOutcome? outcome,
+        StopState? stop,
         ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
         IReadOnlyDictionary<NodeStatus, int> counts,
@@ -30,6 +33,7 @@ public sealed class Snapshot
         Started = started;
         Ended = ended;
         Outcome = outcome;
+        Stop = stop;
         Nodes = nodes;
         _positions = positions;
         Counts = counts;
@@ -45,6 +49,12 @@ public sealed class Snapshot
 
     /// <summary>How the run ended, or <see langword="null"/> while it has not.</summary>
     public RunOutcome? Outcome { get; }
+
+    /// <summary>
+    /// The stop the run has applied, or <see langword="null"/> while none has been. It is set in the snapshot handed with
+    /// <see cref="StopRequested"/> and in every later one, and carries the time of that event.
+    /// </summary>
+    public StopState? Stop { get; }
 
     /// <summary>Every node of the graph, in declaration order.</summary>
     public IReadOnlyList<NodeSnapshot> Nodes { get; }
@@ -77,10 +87,27 @@ public sealed class Snapshot
     /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read
     /// and kept, so reading it again costs nothing.
     /// </remarks>
-    public IReadOnlyList<NodeSnapshot> Failed
-        => LazyInitializer.EnsureInitialized(
-            ref _failed,
-            () => [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
+    public IReadOnlyList<NodeSnapshot> Failed => TasksWith(ref _failed, status => status is NodeStatus.Failed);
+
+    /// <summary>Every cancelled task, in declaration order. Empty when no task has been cancelled.</summary>
+    /// <remarks>
+    /// A task is cancelled when its body ended with a cancellation exception after a stop. Each entry is the same object
+    /// as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> Cancelled => TasksWith(ref _cancelled, status => status is NodeStatus.Cancelled);
+
+    /// <summary>
+    /// Every task the run never reached: those still pending or ready once the run has ended, in declaration order.
+    /// Empty while the run has not ended.
+    /// </summary>
+    /// <remarks>
+    /// Only a stopped run leaves tasks unreached: after a stop nothing starts, so a task that was ready stays ready,
+    /// and one whose dependencies were not met stays pending. These tasks are not settled, and a group with one beneath it
+    /// does not settle. A later run has them left to do. Each entry is the same object as the one in <see cref="Nodes"/>.
+    /// The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> NeverReached
+        => Ended is null ? [] : TasksWith(ref _neverReached, status => status is NodeStatus.Pending or NodeStatus.Ready);
 
     /// <summary>
     /// What each failure blocked: one entry for each failed task that blocked at least one task, in declaration order
@@ -126,4 +153,8 @@ public sealed class Snapshot
         node = found ? Nodes[position] : null;
         return found;
     }
+
+    /// <summary>The tasks, in declaration order, whose status passes <paramref name="matches"/>: worked out on the first read and kept.</summary>
+    private IReadOnlyList<NodeSnapshot> TasksWith(ref IReadOnlyList<NodeSnapshot>? kept, Func<NodeStatus, bool> matches)
+        => LazyInitializer.EnsureInitialized(ref kept, () => [.. Nodes.Where(node => !node.IsGroup && matches(node.Status))]);
 }

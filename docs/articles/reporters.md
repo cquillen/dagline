@@ -20,24 +20,37 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.RunStarted> | First, once per run. | The snapshot source of the run. |
 | <xref:Dagline.TaskStatusChanged> | Every time a task changes status, pending to ready included. | The task as it is after the change, and the status before and after. |
 | <xref:Dagline.WarningAdded> | When a running task adds a warning that is kept: the first 100 of each task. | The path of the task and the warning. |
+| <xref:Dagline.WaitingChanged> | When a running task begins waiting on an external system and when it stops: once each per wait, however many waiting scopes overlap. | The path of the task, whether it is now waiting, the text saying what it waits for, and when the wait began. |
 | <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it. | The path of the group, its status and its count of tasks per status. |
+| <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
+| <xref:Dagline.StoppedWaiting> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
 | <xref:Dagline.RunEnded> | Last, once per run. | The run outcome. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
-Nothing an event carries is ever null. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same.
+Nothing an event carries is ever null, except the text of a wait the task gave none for. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same.
 
 ### The order within one step
 
 A change and everything that follows from it at once are one step. The events of a step all have the same time and come in a fixed order, causes before effects:
 
-1. The change itself: the run starting, or a task settling.
+1. The change itself: the run starting, a task settling, a stop being applied, or the run stopping waiting with the tasks it leaves behind.
 2. Every task that this blocks, pending to blocked.
 3. Every task whose dependencies are now all met, pending to ready.
 4. Every group that is now settled, deepest first.
 5. Every task that now starts, ready to running.
 
 Each list is in declaration order. The steps of a run never overlap, so the events of one are never mixed with those of another.
+
+Once a stop has been applied, the last group is always empty: nothing starts.
+
+A warning is a step of its own, and so is a stop being applied, and so is a task beginning or ending a wait. A stop applied before any task has started gives `RunStarted`, the tasks that become ready, `StopRequested`, then `RunEnded`. When the run stops waiting with tasks still running, `StoppedWaiting` comes first, then each task it leaves behind, cancelled, in declaration order. A task that settles while it is still waiting ends its wait in the step in which it settles: the `WaitingChanged` that ends it comes immediately before that task's `TaskStatusChanged`, so a settled task is never waiting.
+
+### Waiting is a marker
+
+A task that triggers work in an external system and then waits for it opens a waiting scope with <xref:Dagline.TaskContext.Waiting(System.String)>. While a scope is open the task is **waiting**: it is idle, not working. Waiting is never a status. The task is running throughout, it keeps its slots, and its group and the run outcome are what they would be without the marker. A reporter uses it only to show idle tasks apart from working ones.
+
+A wait begins when the task's first open scope opens and ends when its last one closes, so `WaitingChanged` comes in pairs: one with `Waiting` true and `Since` equal to `At`, then one with `Waiting` false and the same `Text` and `Since`. Overlapping scopes make one wait with the text and time of the scope that opened first, and a task that waits twice in a run gives two pairs.
 
 A warning is a step of its own, with one event. A warning a task adds before its body ends always comes before the event of that task settling.
 
@@ -67,6 +80,8 @@ Dagline keeps the snapshot, so a reporter never pieces it together from events, 
 A snapshot also answers the questions a summary asks, each in declaration order, so every reporter's summary agrees:
 
 - <xref:Dagline.Snapshot.Failed> lists the failed tasks. Each has its <xref:Dagline.NodeSnapshot.Failure> kind, its message and its detail lines.
+- <xref:Dagline.Snapshot.Cancelled> lists the cancelled tasks: those that were running when the run was stopped and ended because of it, or were left behind when the run stopped waiting. Each keeps its message, detail lines, warnings and the progress it had reported.
+- <xref:Dagline.Snapshot.NeverReached> lists the tasks a stopped run never started, which stay pending or ready. It is empty until the run has ended.
 - <xref:Dagline.Snapshot.WarningCount> counts every warning added, and <xref:Dagline.Snapshot.WithWarnings> lists the tasks that have any. Each task keeps its first 100 warnings in <xref:Dagline.NodeSnapshot.Warnings> and counts the rest in <xref:Dagline.NodeSnapshot.WarningsOmitted>.
 - <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line.
 
@@ -77,9 +92,9 @@ A snapshot also answers the questions a summary asks, each in declaration order,
 - **The snapshot matches the event.** The snapshot handed with an event is the run exactly as of that event, even when the reporter is handed the event long after it happened.
 - **The run never waits for a reporter while tasks are running.** Each reporter has a queue of its own. A slow reporter falls behind, and neither the tasks nor the other reporters are held up by it. The queue has no size limit, and the number of events in a run is in proportion to its tasks, so that is all a reporter that falls behind can cost in memory.
 - **A reporter that throws is dropped.** It receives no further call, and the tasks, the run outcome and the other reporters are unaffected. The error is returned with the result of the run and is never thrown at your app: see [When a reporter fails](#when-a-reporter-fails).
-- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound: a call to a reporter that never completes keeps `RunAsync` from returning.
+- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound, but a stop ends it: see [A stop ends the wait for reporters](#a-stop-ends-the-wait-for-reporters). With no stop request, a call to a reporter that never completes keeps `RunAsync` from returning.
 
-The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is never cancelled.
+The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is cancelled only when a stop ends the wait for a reporter that is still busy.
 
 ## Writing a reporter
 
@@ -141,6 +156,17 @@ Each entry names the reporter, the event it was handling and the exception. This
 
 The run outcome says how the work went and is not changed by a reporter's failure. Whether a run whose display broke should exit with an error is your app's decision.
 
+### A stop ends the wait for reporters
+
+A stuck reporter cannot hang your process. Once the run has ended, any request on its <xref:Dagline.StopSignal> ends the wait for reporters: the first request, when every task had already ended, or a later one, when the run had already been stopped. A reporter still busy at that moment is dropped like one that threw:
+
+- the `CancellationToken` passed to its `OnEventAsync` is cancelled. Each reporter has a token of its own, never cancelled otherwise, so a reporter that awaits slow output can pass it on. It is already cancelled when `RunAsync` returns, but a callback you register on it runs on the thread pool and the run does not wait for it;
+- its remaining events are discarded, and it gets no further call;
+- `ReporterErrors` has a `ReporterError` naming it, the event it was handling and an `OperationCanceledException`;
+- `RunAsync` returns without waiting for its call to come back, even a call that blocks its thread and never returns a task. Whatever that call does later is ignored.
+
+A reporter that had already handled every event is unaffected and is not on the list. A request made once the tasks have ended never changes the run outcome. A request made just as the run ends is never lost: either the run applies it as a stop, or it ends the wait for reporters. A run given no signal waits for its reporters with no time bound.
+
 ## Progress on a timer: the snapshot source
 
 Some of what a reporter shows is not tied to one event: how many tasks are running at this moment, or a line every few seconds so that a quiet stretch does not look like a hang. For that, keep the <xref:Dagline.ISnapshotSource> that `RunStarted` carries and read `Current` whenever you want to draw:
@@ -197,6 +223,8 @@ What to know about the source:
 - **Each read is one consistent snapshot.** Read `Current` once per draw and take everything from that one snapshot. Two reads may give two different instants.
 - **Reading never waits for a task or a reporter**, and is safe from any thread.
 - **Progress is here and nowhere else.** A running task's <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total> are as the task last reported them. Once the task has settled they stay as it left them.
+- **So is how long a task has waited.** While a task waits, <xref:Dagline.NodeSnapshot.WaitingSince> is when the wait began and <xref:Dagline.NodeSnapshot.WaitingText> what it waits for. Both are null while the task is working and once it has settled: the marker is live only.
+- **So is the time left after a stop.** <xref:Dagline.Snapshot.Stop> is null until a stop is applied. From the snapshot handed with `StopRequested` on, it is a <xref:Dagline.StopState>: when the stop was applied, the grace period, and the `Deadline` by which the run stops waiting at the latest, or null when the grace period is unlimited. A display can count down to the deadline on its own timer, with no event for each second.
 - **After the run has ended** `Current` is the final snapshot: the same one that is handed with `RunEnded` and returned on <xref:Dagline.RunResult.Snapshot>.
 
 A timer is the reporter's own concurrency. Dagline makes one call at a time into `OnEventAsync`, but it knows nothing of a loop the reporter started, so the reporter keeps the two apart itself. The example writes from `OnEventAsync` only after its loop has stopped. It also awaits the loop while handling `RunEnded`, so an exception from the loop leaves `OnEventAsync` and is reported like any other reporter error.
@@ -248,6 +276,31 @@ warnings: 1
     entity 9 has no region
 ```
 
+A stopped run prints the stop, the wait for its running tasks and each task the stop cancelled. Take a task `a`; a task `job` that requires `a` and waits on an external job; a task `slow` that ignores the stop; a task `tidy` that requires `job`; and a task `report` that runs after `job`. With the default grace period of 30 seconds, a stop while `job` waits prints:
+
+```text
+2026-11-11T04:12:00Z run started: 5 tasks
+2026-11-11T04:12:00Z started a
+2026-11-11T04:12:00Z started slow
+2026-11-11T04:12:01Z succeeded a in 1.0s
+2026-11-11T04:12:01Z started job
+2026-11-11T04:12:02Z waiting job: job 17 to finish
+2026-11-11T04:13:02Z tasks: 2 pending, 2 running, 1 succeeded
+2026-11-11T04:13:40Z stop requested: waiting up to 30.0s for 2 running tasks
+2026-11-11T04:13:40Z waited job for 1m38s
+2026-11-11T04:13:40Z cancelled job in 1m39s
+2026-11-11T04:14:10Z stopped waiting: grace period over, 1 task still running
+2026-11-11T04:14:10Z cancelled slow in 2m10s: still running when the run stopped waiting
+2026-11-11T04:14:10Z run ended: stopped in 2m10s
+tasks: 1 pending, 1 ready, 1 succeeded, 2 cancelled
+cancelled: 2
+  job at 2026-11-11T04:13:40Z after 1m39s
+  slow at 2026-11-11T04:14:10Z after 2m10s
+    message: still running when the run stopped waiting
+```
+
+`job` ended because of the stop. `slow` was still running when the grace period was over, so the run let go of it. `tidy` and `report` were never reached: `tidy` stays pending, since a cancelled task never blocks, and `report` became ready and was not started.
+
 ### The lines of a run
 
 Every line about an event begins with the time of the event, read from the run's clock.
@@ -260,14 +313,22 @@ Every line about an event begins with the time of the event, read from the run's
 | `failed <path> in <duration>: <message>` | A task fails with a reported failure. Its detail lines follow, indented. |
 | `failed <path> in <duration> (unexpected): <message>` | A task fails with an unexpected failure. Its detail lines follow, indented: the type of the exception and its stack trace. |
 | `blocked <n> tasks by <path>` | A failure blocked tasks. The path is that of the failed task. |
+| `cancelled <path> in <duration>: <message>` | A task is cancelled: it ended because of a stop, or was still running when the run stopped waiting. |
 | `warning <path>: <warning>` | A task adds a warning that is kept. |
+| `waiting <path>: <text>` | A task begins waiting on an external system. With no text it reads `waiting <path>`. |
+| `waited <path> for <duration>` | A task stops waiting. The duration is the whole wait. |
+| `stop requested: waiting up to <duration> for <n> running tasks` | The run applies a stop. With an unlimited grace period it reads `stop requested: waiting for <n> running tasks`. |
+| `stopped waiting: grace period over, <n> tasks still running` | The grace period is over with tasks still running. A cancelled line for each follows. |
+| `stopped waiting: second stop, <n> tasks still running` | A second stop ends the wait with tasks still running. A cancelled line for each follows. |
 | `group <path> <status>: <counts>` | The last task beneath a group settles. |
 | `tasks: <counts>` | Nothing has been printed for a minute. |
 | `run ended: <run outcome> in <duration>` | The run ends. The summary follows. |
 
 What to know about them:
 
-- **A settle with no message ends after the duration**, as `succeeded report in 1m15s` does. The detail lines of a task that succeeded are not printed.
+- **A settle with no message ends after the duration**, as `succeeded report in 1m15s` and `cancelled job in 1m39s` do. The detail lines of a task that succeeded or was cancelled are not printed. A task the run let go of has the message `still running when the run stopped waiting`.
+- **One task reads in the singular**: `1 running task` and `1 task still running`.
+- **The text of a wait is one line.** A line break in the text the task gave is printed as a space.
 - **A task that becomes ready is not printed, and neither is progress.** The log has one line when a task starts and one when it settles.
 - **Paths are printed and titles are not**, so a line can be found by the path your code declared.
 - **One line for a whole cascade.** Consecutive blocked events that name the same failed task are counted into one line, and a single task reads `blocked 1 task by <path>`. The reporter cannot know that the last of them has arrived until something else happens, so the line is printed just before the next line of any other kind. It still carries the time at which the tasks were blocked.
@@ -283,15 +344,16 @@ What to know about them:
 
 ### The summary
 
-The summary follows the `run ended` line and has no timestamps. It has up to three sections. A section with nothing in it is left out, so a complete run with no warnings ends with the counts alone.
+The summary follows the `run ended` line and has no timestamps. It has up to four sections. A section with nothing in it is left out, so a complete run with no warnings ends with the counts alone.
 
-1. **The counts**: `tasks:` and the count of tasks per status.
+1. **The counts**: `tasks:` and the count of tasks per status. The tasks a stopped run never reached are counted here as pending and ready, and are not listed anywhere else.
 2. **The failures**: `failed:` and the number of failed tasks, then each of them in declaration order. The first line of a failure has the path, the kind of failure (`reported` or `unexpected`), when the task failed and how long it had run. Beneath it, each only when there is something to show:
    - `progress:` the progress the task had reported when it failed. It reads `<text>`, `<count>`, `<count> of <total>`, or the text and the count joined by a comma. It is always one line: a line break in the status text is printed as a space.
    - `message:` its message.
    - `detail:` its detail lines, one to a line.
    - `blocked <n> tasks:` what the failure blocked, named by its roots: the highest nodes whose every task it blocked. A failure that blocked every task beneath a group names that one group.
-3. **The warnings**: `warnings:` and the number of warnings added in the run, kept or not, then each task that has any, in declaration order, with the warnings that were kept beneath it.
+3. **The cancelled tasks**: `cancelled:` and the number of cancelled tasks, then each of them in declaration order, in the shape of a failure without its kind: the path, when the task was cancelled and how long it had run, then its `progress:`, `message:` and `detail:` lines, each only when there is something to show. A cancelled task blocks nothing, so it has no `blocked` line.
+4. **The warnings**: `warnings:` and the number of warnings added in the run, kept or not, then each task that has any, in declaration order, with the warnings that were kept beneath it.
 
 ### The writer and the clock
 

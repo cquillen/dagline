@@ -48,16 +48,15 @@ During a run every task has one **status** at a time, and a status only ever mov
 ```text
 pending --> ready --> running --> succeeded
    |                         \--> failed
+   |                         \--> cancelled
    \------> blocked
 ```
 
-A task starts **pending**. It becomes **ready** once its dependencies are met, and **running** when the run starts it, which may be later when the cap or a limit is full. From there it ends **succeeded** or **failed**.
+A task starts **pending**. It becomes **ready** once its dependencies are met, and **running** when the run starts it, which may be later when the cap or a limit is full. From there it ends **succeeded** or **failed**, or **cancelled** when the run is stopped while it runs.
 
 A task becomes **blocked** when something it requires failed or was blocked: it will not run in this run. A failure therefore costs only the work that requires it. Tasks that run *after* the failed one still run, and so does everything unrelated.
 
 A task whose status will not change again is **settled**. A group has no status of its own: it is derived from the tasks beneath it, and a group is settled once all of them are.
-
-The glossary also defines a seventh status, **cancelled**, for a task that was running when its run was stopped. Stopping a run is not available yet, so no task ends that way so far.
 
 More in [When a task fails](running-and-stopping.md#when-a-task-fails) and [Groups in a run](defining-a-graph.md#groups-in-a-run). Definitions: [Status](../../GLOSSARY.md#status).
 
@@ -77,9 +76,27 @@ A **run** is one execution of a graph by one process. You start it with one call
 
 How much runs at once is bounded in two ways. The **cap** is the most tasks that may be running at any moment. A **limit** is a named ceiling that the graph puts on some of its tasks, and each run gives it a size.
 
-A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, and **incomplete** when the run went as far as it could and at least one task did not. A third run outcome, **stopped**, belongs to stopping a run and is not produced yet. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
+A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, and **stopped** when the run was asked to stop and at least one task had not succeeded. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
 
 More in [Running and stopping](running-and-stopping.md). Definitions: [Runs](../../GLOSSARY.md#runs) and [Scheduling](../../GLOSSARY.md#scheduling).
+
+## Stopping a run
+
+A **stop** is a request, usually from the operator, that the run start nothing new and that its running tasks end. Your app decides what asks for one, such as Ctrl+C, and passes the run a stop signal. From the moment a stop is applied nothing starts, and every running task sees its cancellation token signalled.
+
+The run then waits a **grace period**, 30 seconds by default, for its running tasks to end cleanly. A second stop ends the wait at once.
+
+A task that ends because of the stop, or that is still running when the wait ends, is **cancelled**. Cancelled is a settled status, and it never blocks: a task that requires a cancelled one simply stays pending. A task that finished its work in spite of the stop keeps its real status. Tasks the run never started are never reached: they stay pending or ready, so a later run can see what was left to do.
+
+More in [Stopping a run](running-and-stopping.md#stopping-a-run). Definitions: [Stop](../../GLOSSARY.md#runs), [Grace period](../../GLOSSARY.md#runs) and [Cancelled](../../GLOSSARY.md#status).
+
+## Waiting and working
+
+Some tasks trigger work in an external system and then wait for it to finish. Such a task is still an ordinary running task, but while it waits it is idle, and the operator should be able to tell.
+
+A running task that has told Dagline it is idle until an external system changes is **waiting**. One that is not is **working**. Waiting is never a status: the task is running throughout, keeps its slots, and counts the same towards its group and the run outcome. Only reporters treat it differently, so that a display can show idle tasks apart from working ones and a log can say how long a task waited.
+
+A task waits through a helper that checks the external system at once and then at a fixed interval, and that ends at once on a stop. More in [Waiting on external systems](waiting-on-external-systems.md). Definitions: [Waiting](../../GLOSSARY.md#runs) and [Working](../../GLOSSARY.md#runs).
 
 ## Reporters, events and the snapshot
 
@@ -87,7 +104,7 @@ Dagline never writes to the console. What is shown of a run is the work of **rep
 
 A reporter is given two things:
 
-- **Events.** An event is a record of one thing that happened, with the time it happened: the run started, a task changed status, a task added a warning, a group settled, the run ended. Every reporter receives the same events in the same order, causes before effects.
+- **Events.** An event is a record of one thing that happened, with the time it happened: the run started, a task changed status, a task added a warning, a task began or stopped waiting, a group settled, a stop was requested, the run stopped waiting, the run ended. Every reporter receives the same events in the same order, causes before effects.
 - **Snapshots.** A snapshot is everything Dagline knows about the run at one instant: every node with its status and what is attached to it, and the counts across the run. One comes with each event, and a reporter can ask for the run as it is now at any time.
 
 Events say what just happened and the snapshot says where things stand, so a reporter never has to piece that together from the events. Once a run has ended, a reporter shows a **summary** from the final snapshot, and your app gets that same snapshot back with the result of the run.
@@ -98,6 +115,7 @@ Dagline ships a reporter that prints a run as timestamped lines of text, and you
 
 - [Defining a graph](defining-a-graph.md): the builder, groups, paths, dependencies and limits.
 - [Writing tasks](writing-tasks.md): what a task body can report and how it fails.
-- [Running and stopping](running-and-stopping.md): starting a run, its options and its result.
+- [Waiting on external systems](waiting-on-external-systems.md): the wait helper, transient errors and what a stop does to external work.
+- [Running and stopping](running-and-stopping.md): starting a run, its options, its result and stopping it.
 - [Reporters](reporters.md): the plain-text reporter, and writing a reporter of your own.
 - [Glossary](../../GLOSSARY.md): the exact definition of every term.

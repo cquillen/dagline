@@ -18,7 +18,8 @@ namespace Dagline;
 /// (<see cref="FailureKind.Unexpected"/>), with the exception's message, on one line, as its <see cref="NodeSnapshot.Message"/> and the exception's
 /// type and stack trace added to its <see cref="NodeSnapshot.Detail"/>. It makes no difference whether the body throws before its first
 /// <see langword="await"/>, throws after it, or returns a task that is faulted or cancelled. A cancellation exception is treated
-/// like any other, since a run cannot be stopped.
+/// like any other until the run is stopped. After a stop it makes the task <see cref="NodeStatus.Cancelled"/>:
+/// <see cref="TaskContext.CancellationToken"/> says how a task ends once a stop has been requested.
 /// </para>
 /// <para>
 /// A body that has called <see cref="TaskContext.Fail"/> ends as a reported failure (<see cref="FailureKind.Reported"/>) instead,
