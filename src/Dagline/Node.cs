@@ -13,7 +13,9 @@ public abstract class Node
     {
         Builder = builder;
         Parent = parent;
+        Segment = segment;
         Path = parent is null ? NodePath.AtRoot(segment) : parent.Path.Child(segment);
+        ValidPath = NodePath.IsSegment(segment) && (parent is null || parent.ValidPath is not null) ? Path : null;
     }
 
     /// <summary>
@@ -23,6 +25,15 @@ public abstract class Node
 
     /// <summary>The group that holds this node, or <see langword="null"/> for a node at the root.</summary>
     internal GroupNode? Parent { get; }
+
+    /// <summary>The segment this node was added with, which <see cref="GraphBuilder.Build"/> checks.</summary>
+    internal string Segment { get; }
+
+    /// <summary>
+    /// <see cref="Path"/> when every segment of it is valid, and <see langword="null"/> when the segment of this node
+    /// or of a group that holds it is not.
+    /// </summary>
+    internal NodePath? ValidPath { get; }
 
     /// <summary>The title given to this node so far, or <see langword="null"/> when it has none.</summary>
     internal string? TitleText { get; private set; }

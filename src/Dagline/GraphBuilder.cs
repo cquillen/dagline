@@ -42,7 +42,16 @@ public sealed class GraphBuilder
 
     /// <summary>Builds the graph from everything added so far.</summary>
     /// <returns>An immutable graph that can be run any number of times.</returns>
-    public Graph Build() => new([.. _children.InDeclarationOrder()], _dependencies);
+    public Graph Build()
+    {
+        var problems = GraphValidation.Problems(_children);
+        if (problems.Count > 0)
+        {
+            throw new GraphException(problems);
+        }
+
+        return new([.. _children.InDeclarationOrder()], _dependencies);
+    }
 
     internal void Declare(Node dependent, Node upstream, DependencyKind kind)
         => _dependencies.Add(new DeclaredDependency(dependent, upstream, kind));

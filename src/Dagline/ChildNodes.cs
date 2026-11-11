@@ -7,6 +7,9 @@ internal sealed class ChildNodes(GraphBuilder builder, GroupNode? parent)
 {
     private readonly List<Node> _nodes = [];
 
+    /// <summary>The children themselves, siblings of one another, in the order they were added.</summary>
+    public IReadOnlyList<Node> Siblings => _nodes;
+
     public GroupNode AddGroup(string segment)
     {
         ArgumentNullException.ThrowIfNull(segment);
