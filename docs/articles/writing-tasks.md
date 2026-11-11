@@ -32,6 +32,7 @@ A run creates one context for each task it starts. The context gives the body:
 | `Message`, `Detail` | The [outcome](#message-and-detail): what the task did or found. |
 | `Fail` | A [reported failure](#failures). |
 | `StatusOf` | [The status of a node](#reading-the-status-of-a-dependency) this task depends on. |
+| `WaitUntil`, `Waiting` | [Waiting on an external system](waiting-on-external-systems.md): checking at an interval, marked as idle. |
 
 A task **succeeds** when its body completes without an exception and without having called `Fail`. Otherwise it **fails**: see [Failures](#failures).
 
