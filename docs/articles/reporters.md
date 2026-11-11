@@ -165,7 +165,7 @@ A stuck reporter cannot hang your process. Once the run has ended, any request o
 - `ReporterErrors` has a `ReporterError` naming it, the event it was handling and an `OperationCanceledException`;
 - `RunAsync` returns without waiting for its call to come back. Whatever that call does later is ignored.
 
-A reporter that had already handled every event is unaffected and is not on the list. A request made once the tasks have ended never changes the run outcome. A run given no signal waits for its reporters with no time bound.
+A reporter that had already handled every event is unaffected and is not on the list. A request made once the tasks have ended never changes the run outcome. A request made just as the run ends is never lost: either the run applies it as a stop, or it ends the wait for reporters. A run given no signal waits for its reporters with no time bound.
 
 ## Progress on a timer: the snapshot source
 
