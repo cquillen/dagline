@@ -8,6 +8,8 @@
   href: writing-tasks.md
 - name: Running and stopping
   href: running-and-stopping.md
+- name: Waiting on external systems
+  href: waiting-on-external-systems.md
 - name: Terminal UI
   href: terminal-ui.md
 - name: Reporters
