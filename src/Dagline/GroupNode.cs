@@ -40,6 +40,37 @@ public sealed class GroupNode : Node
     }
 
     /// <summary>
+    /// Names a limit that every task beneath this group holds: a ceiling on how many of the tasks that hold it
+    /// may be running at once.
+    /// </summary>
+    /// <param name="name">
+    /// The name of the limit: any text that is not empty. Names are compared ordinally, so <c>database</c> and <c>Database</c>
+    /// are two limits.
+    /// </param>
+    /// <returns>This handle.</returns>
+    /// <remarks>
+    /// <para>
+    /// The graph only names a limit. Its size is an option of the run, in <see cref="RunOptions.Limits"/>,
+    /// so it can differ between runs while the graph stays the same work. A run whose options give no size for a limit
+    /// the graph names is refused with <see cref="RunConfigurationException"/> before any task starts.
+    /// </para>
+    /// <para>
+    /// The limit applies to every task beneath the group at any depth, whether it was added before or after this call,
+    /// and each of them holds a slot of its own: the group itself holds none. A task holds one slot of each of its limits,
+    /// those named on it and on every group that holds it, from the moment it starts until it settles.
+    /// It takes them all at once or takes none, so it never holds one slot while it waits for another.
+    /// </para>
+    /// <para>Call again to name another limit. Naming the same limit twice is the same as naming it once.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty.</exception>
+    public GroupNode Limit(string name)
+    {
+        NameLimit(name);
+        return this;
+    }
+
+    /// <summary>
     /// Declares that every task beneath this group <em>requires</em> <paramref name="upstream"/>:
     /// each becomes ready only once the upstream has succeeded.
     /// </summary>
