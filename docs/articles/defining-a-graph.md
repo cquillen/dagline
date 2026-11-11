@@ -162,6 +162,43 @@ A task that requires a group is blocked as soon as one task beneath the group fa
 
 Every blocked task records the path of the failed task that started the cascade. [Running and stopping](running-and-stopping.md#when-a-task-fails) covers what a failure leaves in the snapshot.
 
+## Limits
+
+A limit is a named ceiling on how many of the tasks that hold it may be running at once. Name one to bound heavy work where it is declared, such as the tasks that write to one database:
+
+```csharp
+foreach (var shard in shards)
+{
+    builder.Task($"load-{shard.Name}", context => LoadAsync(shard, context)).Limit("database");
+}
+```
+
+The graph only names a limit. Its size is an option of the run, so tuning can change from one run to the next while the graph stays the same work. [Sizing the cap and limits](running-and-stopping.md#sizing-the-cap-and-limits) covers the sizes, and a run that gives no size for a limit the graph names is refused before any task starts.
+
+A limit name is any text that is not empty. Names are compared exactly, so `database` and `Database` are two limits. Call `Limit` again to name another limit on the same node. Naming one limit twice is the same as naming it once.
+
+### On a group
+
+A limit named on a group applies to every task beneath that group, at any depth, whether the task was added before or after the limit was named:
+
+```csharp
+var loads = builder.Group("loads").Limit("database");
+loads.Task("entities", LoadEntitiesAsync);
+loads.Task("archive", LoadArchiveAsync).Limit("files");
+```
+
+Each task beneath `loads` holds a slot of `database` of its own. The group holds none, because a group never runs code.
+
+A task's limits are its own plus those of every group that holds it. Here `loads/entities` holds `database`, and `loads/archive` holds `database` and `files`.
+
+A snapshot shows a limit on the node it was named on, as <xref:Dagline.NodeSnapshot.Limits>. Here `database` is on `loads`, and not on the two tasks.
+
+### Slots
+
+A limit of size 3 has three slots. A task takes one slot of each of its limits when it starts and gives them back when it settles. It holds them for all of that time, including while it waits on another system.
+
+A ready task starts only when every one of its limits has a free slot. It takes all its slots at once or takes none, so it never holds one slot while it waits for another. A ready task that does not fit is *held*: it stays ready, the tasks behind it are still tried, and it is tried again whenever a task settles.
+
 ## Declaration order
 
 Declaration order is a depth-first walk of the tree: each group comes before its children, and the children of each group are in the order they were added to that group. What was added elsewhere in between does not matter:
@@ -182,7 +219,7 @@ Dagline uses this one order everywhere:
 - A snapshot lists its nodes in declaration order.
 - Tasks that become ready at the same moment do so in declaration order, and ready tasks start in it.
 
-Declaration order is not a priority. It never makes a task wait: only a dependency does.
+Declaration order is not a priority. It never makes a task wait: only a dependency, a full limit or the cap does.
 
 ## Groups in a run
 

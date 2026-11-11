@@ -46,7 +46,7 @@ report: ready -> running
 
 A blocked task gets one event, pending to blocked, and its `Node` names the failed task in <xref:Dagline.NodeSnapshot.BlockedBy>. A reporter that would rather print one line for a whole cascade than one per task can group consecutive blocked events by that path.
 
-A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, and the count of tasks per status. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
+A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, the count of tasks per status, and how full the cap and each limit are. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
 
 A reporter gets snapshots in two ways:
 

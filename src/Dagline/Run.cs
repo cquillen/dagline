@@ -22,15 +22,18 @@ internal sealed class Run : ISnapshotSource
     private readonly StatusCounts _counts;
     private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
     private readonly List<GraphGroup> _settledInThisStep = [];
+    private readonly SortedSet<int> _ready = [];
+    private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DateTimeOffset _startedAt;
     private DateTimeOffset? _endedAt;
     private RunOutcome? _outcome;
     private volatile Snapshot _current;
 
-    public Run(Graph graph, TimeProvider timeProvider, ReporterDelivery delivery)
+    public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery)
     {
         _graph = graph;
+        _slots = new Slots(graph.LimitNames, sizes);
         _timeProvider = timeProvider;
         _delivery = delivery;
         _counts = new StatusCounts(pending: graph.Tasks.Length);
@@ -61,6 +64,7 @@ internal sealed class Run : ISnapshotSource
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
+            _slots.GiveBack(task);
             Move(task, outcome, now);
             var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
             Advance(WaitingFor([task, .. blocked]), now);
@@ -136,13 +140,13 @@ internal sealed class Run : ISnapshotSource
     /// <summary>
     /// Applies what follows from one change, causes before effects: the tasks among <paramref name="waiting"/>
     /// whose dependencies are now met become ready, the groups that the step settled are announced,
-    /// the ready tasks start, and the run ends when nothing is left to do.
+    /// the ready tasks that fit start, and the run ends when nothing is left to do.
     /// </summary>
     private void Advance(IEnumerable<GraphTask> waiting, DateTimeOffset now)
     {
-        var ready = MakeReady(waiting, now);
+        MakeReady(waiting, now);
         AnnounceSettledGroups(now);
-        StartAll(ready, now);
+        StartWhatFits(now);
 
         if (_counts[NodeStatus.Running] == 0 && _counts[NodeStatus.Ready] == 0)
         {
@@ -150,15 +154,14 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
-    private List<GraphTask> MakeReady(IEnumerable<GraphTask> waiting, DateTimeOffset now)
+    private void MakeReady(IEnumerable<GraphTask> waiting, DateTimeOffset now)
     {
         List<GraphTask> ready = [.. waiting.Where(DependenciesAreMet)];
         foreach (var task in ready)
         {
             Move(task, NodeStatus.Ready, now);
+            _ready.Add(task.Position);
         }
-
-        return ready;
     }
 
     private bool DependenciesAreMet(GraphTask task)
@@ -176,12 +179,20 @@ internal sealed class Run : ISnapshotSource
         _settledInThisStep.Clear();
     }
 
-    private void StartAll(List<GraphTask> ready, DateTimeOffset now)
+    /// <summary>
+    /// Tries every ready task in declaration order and starts each one that finds a slot free in the cap and in every limit it holds.
+    /// One that does not fit is passed over and stays ready, so it never holds up the tasks behind it.
+    /// </summary>
+    private void StartWhatFits(DateTimeOffset now)
     {
-        foreach (var task in ready)
+        foreach (var task in _ready.Select(_graph.TaskAt).ToList())
         {
-            Move(task, NodeStatus.Running, now);
-            _ = Task.Run(() => RunBodyAsync(task));
+            if (_slots.TryTake(task))
+            {
+                _ready.Remove(task.Position);
+                Move(task, NodeStatus.Running, now);
+                _ = Task.Run(() => RunBodyAsync(task));
+            }
         }
     }
 
@@ -291,5 +302,6 @@ internal sealed class Run : ISnapshotSource
         _delivery.Publish(runEvent, _current);
     }
 
-    private Snapshot TakeSnapshot() => new(_startedAt, _endedAt, _outcome, [.. _nodes], _graph.Positions, _counts.ToDictionary());
+    private Snapshot TakeSnapshot()
+        => new(_startedAt, _endedAt, _outcome, [.. _nodes], _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
 }

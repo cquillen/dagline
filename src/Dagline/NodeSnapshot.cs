@@ -9,6 +9,7 @@ public sealed record NodeSnapshot
         Title = node.Title;
         IsGroup = node is GraphGroup;
         Dependencies = node.Dependencies;
+        Limits = node.Limits;
         Status = status;
         Counts = counts;
     }
@@ -34,6 +35,16 @@ public sealed record NodeSnapshot
     /// although it applies to every task beneath the group.
     /// </remarks>
     public IReadOnlyList<Dependency> Dependencies { get; }
+
+    /// <summary>
+    /// The limits named on this node itself, each once, in the order first named.
+    /// </summary>
+    /// <remarks>
+    /// A limit named on a group is listed on that group and not on the nodes beneath it,
+    /// although every task beneath the group holds a slot of it while it runs.
+    /// <see cref="Snapshot.Limits"/> gives the size of each limit and how many of its slots are in use.
+    /// </remarks>
+    public IReadOnlyList<string> Limits { get; }
 
     /// <summary>
     /// Where the node is in its life. A task has the status the run gave it. A group's status is derived from the tasks

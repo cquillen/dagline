@@ -32,6 +32,9 @@ public sealed class Graph : IReadOnlyList<Node>
         var dependencies = new TaskDependencies(tasks, positions, declared);
         var tasksBeneath = tasks.SelectMany(task => task.Ancestors()).CountBy(group => (Node)group).ToDictionary();
 
+        LimitNames = [.. nodes.SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal)];
+        var limitPositions = LimitNames.Index().ToDictionary(limit => limit.Item, limit => limit.Index, StringComparer.Ordinal);
+
         Nodes = [.. nodes.Select(ToGraphNode)];
         Tasks = [.. Nodes.OfType<GraphTask>()];
         Positions = Nodes.ToFrozenDictionary(node => node.Path, node => node.Position);
@@ -43,15 +46,18 @@ public sealed class Graph : IReadOnlyList<Node>
                     node.Path,
                     node.TitleText,
                     dependencies.DeclaredOn(node),
+                    [.. node.Limits],
                     dependencies.DependentsOf(node),
                     task.Body,
                     [.. node.Ancestors().Select(group => positions[group])],
-                    dependencies.UpstreamsOf(task))
+                    dependencies.UpstreamsOf(task),
+                    [.. HeldBy(task).Select(limit => limitPositions[limit])])
                 : new GraphGroup(
                     position,
                     node.Path,
                     node.TitleText,
                     dependencies.DeclaredOn(node),
+                    [.. node.Limits],
                     dependencies.DependentsOf(node),
                     Depth: node.Ancestors().Count(),
                     TaskCount: tasksBeneath.GetValueOrDefault(node));
@@ -68,6 +74,9 @@ public sealed class Graph : IReadOnlyList<Node>
 
     /// <summary>Where each node is in declaration order.</summary>
     internal FrozenDictionary<NodePath, int> Positions { get; }
+
+    /// <summary>Every limit the graph names, on a task or on a group, each once, in the order first named in declaration order.</summary>
+    internal ImmutableArray<string> LimitNames { get; }
 
     /// <summary>The handle of the node at a position in declaration order.</summary>
     /// <param name="index">The position of the node, from zero.</param>
@@ -121,4 +130,8 @@ public sealed class Graph : IReadOnlyList<Node>
         var requires = new Upstream(node.Position, DependencyKind.Requires);
         return node.Dependents.Select(TaskAt).Where(dependent => dependent.Upstreams.Contains(requires));
     }
+
+    /// <summary>The limits a task holds: those named on it and those named on every group that holds it, each once.</summary>
+    private static IEnumerable<string> HeldBy(TaskNode task)
+        => task.Ancestors().Prepend<Node>(task).SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal);
 }
