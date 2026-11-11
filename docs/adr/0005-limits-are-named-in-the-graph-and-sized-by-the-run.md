@@ -13,7 +13,7 @@ A task holds exactly one slot of each of its limits, its own and its ancestors',
 ## Consequences
 
 - A limit that the graph names and the run gives no size is an error before any task starts. Every size, and the cap, must be at least 1.
-- A size given for a limit that no task names is allowed and ignored, so one set of sizes can serve several graphs.
+- A size given for a limit that the graph does not name, on a task or on a group, is allowed and ignored, so one set of sizes can serve several graphs.
 - The cap behaves as a limit every task holds. Its default is a fixed 16, not derived from the processor count, since the work is mostly waiting on other systems.
 - A task takes all its slots at once or none, so it never holds one slot while it queues for another.
-- Whenever a task settles, the ready tasks are tried in declaration order, and each one whose limits all have room starts. One that does not fit is skipped and never holds up those behind it. There are no priorities and no fairness rules, so a task that needs two busy limits can be passed over repeatedly.
+- When a run starts, and whenever a task settles after that, the ready tasks are tried in declaration order, and each one whose limits all have room starts. One that does not fit is skipped and never holds up those behind it. Once the run has been asked to stop, nothing is tried and nothing starts. There are no priorities and no fairness rules, so a task that needs two busy limits can be passed over repeatedly.

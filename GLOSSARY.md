@@ -63,7 +63,7 @@ The most tasks that may be running at once in a run, whatever limits they hold.
 _Avoid_: Max parallelism, degree of parallelism, global limit
 
 **Declaration order**:
-The order in which nodes were added to the graph, read from the top of the tree down. It decides both what the display shows first and which ready task starts first.
+The order in which nodes were added to the graph, read from the top of the tree down. It decides both what the display shows first and which ready task is first in line to start.
 _Avoid_: Priority, sort order
 
 ### Status
@@ -97,7 +97,7 @@ The status of a task that will not run in this run because a node it requires fa
 _Avoid_: Skipped, cancelled
 
 **Cancelled**:
-The status of a task that was running when the run was stopped and either ended because of it or was left behind when the grace period ran out.
+The status of a task that was running when the run was stopped and either ended because of it or was left behind when the run stopped waiting for it.
 _Avoid_: Stopped, aborted, interrupted
 
 ### Outcomes
