@@ -96,6 +96,21 @@ public sealed record NodeSnapshot
     public IReadOnlyList<string> Detail { get; internal init; } = [];
 
     /// <summary>
+    /// The warnings the task added with <see cref="TaskContext.Warn"/>, in the order added, each on one line.
+    /// Empty when it added none and for a group.
+    /// </summary>
+    /// <remarks>
+    /// A warning shows here from the moment it is added, while the task is still running, and stays whatever status the task
+    /// settles with. Only the first 100 warnings of a task are kept: <see cref="WarningsOmitted"/> counts the rest.
+    /// </remarks>
+    public IReadOnlyList<string> Warnings { get; internal init; } = [];
+
+    /// <summary>
+    /// How many warnings the task added after the 100 that <see cref="Warnings"/> keeps. Zero for a group.
+    /// </summary>
+    public int WarningsOmitted { get; internal init; }
+
+    /// <summary>
     /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
     /// <see langword="null"/> when the task has set none or has cleared it, and for a group.
     /// </summary>

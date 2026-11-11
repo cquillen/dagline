@@ -49,6 +49,25 @@ public sealed record RunStarted(DateTimeOffset At, ISnapshotSource Source) : Run
 public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, NodeStatus From, NodeStatus To) : RunEvent(At);
 
 /// <summary>
+/// A running task added a warning to its outcome with <see cref="TaskContext.Warn"/>, and Dagline kept it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A warning is a step of its own: the event is never mixed with those of another step, and a warning a body adds
+/// before it ends precedes the <see cref="TaskStatusChanged"/> of that task settling. The snapshot handed with the event
+/// lists the warning in the task's <see cref="NodeSnapshot.Warnings"/>.
+/// </para>
+/// <para>
+/// Dagline keeps the first 100 warnings of a task. A warning past that limit is counted in
+/// <see cref="NodeSnapshot.WarningsOmitted"/> and gets no event, so one task never publishes more than 100 of these.
+/// </para>
+/// </remarks>
+/// <param name="At">When the warning was added.</param>
+/// <param name="Path">The path of the task that added the warning.</param>
+/// <param name="Warning">The warning, on one line: each line break in the text the task gave is replaced by a space.</param>
+public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warning) : RunEvent(At);
+
+/// <summary>
 /// A group settled: the last task beneath it, at any depth, settled.
 /// </summary>
 /// <remarks>

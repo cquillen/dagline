@@ -67,10 +67,20 @@ internal sealed class Run : ISnapshotSource
     {
         lock (_gate)
         {
-            if (_nodes[task.Position].Status is NodeStatus.Running)
+            var before = _nodes[task.Position];
+            if (before.Status is not NodeStatus.Running)
             {
-                _nodes[task.Position] = report(_nodes[task.Position]);
-                _current = null;
+                return;
+            }
+
+            var after = report(before);
+            _nodes[task.Position] = after;
+            _current = null;
+
+            // A warning that was kept is the one report that is also an event.
+            foreach (var warning in after.Warnings.Skip(before.Warnings.Count))
+            {
+                Publish(new WarningAdded(_timeProvider.GetUtcNow(), task.Path, warning));
             }
         }
     }

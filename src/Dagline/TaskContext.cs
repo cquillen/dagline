@@ -48,4 +48,14 @@ public sealed class TaskContext
 
         _run.Report(_task, task => task.WithCount(current, total));
     }
+
+    /// <summary>Adds a warning to the task's outcome.</summary>
+    /// <param name="warning">The warning. Each line break in it is replaced by a space.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="warning"/> is <see langword="null"/>.</exception>
+    public void Warn(string warning)
+    {
+        ArgumentNullException.ThrowIfNull(warning);
+
+        _run.Report(_task, task => task.WithWarning(warning));
+    }
 }
