@@ -140,7 +140,7 @@ public sealed class Graph : IReadOnlyList<Node>
     /// <param name="position">The position of the node among the nodes of this graph, when the method returns <see langword="true"/>.</param>
     internal bool TryGetDependency(GraphTask task, Node handle, out int position)
         => TryGetPosition(handle, out position)
-            && handle.Ancestors().Prepend(handle).Select(node => Positions[node.Path]).Any(task.IsUpstream);
+            && handle.WithAncestors().Select(node => Positions[node.Path]).Any(task.IsUpstream);
 
     /// <summary>Finds where a handle is in declaration order. A handle of another graph is not found, whatever its path.</summary>
     private bool TryGetPosition(Node handle, out int position)
@@ -148,5 +148,5 @@ public sealed class Graph : IReadOnlyList<Node>
 
     /// <summary>The limits a task holds: those named on it and those named on every group that holds it, each once.</summary>
     private static IEnumerable<string> HeldBy(TaskNode task)
-        => task.Ancestors().Prepend<Node>(task).SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal);
+        => task.WithAncestors().SelectMany(node => node.Limits).Distinct(StringComparer.Ordinal);
 }

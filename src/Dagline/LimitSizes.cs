@@ -1,5 +1,5 @@
 using System.Collections.Immutable;
-using System.Globalization;
+using static System.FormattableString;
 
 namespace Dagline;
 
@@ -53,6 +53,4 @@ internal sealed class LimitSizes
             ? new LimitSizes(options.Cap, [.. graph.LimitNames.Select(name => given[name])])
             : throw new RunConfigurationException(problems);
     }
-
-    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }

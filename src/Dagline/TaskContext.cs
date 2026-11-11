@@ -221,10 +221,6 @@ public sealed class TaskContext
     private static void ThrowIfAnyNull(string[] lines, string paramName)
     {
         ArgumentNullException.ThrowIfNull(lines, paramName);
-
-        if (lines.Contains(null))
-        {
-            throw new ArgumentException("A line is null.", paramName);
-        }
+        Arguments.ThrowIfAnyNull(lines, "A line is null.", paramName);
     }
 }

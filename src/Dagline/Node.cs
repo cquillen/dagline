@@ -67,6 +67,11 @@ public abstract class Node
         }
     }
 
+    /// <summary>
+    /// This node, then every group that holds it, the nearest first: the nodes whose limits and declared dependencies this one has.
+    /// </summary>
+    internal IEnumerable<Node> WithAncestors() => Ancestors().Prepend(this);
+
     /// <summary>Every node beneath this one, at any depth, in declaration order. A task has none.</summary>
     internal abstract IEnumerable<Node> NodesBeneath();
 
@@ -102,11 +107,7 @@ public abstract class Node
         ArgumentNullException.ThrowIfNull(upstreams);
 
         Node[] handles = [.. upstreams];
-        if (handles.Contains(null))
-        {
-            throw new ArgumentException("A handle in the collection is null.", nameof(upstreams));
-        }
-
+        Arguments.ThrowIfAnyNull(handles, "A handle in the collection is null.", nameof(upstreams));
         Builder.ThrowIfBuilt();
 
         foreach (var upstream in handles)

@@ -93,7 +93,7 @@ internal sealed class DependencyCycles
         => new(InLineWith(node).SelectMany(inLine => _declaredOn[inLine]).DistinctBy(dependency => dependency.Upstream));
 
     private static IEnumerable<Node> InLineWith(Node node)
-        => [node, .. node.Ancestors(), .. node.NodesBeneath()];
+        => [.. node.WithAncestors(), .. node.NodesBeneath()];
 
     private ImmutableArray<DeclaredDependency> FromEarliestDeclared(DeclaredDependency[] cycle)
     {

@@ -47,7 +47,7 @@ internal sealed class TaskDependencies
 
     private ImmutableArray<Upstream> ResolveUpstreams(TaskNode task)
     {
-        var ownAndInherited = task.Ancestors().Prepend<Node>(task).SelectMany(node => _declaredOn[node]);
+        var ownAndInherited = task.WithAncestors().SelectMany(node => _declaredOn[node]);
 
         return
         [
@@ -59,7 +59,5 @@ internal sealed class TaskDependencies
 
     /// <summary>One dependency for each upstream named, in the order each was first named.</summary>
     private static IEnumerable<(Node Upstream, DependencyKind Kind)> Merge(IEnumerable<DeclaredDependency> dependencies)
-        => dependencies
-            .GroupBy(dependency => dependency.Upstream, dependency => dependency.Kind)
-            .Select(kinds => (Upstream: kinds.Key, Kind: kinds.Strongest()));
+        => dependencies.MergedBy(dependency => dependency.Upstream);
 }

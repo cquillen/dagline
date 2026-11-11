@@ -71,8 +71,8 @@ internal static class GraphValidation
     /// <summary>One dependency for each dependent and upstream, in the order each pair was first declared.</summary>
     private static IEnumerable<DeclaredDependency> Merged(IEnumerable<DeclaredDependency> declared)
         => declared
-            .GroupBy(dependency => (dependency.Dependent, dependency.Upstream), dependency => dependency.Kind)
-            .Select(kinds => new DeclaredDependency(kinds.Key.Dependent, kinds.Key.Upstream, kinds.Strongest()));
+            .MergedBy(dependency => (dependency.Dependent, dependency.Upstream))
+            .Select(merged => new DeclaredDependency(merged.Key.Dependent, merged.Key.Upstream, merged.Kind));
 
     /// <summary>The problem with one dependency taken alone, or <see langword="null"/> when it has none.</summary>
     private static GraphProblem? ProblemWith(DeclaredDependency dependency, GraphBuilder builder)
