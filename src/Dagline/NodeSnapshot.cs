@@ -13,4 +13,16 @@ public sealed record NodeSnapshot
 
     /// <summary>Where the node is in its life.</summary>
     public NodeStatus Status { get; internal init; }
+
+    /// <summary>
+    /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
+    /// or <see langword="null"/> while it has not started.
+    /// </summary>
+    public DateTimeOffset? Started { get; internal init; }
+
+    /// <summary>
+    /// When the task settled, read from the run's <see cref="RunOptions.TimeProvider"/>,
+    /// or <see langword="null"/> while it has not settled.
+    /// </summary>
+    public DateTimeOffset? Settled { get; internal init; }
 }

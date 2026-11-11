@@ -38,6 +38,6 @@ public static class Runner
         var outcome = await run.Ended.ConfigureAwait(false);
         await delivery.Delivered.ConfigureAwait(false);
 
-        return new RunResult(outcome);
+        return new RunResult(outcome, run.Current);
     }
 }

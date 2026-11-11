@@ -14,6 +14,8 @@ internal sealed class Run : ISnapshotSource
     private readonly NodeSnapshot[] _nodes;
     private readonly StatusCounts _counts;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly DateTimeOffset _startedAt;
+    private DateTimeOffset? _endedAt;
     private volatile Snapshot _current;
 
     public Run(Graph graph, TimeProvider timeProvider, ReporterDelivery delivery)
@@ -23,6 +25,7 @@ internal sealed class Run : ISnapshotSource
         _delivery = delivery;
         _nodes = [.. graph.Tasks.Select(task => new NodeSnapshot(task.Path))];
         _counts = new StatusCounts(pending: graph.Tasks.Length);
+        _startedAt = timeProvider.GetUtcNow();
         _current = TakeSnapshot();
     }
 
@@ -35,9 +38,8 @@ internal sealed class Run : ISnapshotSource
     {
         lock (_gate)
         {
-            var now = _timeProvider.GetUtcNow();
-            Publish(new RunStarted(now, this));
-            Advance(_graph.Tasks, now);
+            Publish(new RunStarted(_startedAt, this));
+            Advance(_graph.Tasks, _startedAt);
         }
     }
 
@@ -99,6 +101,7 @@ internal sealed class Run : ISnapshotSource
     private void End(DateTimeOffset now)
     {
         var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete : RunOutcome.Incomplete;
+        _endedAt = now;
         Publish(new RunEnded(now, outcome));
         _delivery.Complete();
         _ended.SetResult(outcome);
@@ -107,7 +110,12 @@ internal sealed class Run : ISnapshotSource
     private void Move(GraphTask task, NodeStatus to, DateTimeOffset now)
     {
         var before = _nodes[task.Position];
-        var after = before with { Status = to };
+        var after = before with
+        {
+            Status = to,
+            Started = to is NodeStatus.Running ? now : before.Started,
+            Settled = to.IsSettled() ? now : before.Settled,
+        };
 
         _nodes[task.Position] = after;
         _counts.Move(before.Status, to);
@@ -120,5 +128,5 @@ internal sealed class Run : ISnapshotSource
         _delivery.Publish(runEvent, _current);
     }
 
-    private static Snapshot TakeSnapshot() => new();
+    private Snapshot TakeSnapshot() => new(_startedAt, _endedAt, [.. _nodes]);
 }
