@@ -62,8 +62,9 @@ internal sealed class ReporterQueue
     /// <summary>
     /// Drops the reporter if it has not handled every event published so far: the token passed to its calls is cancelled,
     /// its queued events are let go, and <see cref="Delivered"/> completes with an <see cref="OperationCanceledException"/>
-    /// naming the event in the call, or the next event when no call is in progress. A reporter that is not busy is left alone,
-    /// and its token is never cancelled.
+    /// naming the event in the call, or the next event when no call is in progress. The token is cancelled before
+    /// <see cref="Delivered"/> completes, and the callbacks registered on it run on the thread pool, not on the caller's thread.
+    /// A reporter that is not busy is left alone, and its token is never cancelled.
     /// </summary>
     public void DropIfBusy()
     {
@@ -75,16 +76,16 @@ internal sealed class ReporterQueue
             }
 
             var runEvent = _inCall ?? (_queue.Reader.TryPeek(out var next) ? next.Event : null);
-            Stop(new ReporterError(_reporter, runEvent, new OperationCanceledException(_dropped.Token)));
-        }
 
-        try
-        {
-            _dropped.Cancel();
-        }
-        catch (AggregateException)
-        {
-            // A callback the reporter registered on its token threw. That is the reporter's affair, and it is dropped regardless.
+            // Signals the token before Stop completes Delivered, so a run that has returned has always cancelled it,
+            // while the reporter's callbacks run on the thread pool and never under the gate. A callback that throws is the
+            // reporter's affair, and it is dropped regardless, so the fault is observed and let go.
+            _ = _dropped.CancelAsync().ContinueWith(
+                static cancelled => _ = cancelled.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            Stop(new ReporterError(_reporter, runEvent, new OperationCanceledException(_dropped.Token)));
         }
     }
 
