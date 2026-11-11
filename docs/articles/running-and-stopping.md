@@ -200,3 +200,5 @@ The options cannot be used to run the graph:
 It is thrown at the call too: no task has started, no event has been published and no reporter has been called.
 
 `RunConfigurationException` derives from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
+
+A graph that cannot run never reaches `RunAsync`. `Build` refuses it with a <xref:Dagline.GraphException>, which has the same base: see [Build errors](defining-a-graph.md#build-errors).
