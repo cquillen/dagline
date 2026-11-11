@@ -1,4 +1,4 @@
-using System.Globalization;
+using static System.FormattableString;
 
 namespace Dagline;
 
@@ -8,20 +8,23 @@ internal static class CountsText
     private static readonly NodeStatus[] _lifecycleOrder = Enum.GetValues<NodeStatus>();
 
     /// <summary>A number of tasks, as in <c>1 task</c> or <c>5 tasks</c>.</summary>
-    public static string Tasks(int count)
-        => string.Create(CultureInfo.InvariantCulture, $"{count} {(count == 1 ? "task" : "tasks")}");
+    public static string Tasks(int count) => Invariant($"{count} {(count == 1 ? "task" : "tasks")}");
 
     /// <summary>
     /// A list of counts, as in <c>1 running, 2 succeeded</c>: each status that has at least one task, in lifecycle order.
+    /// When no status has a task it reads <c>no tasks</c>.
     /// </summary>
+    /// <param name="counts">How many tasks have each status. A status that is absent counts as zero.</param>
     public static string PerStatus(IReadOnlyDictionary<NodeStatus, int> counts)
-        => string.Join(
-            ", ",
-            _lifecycleOrder
+    {
+        string[] present =
+        [
+            .. _lifecycleOrder
                 .Select(status => (Status: status, Count: counts.GetValueOrDefault(status)))
                 .Where(entry => entry.Count > 0)
-                .Select(entry => string.Create(CultureInfo.InvariantCulture, $"{entry.Count} {Name(entry.Status)}")));
+                .Select(entry => Invariant($"{entry.Count} {NameText.Of(entry.Status)}")),
+        ];
 
-    /// <summary>A status in lower case, as in <c>succeeded</c>.</summary>
-    public static string Name(NodeStatus status) => status.ToString().ToLowerInvariant();
+        return present.Length == 0 ? "no tasks" : string.Join(", ", present);
+    }
 }

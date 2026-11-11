@@ -1,11 +1,11 @@
-using System.Globalization;
-
 namespace Dagline;
 
 /// <summary>A reporter that writes a run as lines of text.</summary>
 public sealed class PlainTextReporter : IReporter
 {
+    private readonly Lock _gate = new();
     private readonly TextWriter _writer;
+    private BlockedRun? _blocked;
 
     /// <summary>Makes a reporter that writes to <paramref name="writer"/>.</summary>
     /// <param name="writer">Where the lines go.</param>
@@ -22,29 +22,56 @@ public sealed class PlainTextReporter : IReporter
         ArgumentNullException.ThrowIfNull(runEvent);
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        switch (runEvent)
+        lock (_gate)
         {
-            case RunStarted:
-                Line(runEvent, $"run started: {CountsText.Tasks(snapshot.Counts.Values.Sum())}");
-                break;
-
-            case TaskStatusChanged { To: NodeStatus.Running } changed:
-                Line(runEvent, $"started {changed.Node.Path}");
-                break;
-
-            case TaskStatusChanged { To: NodeStatus.Succeeded } changed:
-                Line(runEvent, $"succeeded {changed.Node.Path} in {DurationText.Of(changed.At - changed.Node.Started!.Value)}");
-                break;
-
-            case RunEnded ended:
-                Line(runEvent, $"run ended: {ended.Outcome.ToString().ToLowerInvariant()} in {DurationText.Of(ended.At - snapshot.Started)}");
-                _writer.WriteLine($"tasks: {CountsText.PerStatus(snapshot.Counts)}");
-                break;
+            Handle(runEvent, snapshot);
         }
 
         return ValueTask.CompletedTask;
     }
 
-    private void Line(RunEvent runEvent, string text)
-        => _writer.WriteLine($"{runEvent.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)} {text}");
+    private void Handle(RunEvent runEvent, Snapshot snapshot)
+    {
+        var blockedBy = runEvent is TaskStatusChanged { To: NodeStatus.Blocked } blocked ? blocked.Node.BlockedBy : null;
+        if (blockedBy is { } sameCause && _blocked?.Cause == sameCause)
+        {
+            _blocked = _blocked.Value with { Tasks = _blocked.Value.Tasks + 1 };
+            return;
+        }
+
+        var blockedLine = TakeBlockedLine();
+        if (blockedBy is { } cause)
+        {
+            _blocked = new BlockedRun(runEvent.At, cause, Tasks: 1);
+        }
+
+        Print([.. blockedLine, .. PlainTextLines.About(runEvent, snapshot)]);
+    }
+
+    /// <summary>The line for the blocked events counted so far, which are counted no further. Empty when there are none.</summary>
+    private string[] TakeBlockedLine()
+    {
+        if (_blocked is not { } run)
+        {
+            return [];
+        }
+
+        _blocked = null;
+        return [PlainTextLines.Blocked(run.At, run.Tasks, run.Cause)];
+    }
+
+    private void Print(IReadOnlyList<string> lines)
+    {
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        // One call for all the lines of one event, so that a writer the app also writes to cannot put a line of its own among them.
+        _writer.Write(string.Concat(lines.Select(line => line + _writer.NewLine)));
+        _writer.Flush();
+    }
+
+    /// <summary>Consecutive blocked events with one cause, which are printed as one line.</summary>
+    private readonly record struct BlockedRun(DateTimeOffset At, NodePath Cause, int Tasks);
 }
