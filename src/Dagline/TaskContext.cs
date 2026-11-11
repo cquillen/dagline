@@ -40,11 +40,12 @@ public sealed class TaskContext
     private readonly Run _run;
     private readonly BuiltTask _task;
 
-    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider)
+    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider, CancellationToken cancellationToken)
     {
         _run = run;
         _task = task;
         TimeProvider = timeProvider;
+        CancellationToken = cancellationToken;
     }
 
     /// <summary>The path of the task this body is running as.</summary>
@@ -55,6 +56,30 @@ public sealed class TaskContext
     /// Take any delay or timestamp of the task's own from it, so that a test of the task controls time.
     /// </summary>
     public TimeProvider TimeProvider { get; }
+
+    /// <summary>
+    /// The run's cancellation token, signalled when the run is stopped. Pass it to everything the body awaits, so that the task
+    /// ends promptly once a stop has been requested.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every task of a run sees the same token. It is signalled once, when the run applies a stop, and stays signalled.
+    /// A run that is never stopped never signals it. The callbacks registered on it run on a thread of the run's own, never
+    /// while the run holds its lock, so a callback may call this context.
+    /// </para>
+    /// <para>
+    /// Once a stop has been requested, a task ends as follows. A failure recorded with <see cref="Fail"/> wins: the task fails
+    /// as a reported failure. Otherwise a body that ends with any <see cref="OperationCanceledException"/>, whichever token caused it,
+    /// is <see cref="NodeStatus.Cancelled"/>, and keeps its message, detail lines, warnings and frozen progress. Otherwise the task
+    /// gets its real status: succeeded when the body returned, and failed as an unexpected failure when it threw anything else.
+    /// Before any stop a cancellation exception is an unexpected failure, like any other exception.
+    /// </para>
+    /// <para>
+    /// A cancelled task never blocks: a task that requires it stays pending, and a task that runs after it becomes ready.
+    /// Neither starts, since nothing starts once a stop has been requested.
+    /// </para>
+    /// </remarks>
+    public CancellationToken CancellationToken { get; }
 
     /// <summary>Sets the status text of the task's progress: a line that says what the task is doing now.</summary>
     /// <param name="text">The new status text, which replaces the last one. <see langword="null"/> clears it.</param>

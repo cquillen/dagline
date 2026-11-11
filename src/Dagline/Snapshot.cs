@@ -14,6 +14,8 @@ public sealed class Snapshot
 {
     private readonly FrozenDictionary<NodePath, int> _positions;
     private IReadOnlyList<NodeSnapshot>? _failed;
+    private IReadOnlyList<NodeSnapshot>? _cancelled;
+    private IReadOnlyList<NodeSnapshot>? _neverReached;
     private IReadOnlyList<BlockedTasks>? _blocked;
     private IReadOnlyList<NodeSnapshot>? _withWarnings;
 
@@ -21,6 +23,7 @@ public sealed class Snapshot
         DateTimeOffset started,
         DateTimeOffset? ended,
         RunOutcome? outcome,
+        StopState? stop,
         ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
         IReadOnlyDictionary<NodeStatus, int> counts,
@@ -30,6 +33,7 @@ public sealed class Snapshot
         Started = started;
         Ended = ended;
         Outcome = outcome;
+        Stop = stop;
         Nodes = nodes;
         _positions = positions;
         Counts = counts;
@@ -45,6 +49,12 @@ public sealed class Snapshot
 
     /// <summary>How the run ended, or <see langword="null"/> while it has not.</summary>
     public RunOutcome? Outcome { get; }
+
+    /// <summary>
+    /// The stop the run has applied, or <see langword="null"/> while none has been. It is set in the snapshot handed with
+    /// <see cref="StopRequested"/> and in every later one, and carries the time of that event.
+    /// </summary>
+    public StopState? Stop { get; }
 
     /// <summary>Every node of the graph, in declaration order.</summary>
     public IReadOnlyList<NodeSnapshot> Nodes { get; }
@@ -81,6 +91,33 @@ public sealed class Snapshot
         => LazyInitializer.EnsureInitialized(
             ref _failed,
             () => [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Failed })]);
+
+    /// <summary>Every cancelled task, in declaration order. Empty when no task has been cancelled.</summary>
+    /// <remarks>
+    /// A task is cancelled when its body ended with a cancellation exception after a stop. Each entry is the same object
+    /// as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> Cancelled
+        => LazyInitializer.EnsureInitialized(
+            ref _cancelled,
+            () => [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Cancelled })]);
+
+    /// <summary>
+    /// Every task the run never reached: those still pending or ready once the run has ended, in declaration order.
+    /// Empty while the run has not ended.
+    /// </summary>
+    /// <remarks>
+    /// Only a stopped run leaves tasks unreached: after a stop nothing starts, so a task that was ready stays ready,
+    /// and one whose dependencies were not met stays pending. These tasks are not settled, and a group with one beneath it
+    /// does not settle. A later run has them left to do. Each entry is the same object as the one in <see cref="Nodes"/>.
+    /// The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> NeverReached
+        => LazyInitializer.EnsureInitialized(
+            ref _neverReached,
+            () => Ended is null
+                ? []
+                : [.. Nodes.Where(node => node is { IsGroup: false, Status: NodeStatus.Pending or NodeStatus.Ready })]);
 
     /// <summary>
     /// What each failure blocked: one entry for each failed task that blocked at least one task, in declaration order

@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Dagline;
 
@@ -18,6 +19,10 @@ namespace Dagline;
 /// It goes straight onto the task as the snapshot shows it, and only a warning that is kept is published.
 /// </para>
 /// </remarks>
+[SuppressMessage(
+    "Reliability",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The stopping source has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token.")]
 internal sealed class Run : ISnapshotSource
 {
     private readonly Lock _gate = new();
@@ -31,14 +36,20 @@ internal sealed class Run : ISnapshotSource
     private readonly HashSet<int> _reportedFailures = [];
     private readonly Slots _slots;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly StopSignal? _signal;
+
+    private readonly CancellationTokenSource _stopping = new();
     private readonly DateTimeOffset _startedAt;
+    private CancellationTokenRegistration _hearsTheSignal;
+    private StopState? _stop;
     private ChunkedList<NodeSnapshot> _nodes;
     private DateTimeOffset? _endedAt;
     private RunOutcome? _outcome;
     private volatile Snapshot? _current;
 
-    public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery)
+    public Run(Graph graph, LimitSizes sizes, TimeProvider timeProvider, ReporterDelivery delivery, StopSignal? signal)
     {
+        _signal = signal;
         _graph = graph;
         _slots = new Slots(graph.LimitNames, sizes);
         _timeProvider = timeProvider;
@@ -56,12 +67,101 @@ internal sealed class Run : ISnapshotSource
     /// <summary>Completes with the run outcome once no task is running and none is ready.</summary>
     public Task<RunOutcome> Ended => _ended.Task;
 
+    /// <summary>
+    /// Starts the run: the tasks with no dependency become ready and those that fit start. A signal already requested
+    /// is applied once the tasks have become ready and before any starts, so the run starts nothing.
+    /// </summary>
     public void Start()
     {
         lock (_gate)
         {
             Publish(new RunStarted(_startedAt, this));
-            Advance(_graph.Tasks, _startedAt);
+            MakeReady(_graph.Tasks, _startedAt);
+            AnnounceSettledGroups(_startedAt);
+            if (_signal?.IsRequested == true)
+            {
+                ApplyStop(_startedAt);
+            }
+
+            StartWhatFitsOrEnd(_startedAt);
+        }
+
+        SignalTheTasksIfStopped();
+        HearTheSignal();
+    }
+
+    /// <summary>
+    /// Listens for the first request on the run's signal until the run ends. It is registered once the run has started,
+    /// outside the lock, since a signal already requested calls back at once: a request made in between is heard then,
+    /// and one already applied changes nothing.
+    /// </summary>
+    private void HearTheSignal()
+    {
+        if (_signal is null)
+        {
+            return;
+        }
+
+        var registration = _signal.FirstRequest.UnsafeRegister(static run => ((Run)run!).Stop(), this);
+        lock (_gate)
+        {
+            if (_outcome is null)
+            {
+                _hearsTheSignal = registration;
+                return;
+            }
+        }
+
+        // The run ended before it could listen, so nothing else will let the signal forget it.
+        registration.Unregister();
+    }
+
+    /// <summary>
+    /// Applies the first request on the run's signal: from this step on nothing starts, and the run ends once nothing is running.
+    /// A request heard after a stop has been applied, or after the run has ended, changes nothing.
+    /// </summary>
+    private void Stop()
+    {
+        lock (_gate)
+        {
+            if (_stop is not null || _outcome is not null)
+            {
+                return;
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            ApplyStop(now);
+            StartWhatFitsOrEnd(now);
+        }
+
+        SignalTheTasksIfStopped();
+    }
+
+    private void ApplyStop(DateTimeOffset now)
+    {
+        // The wait for running tasks has no bound yet.
+        _stop = new StopState(now, Timeout.InfiniteTimeSpan, Deadline: null);
+        Publish(new StopRequested(now, _stop.GracePeriod));
+    }
+
+    /// <summary>
+    /// Signals the token every task sees, once a stop has been applied. It is called outside the lock,
+    /// because cancelling runs the callbacks that task bodies registered on the token.
+    /// </summary>
+    private void SignalTheTasksIfStopped()
+    {
+        if (Volatile.Read(ref _stop) is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _stopping.Cancel();
+        }
+        catch (AggregateException)
+        {
+            // A callback a task body registered on its token threw. That is the body's affair, and the stop goes on.
         }
     }
 
@@ -142,7 +242,9 @@ internal sealed class Run : ISnapshotSource
         lock (_gate)
         {
             var now = _timeProvider.GetUtcNow();
-            var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure : ended;
+            var outcome = _reportedFailures.Remove(task.Position) ? TaskOutcome.ReportedFailure
+                : _stop is not null ? ended.OnceStopped()
+                : ended;
             _slots.GiveBack(task);
             Move(task, outcome, now);
             var blocked = outcome.Status is NodeStatus.Failed ? Block(task, now) : [];
@@ -225,9 +327,21 @@ internal sealed class Run : ISnapshotSource
     {
         MakeReady(candidates, now);
         AnnounceSettledGroups(now);
-        StartWhatFits(now);
+        StartWhatFitsOrEnd(now);
+    }
 
-        if (_counts[NodeStatus.Running] == 0 && _counts[NodeStatus.Ready] == 0)
+    /// <summary>
+    /// Starts the ready tasks that fit, unless a stop has been applied, and ends the run when nothing is left to do:
+    /// no task is running and, unless a stop has been applied, none is ready.
+    /// </summary>
+    private void StartWhatFitsOrEnd(DateTimeOffset now)
+    {
+        if (_stop is null)
+        {
+            StartWhatFits(now);
+        }
+
+        if (_counts[NodeStatus.Running] == 0 && (_stop is not null || _counts[NodeStatus.Ready] == 0))
         {
             End(now);
         }
@@ -287,7 +401,7 @@ internal sealed class Run : ISnapshotSource
         started.ForEach(position => _ready.Remove(position));
     }
 
-    // No token: a run cannot be stopped, and a task body takes none.
+    // No token: a run is stopped through its signal, and a task body takes none.
     private async Task RunBodyAsync(BuiltTask task)
     {
         var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
@@ -296,15 +410,15 @@ internal sealed class Run : ISnapshotSource
 
     /// <summary>
     /// Invokes the body of a task and says how it ended. This is the one place a task body is invoked,
-    /// and so the one catch-all for it: whatever escapes the body, a cancellation exception included, is an unexpected failure
-    /// of that task and of nothing else. The exception is read here, outside the lock and before the task settles,
+    /// and so the one catch-all for it: whatever escapes the body is a failure of that task and of nothing else,
+    /// or its cancellation when it is a cancellation exception and the run has been stopped by the time the task settles. The exception is read here, outside the lock and before the task settles,
     /// because its members are consumer code too.
     /// </summary>
     private async Task<TaskOutcome> InvokeBodyAsync(BuiltTask task)
     {
         try
         {
-            await task.Body(new TaskContext(this, task, _timeProvider)).ConfigureAwait(false);
+            await task.Body(new TaskContext(this, task, _timeProvider, _stopping.Token)).ConfigureAwait(false);
             return TaskOutcome.Succeeded;
         }
         catch (Exception escaped)
@@ -315,7 +429,12 @@ internal sealed class Run : ISnapshotSource
 
     private void End(DateTimeOffset now)
     {
-        var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete : RunOutcome.Incomplete;
+        var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete
+            : _stop is not null ? RunOutcome.Stopped
+            : RunOutcome.Incomplete;
+
+        // Unregister does not wait for a callback that is running, which may be waiting for this lock.
+        _hearsTheSignal.Unregister();
         _endedAt = now;
         _outcome = outcome;
         Publish(new RunEnded(now, outcome));
@@ -396,5 +515,5 @@ internal sealed class Run : ISnapshotSource
     }
 
     private Snapshot TakeSnapshot()
-        => new(_startedAt, _endedAt, _outcome, _nodes, _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
+        => new(_startedAt, _endedAt, _outcome, _stop, _nodes, _graph.Positions, _counts.ToDictionary(), _slots.Cap, _slots.Limits);
 }

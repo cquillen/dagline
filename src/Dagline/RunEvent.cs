@@ -13,14 +13,15 @@ namespace Dagline;
 /// all with the same <see cref="At"/>:
 /// </para>
 /// <list type="number">
-/// <item><description>The change itself: the run starting, or a task settling.</description></item>
+/// <item><description>The change itself: the run starting, a task settling, or a stop being applied.</description></item>
 /// <item><description>Every task that this blocks, pending to blocked, in declaration order.</description></item>
 /// <item><description>Every task whose dependencies are now all met, pending to ready, in declaration order.</description></item>
 /// <item><description>Every group that is now settled, the deepest first, then in declaration order.</description></item>
 /// <item><description>Every task that now starts, ready to running, in declaration order.</description></item>
 /// </list>
 /// <para>
-/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own.
+/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own,
+/// and so is a <see cref="StopRequested"/>. Once a stop has been applied, no step starts a task.
 /// </para>
 /// </remarks>
 public abstract record RunEvent
@@ -115,6 +116,28 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
     /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
 }
+
+/// <summary>
+/// A stop was applied to the run: from this event on the run starts nothing, <em>after</em> tasks included,
+/// and every running task sees <see cref="TaskContext.CancellationToken"/> signalled.
+/// </summary>
+/// <remarks>
+/// <para>
+/// It is published once at most, when the run applies the first request on the <see cref="StopSignal"/> it was given.
+/// It is a step of its own. A signal already requested when the run starts gives <see cref="RunStarted"/>, the tasks that become ready,
+/// this event, then <see cref="RunEnded"/>, with no task started.
+/// </para>
+/// <para>
+/// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Stop"/> set.
+/// While the run waits for its running tasks to end, a task that succeeds still makes its dependents ready, where they stay,
+/// and a task that fails still blocks its dependents.
+/// </para>
+/// </remarks>
+/// <param name="At">When the stop was applied.</param>
+/// <param name="GracePeriod">
+/// How long the run waits for its running tasks to end. <see cref="Timeout.InfiniteTimeSpan"/> means the run waits until they have.
+/// </param>
+public sealed record StopRequested(DateTimeOffset At, TimeSpan GracePeriod) : RunEvent(At);
 
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <param name="At">When the run ended.</param>

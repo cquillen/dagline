@@ -16,11 +16,17 @@ internal sealed record TaskOutcome
     /// </summary>
     public static TaskOutcome ReportedFailure { get; } = new(NodeStatus.Failed) { Failure = FailureKind.Reported };
 
+    /// <summary>The outcome of a task whose body ended with a cancellation exception after the run was stopped.</summary>
+    public static TaskOutcome Cancelled { get; } = new(NodeStatus.Cancelled);
+
     public NodeStatus Status { get; }
 
     public FailureKind? Failure { get; private init; }
 
     public NodePath? BlockedBy { get; private init; }
+
+    /// <summary><see langword="true"/> when the body ended with an <see cref="OperationCanceledException"/>, whichever token caused it.</summary>
+    private bool EndedByCancellation { get; init; }
 
     private string? EscapedMessage { get; init; }
 
@@ -41,10 +47,17 @@ internal sealed record TaskOutcome
         return new(NodeStatus.Failed)
         {
             Failure = FailureKind.Unexpected,
+            EndedByCancellation = exception is OperationCanceledException,
             EscapedMessage = Read(exception, static escaped => escaped.Message) ?? type,
             EscapedDetail = Read(exception, static escaped => escaped.StackTrace) is { } trace ? [type, trace] : [type],
         };
     }
+
+    /// <summary>
+    /// How a body that ended this way ends once the run has been stopped: a cancellation is cancelled,
+    /// and anything else keeps its real outcome.
+    /// </summary>
+    public TaskOutcome OnceStopped() => EndedByCancellation ? Cancelled : this;
 
     /// <summary>
     /// The outcome of a task that will not run because the task at <paramref name="cause"/> failed and this one requires it,
