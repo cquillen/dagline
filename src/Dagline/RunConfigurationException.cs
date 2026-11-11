@@ -1,0 +1,25 @@
+namespace Dagline;
+
+/// <summary>
+/// Thrown by <see cref="Runner.RunAsync"/> when the options cannot work for the graph, before a run exists.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The problems are a cap below 1, a size below 1 in <see cref="RunOptions.Limits"/>, and a limit the graph names
+/// that the options give no size. <see cref="Exception.Message"/> lists every problem found, one to a line,
+/// so that all of them can be fixed in one pass.
+/// </para>
+/// <para>
+/// The exception is thrown at the call. No task has started, no event has been published and no reporter has been called.
+/// </para>
+/// </remarks>
+public sealed class RunConfigurationException : DaglineException
+{
+    internal RunConfigurationException(IReadOnlyList<string> problems)
+        : base(Describe(problems))
+    {
+    }
+
+    private static string Describe(IReadOnlyList<string> problems)
+        => string.Join(Environment.NewLine, problems.Select(problem => $"- {problem}").Prepend("The options cannot be used to run the graph:"));
+}

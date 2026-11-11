@@ -33,6 +33,36 @@ public sealed class TaskNode : Node
     }
 
     /// <summary>
+    /// Names a limit that this task holds: a ceiling on how many of the tasks that hold it
+    /// may be running at once.
+    /// </summary>
+    /// <param name="name">
+    /// The name of the limit: any text that is not empty. Names are compared ordinally, so <c>database</c> and <c>Database</c>
+    /// are two limits.
+    /// </param>
+    /// <returns>This handle.</returns>
+    /// <remarks>
+    /// <para>
+    /// The graph only names a limit. Its size is an option of the run, in <see cref="RunOptions.Limits"/>,
+    /// so it can differ between runs while the graph stays the same work. A run whose options give no size for a limit
+    /// the graph names is refused with <see cref="RunConfigurationException"/> before any task starts.
+    /// </para>
+    /// <para>
+    /// A task holds one slot of each of its limits from the moment it starts until it settles. Its limits are those named on it
+    /// and those named on every group that holds it.
+    /// It takes them all at once or takes none, so it never holds one slot while it waits for another.
+    /// </para>
+    /// <para>Call again to name another limit. Naming the same limit twice is the same as naming it once.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty.</exception>
+    public TaskNode Limit(string name)
+    {
+        NameLimit(name);
+        return this;
+    }
+
+    /// <summary>
     /// Declares that this task <em>requires</em> <paramref name="upstream"/>: it becomes ready only once the upstream has succeeded.
     /// </summary>
     /// <param name="upstream">

@@ -22,7 +22,9 @@ public sealed class Snapshot
         RunOutcome? outcome,
         ImmutableArray<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
-        IReadOnlyDictionary<NodeStatus, int> counts)
+        IReadOnlyDictionary<NodeStatus, int> counts,
+        LimitUse cap,
+        IReadOnlyDictionary<string, LimitUse> limits)
     {
         Started = started;
         Ended = ended;
@@ -31,6 +33,8 @@ public sealed class Snapshot
         Nodes = nodes;
         _positions = positions;
         Counts = counts;
+        Cap = cap;
+        Limits = limits;
     }
 
     /// <summary>When the run started, read from the run's <see cref="RunOptions.TimeProvider"/>.</summary>
@@ -50,6 +54,23 @@ public sealed class Snapshot
     /// and the entries are in lifecycle order: pending, ready, running, succeeded, failed, blocked, cancelled.
     /// </summary>
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; }
+
+    /// <summary>
+    /// The cap of the run: its size, from <see cref="RunOptions.Cap"/>, and how many of its slots are in use,
+    /// which is the number of tasks running at the instant of this snapshot.
+    /// </summary>
+    public LimitUse Cap { get; }
+
+    /// <summary>
+    /// Every limit the graph names, on a task or on a group, by name: its size, from <see cref="RunOptions.Limits"/>,
+    /// and how many of its slots are in use at the instant of this snapshot.
+    /// </summary>
+    /// <remarks>
+    /// The entries are in the order the graph first names each limit, in declaration order, and the names are compared ordinally.
+    /// A limit that no task holds, such as one named only on an empty group, is listed with no slot in use.
+    /// A size the options give for a limit the graph does not name is not listed.
+    /// </remarks>
+    public IReadOnlyDictionary<string, LimitUse> Limits { get; }
 
     /// <summary>The node with the given path.</summary>
     /// <param name="path">The path of a node of the graph.</param>
