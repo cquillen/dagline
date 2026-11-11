@@ -43,6 +43,23 @@ public sealed class TaskNode : Node
     }
 
     /// <summary>
+    /// Declares that this task <em>requires</em> every node in <paramref name="upstreams"/>, as if
+    /// <see cref="Requires(Node)"/> had been called with each in turn.
+    /// </summary>
+    /// <param name="upstreams">
+    /// The nodes this task requires. The collection is read once, during the call. An empty one declares nothing,
+    /// so a dependency on a list that came back empty is valid.
+    /// </param>
+    /// <returns>This handle.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="upstreams"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A handle in <paramref name="upstreams"/> is <see langword="null"/>. Nothing is declared.</exception>
+    public TaskNode Requires(IEnumerable<Node> upstreams)
+    {
+        Declare(upstreams, DependencyKind.Requires);
+        return this;
+    }
+
+    /// <summary>
     /// Declares that this task runs <em>after</em> <paramref name="upstream"/>: it becomes ready once the upstream has settled,
     /// whatever the outcome.
     /// </summary>
@@ -52,6 +69,23 @@ public sealed class TaskNode : Node
     public TaskNode After(Node upstream)
     {
         Declare(upstream, DependencyKind.After);
+        return this;
+    }
+
+    /// <summary>
+    /// Declares that this task runs <em>after</em> every node in <paramref name="upstreams"/>, as if
+    /// <see cref="After(Node)"/> had been called with each in turn.
+    /// </summary>
+    /// <param name="upstreams">
+    /// The nodes this task runs after. The collection is read once, during the call. An empty one declares nothing,
+    /// so a dependency on a list that came back empty is valid.
+    /// </param>
+    /// <returns>This handle.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="upstreams"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A handle in <paramref name="upstreams"/> is <see langword="null"/>. Nothing is declared.</exception>
+    public TaskNode After(IEnumerable<Node> upstreams)
+    {
+        Declare(upstreams, DependencyKind.After);
         return this;
     }
 }

@@ -51,4 +51,20 @@ public abstract class Node
 
         Builder.Declare(this, upstream, kind);
     }
+
+    private protected void Declare(IEnumerable<Node> upstreams, DependencyKind kind)
+    {
+        ArgumentNullException.ThrowIfNull(upstreams);
+
+        Node[] handles = [.. upstreams];
+        if (handles.Contains(null))
+        {
+            throw new ArgumentException("A handle in the collection is null.", nameof(upstreams));
+        }
+
+        foreach (var upstream in handles)
+        {
+            Builder.Declare(this, upstream, kind);
+        }
+    }
 }

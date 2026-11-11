@@ -4,6 +4,8 @@ namespace Dagline.Tests;
 
 public class DependencyTests
 {
+    private static readonly string[] _shards = ["shard-1", "shard-2", "shard-3"];
+
     [Test]
     public async Task An_after_task_runs_once_its_upstream_has_settled()
     {
@@ -34,6 +36,145 @@ public class DependencyTests
             "run ended: complete",
         ]);
         result.Snapshot[report.Path].Dependencies.ShouldBe([new Dependency(loadTask.Path, DependencyKind.After)]);
+    }
+
+    [Test]
+    public async Task A_gate_is_a_dependency_on_a_collection_of_group_handles()
+    {
+        var builder = new GraphBuilder();
+        List<GroupNode> shards = [];
+        foreach (var segment in _shards)
+        {
+            var shard = builder.Group(segment);
+            shard.Task("load", _ => Task.CompletedTask);
+            shards.Add(shard);
+        }
+
+        var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(shards);
+        var report = builder.Task("report", _ => Task.CompletedTask).After(shards);
+        var archive = builder.Group("archive").Requires(shards.Take(2)).After(shards.Skip(2));
+        archive.Task("store", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        var lines = reporter.Lines.ToList();
+        var lastLoad = _shards.Max(shard => lines.IndexOf($"{shard}/load: running -> succeeded"));
+        lines.Skip(lastLoad + 1).Take(3).ShouldBe(
+        [
+            "publish: pending -> ready",
+            "report: pending -> ready",
+            "archive/store: pending -> ready",
+        ]);
+        result.Snapshot[publish.Path].Dependencies.ShouldBe(
+        [
+            new Dependency(NodePath.Parse("shard-1"), DependencyKind.Requires),
+            new Dependency(NodePath.Parse("shard-2"), DependencyKind.Requires),
+            new Dependency(NodePath.Parse("shard-3"), DependencyKind.Requires),
+        ]);
+        result.Snapshot[report.Path].Dependencies.ShouldBe(
+        [
+            new Dependency(NodePath.Parse("shard-1"), DependencyKind.After),
+            new Dependency(NodePath.Parse("shard-2"), DependencyKind.After),
+            new Dependency(NodePath.Parse("shard-3"), DependencyKind.After),
+        ]);
+        result.Snapshot[archive.Path].Dependencies.ShouldBe(
+        [
+            new Dependency(NodePath.Parse("shard-1"), DependencyKind.Requires),
+            new Dependency(NodePath.Parse("shard-2"), DependencyKind.Requires),
+            new Dependency(NodePath.Parse("shard-3"), DependencyKind.After),
+        ]);
+    }
+
+    [Test]
+    public async Task A_dependency_on_an_empty_collection_of_handles_is_no_dependency()
+    {
+        GroupNode[] noShards = [];
+        var builder = new GraphBuilder();
+        var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(noShards).After(noShards);
+        var archive = builder.Group("archive").Requires(noShards).After(noShards);
+        archive.Task("store", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        reporter.Lines.Take(3).ShouldBe(
+        [
+            "run started",
+            "publish: pending -> ready",
+            "archive/store: pending -> ready",
+        ]);
+        result.Snapshot[publish.Path].Dependencies.ShouldBeEmpty();
+        result.Snapshot[archive.Path].Dependencies.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task A_dependency_on_an_empty_group_is_met_at_once()
+    {
+        var builder = new GraphBuilder();
+        var empty = builder.Group("shard-1");
+        var holdsOnlyAnEmptyGroup = builder.Group("shard-2");
+        holdsOnlyAnEmptyGroup.Group("tenant-a");
+        var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(empty).Requires(holdsOnlyAnEmptyGroup);
+        builder.Task("report", _ => Task.CompletedTask).After(empty);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        reporter.Lines.Take(5).ShouldBe(
+        [
+            "run started",
+            "publish: pending -> ready",
+            "report: pending -> ready",
+            "publish: ready -> running",
+            "report: ready -> running",
+        ]);
+        result.Snapshot[publish.Path].Dependencies.ShouldBe(
+        [
+            new Dependency(empty.Path, DependencyKind.Requires),
+            new Dependency(holdsOnlyAnEmptyGroup.Path, DependencyKind.Requires),
+        ]);
+    }
+
+    [Test]
+    public async Task Both_kinds_on_one_upstream_are_one_requires_and_exact_duplicates_collapse()
+    {
+        var builder = new GraphBuilder();
+        var prepare = builder.Task("prepare", _ => Task.CompletedTask);
+        var load = builder.Task("load", _ => Task.CompletedTask);
+        var publish = builder.Task("publish", _ => Task.CompletedTask)
+            .After(prepare)
+            .After(load)
+            .Requires(prepare)
+            .After(load)
+            .Requires([prepare, prepare]);
+        var shard = builder.Group("shard-1").After(prepare).After([prepare, load]);
+        var member = shard.Task("load", _ => Task.CompletedTask).Requires(prepare).Requires(load);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        result.Snapshot[publish.Path].Dependencies.ShouldBe(
+        [
+            new Dependency(prepare.Path, DependencyKind.Requires),
+            new Dependency(load.Path, DependencyKind.After),
+        ]);
+        result.Snapshot[shard.Path].Dependencies.ShouldBe(
+        [
+            new Dependency(prepare.Path, DependencyKind.After),
+            new Dependency(load.Path, DependencyKind.After),
+        ]);
+        result.Snapshot[member.Path].Dependencies.ShouldBe(
+        [
+            new Dependency(prepare.Path, DependencyKind.Requires),
+            new Dependency(load.Path, DependencyKind.Requires),
+        ]);
+        reporter.Lines.Count(line => line.StartsWith("publish:", StringComparison.Ordinal)).ShouldBe(3);
+        reporter.Lines.Count(line => line.StartsWith("shard-1/load:", StringComparison.Ordinal)).ShouldBe(3);
     }
 
     [Test]

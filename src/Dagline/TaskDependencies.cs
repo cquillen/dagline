@@ -34,9 +34,16 @@ internal sealed class TaskDependencies
             .ToLookup(wait => wait.Upstream, wait => wait.Dependent);
     }
 
-    /// <summary>The dependencies declared on one node, in the order declared.</summary>
+    /// <summary>
+    /// The dependencies declared on one node, one for each upstream, in the order each upstream was first named.
+    /// </summary>
     public IReadOnlyList<Dependency> DeclaredOn(Node node)
-        => [.. _declaredOn[node].Select(dependency => new Dependency(dependency.Upstream.Path, dependency.Kind))];
+        =>
+        [
+            .. _declaredOn[node]
+                .GroupBy(dependency => dependency.Upstream, dependency => dependency.Kind)
+                .Select(kinds => new Dependency(kinds.Key.Path, kinds.Strongest())),
+        ];
 
     /// <summary>Every task a task waits for, in declaration order.</summary>
     public ImmutableArray<Upstream> UpstreamsOf(TaskNode task) => _upstreams[task];
@@ -50,8 +57,9 @@ internal sealed class TaskDependencies
             .. task.Ancestors()
                 .Prepend<Node>(task)
                 .SelectMany(node => _declaredOn[node])
-                .SelectMany(dependency => TasksCoveredBy(dependency.Upstream).Select(position => new Upstream(position, dependency.Kind)))
-                .Distinct()
+                .SelectMany(dependency => TasksCoveredBy(dependency.Upstream).Select(position => (Position: position, dependency.Kind)))
+                .GroupBy(covered => covered.Position, covered => covered.Kind)
+                .Select(kinds => new Upstream(kinds.Key, kinds.Strongest()))
                 .OrderBy(upstream => upstream.Position),
         ];
 

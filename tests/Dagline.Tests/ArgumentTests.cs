@@ -48,7 +48,54 @@ public class ArgumentTests
 
         Should.Throw<ArgumentNullException>(() => builder.Task(null!, _ => Task.CompletedTask)).ParamName.ShouldBe("segment");
         Should.Throw<ArgumentNullException>(() => builder.Task("publish", null!)).ParamName.ShouldBe("body");
-        Should.Throw<ArgumentNullException>(() => task.Requires(null!)).ParamName.ShouldBe("upstream");
+        Should.Throw<ArgumentNullException>(() => task.Requires((Node)null!)).ParamName.ShouldBe("upstream");
+    }
+
+    [Test]
+    public void Adding_a_node_to_a_group_rejects_null()
+    {
+        var group = new GraphBuilder().Group("shard-1");
+
+        Should.Throw<ArgumentNullException>(() => new GraphBuilder().Group(null!)).ParamName.ShouldBe("segment");
+        Should.Throw<ArgumentNullException>(() => group.Group(null!)).ParamName.ShouldBe("segment");
+        Should.Throw<ArgumentNullException>(() => group.Task(null!, _ => Task.CompletedTask)).ParamName.ShouldBe("segment");
+        Should.Throw<ArgumentNullException>(() => group.Task("load", null!)).ParamName.ShouldBe("body");
+    }
+
+    [Test]
+    public void A_title_and_a_dependency_reject_null_on_a_task_and_on_a_group()
+    {
+        var builder = new GraphBuilder();
+        var task = builder.Task("prepare", _ => Task.CompletedTask);
+        var group = builder.Group("shard-1");
+
+        Should.Throw<ArgumentNullException>(() => task.Title(null!)).ParamName.ShouldBe("title");
+        Should.Throw<ArgumentNullException>(() => task.After((Node)null!)).ParamName.ShouldBe("upstream");
+        Should.Throw<ArgumentNullException>(() => task.Requires((IEnumerable<Node>)null!)).ParamName.ShouldBe("upstreams");
+        Should.Throw<ArgumentNullException>(() => task.After((IEnumerable<Node>)null!)).ParamName.ShouldBe("upstreams");
+        Should.Throw<ArgumentNullException>(() => group.Title(null!)).ParamName.ShouldBe("title");
+        Should.Throw<ArgumentNullException>(() => group.Requires((Node)null!)).ParamName.ShouldBe("upstream");
+        Should.Throw<ArgumentNullException>(() => group.After((Node)null!)).ParamName.ShouldBe("upstream");
+        Should.Throw<ArgumentNullException>(() => group.Requires((IEnumerable<Node>)null!)).ParamName.ShouldBe("upstreams");
+        Should.Throw<ArgumentNullException>(() => group.After((IEnumerable<Node>)null!)).ParamName.ShouldBe("upstreams");
+    }
+
+    [Test]
+    public async Task A_collection_with_a_null_handle_is_rejected_and_declares_nothing()
+    {
+        var builder = new GraphBuilder();
+        var prepare = builder.Task("prepare", _ => Task.CompletedTask);
+        var publish = builder.Task("publish", _ => Task.CompletedTask);
+        var group = builder.Group("shard-1");
+
+        Should.Throw<ArgumentException>(() => publish.Requires([prepare, null!])).ParamName.ShouldBe("upstreams");
+        Should.Throw<ArgumentException>(() => publish.After([prepare, null!])).ParamName.ShouldBe("upstreams");
+        Should.Throw<ArgumentException>(() => group.Requires([prepare, null!])).ParamName.ShouldBe("upstreams");
+        Should.Throw<ArgumentException>(() => group.After([prepare, null!])).ParamName.ShouldBe("upstreams");
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+        result.Snapshot[publish.Path].Dependencies.ShouldBeEmpty();
+        result.Snapshot[group.Path].Dependencies.ShouldBeEmpty();
     }
 
     [Test]
