@@ -151,6 +151,17 @@ Declaring a dependency twice is the same as declaring it once.
 
 A task can end up with both kinds on one upstream, for example *after* from a group that holds it and *requires* of its own. It is then treated as *requires*. Declaring on a group and again on one of its members is never an error.
 
+### When an upstream fails
+
+The two kinds differ in what a failure upstream does:
+
+- A task that *requires* a failed task is **blocked**: it will not run in this run. That happens at once, and it cascades: a task that requires a blocked task is blocked too.
+- A task that runs *after* a failed or blocked task still runs, once that upstream has settled.
+
+A task that requires a group is blocked as soon as one task beneath the group fails or is blocked, without waiting for the rest of the group. A task with both kinds on one upstream is treated as *requires*, so it is blocked.
+
+Every blocked task records the path of the failed task that started the cascade. [Running and stopping](running-and-stopping.md#when-a-task-fails) covers what a failure leaves in the snapshot.
+
 ## Declaration order
 
 Declaration order is a depth-first walk of the tree: each group comes before its children, and the children of each group are in the order they were added to that group. What was added elsewhere in between does not matter:

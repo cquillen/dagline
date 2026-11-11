@@ -89,6 +89,39 @@ Console.WriteLine($"{result.Snapshot.Counts[NodeStatus.Succeeded]} tasks succeed
 
 `ReporterErrors` has one entry for each reporter that threw during the run and was dropped, naming the reporter, the event it was handling and the exception. It is empty when no reporter failed. A reporter's error is never thrown at your app and never changes the outcome: see [Reporters](reporters.md#when-a-reporter-fails).
 
+## When a task fails
+
+A failure costs only the work that needs it. An exception that escapes a task body fails that task and nothing else: it is never thrown from `RunAsync`, and the run carries on.
+
+- The task ends **failed**, as an *unexpected failure*. Its message is the exception's message, and its detail lines are the exception's type and stack trace. A cancellation exception is treated the same way, since a run cannot be stopped.
+- Every task that *requires* the failed task becomes **blocked** at once, even while its other upstreams are still running. So does every task that requires a blocked task, to the end of the chain. A task that requires a group is blocked as soon as one task beneath the group fails or is blocked: it does not wait for the group to settle.
+- A task that runs *after* the failed task, or after a blocked one, still runs.
+- Every other task keeps running.
+- The run outcome is **incomplete**.
+
+A blocked task does not run in this run. It has a settle time and no start time, and its <xref:Dagline.NodeSnapshot.BlockedBy> is the path of the one failed task that started the cascade, however long the chain between them. A task that two failures would block names the first.
+
+The final snapshot says what went wrong and what it cost:
+
+```csharp
+foreach (var failed in result.Snapshot.Failed)
+{
+    Console.WriteLine($"{failed.Path} failed ({failed.Failure}): {failed.Message}");
+    foreach (var line in failed.Detail)
+    {
+        Console.WriteLine($"    {line}");
+    }
+}
+
+foreach (var blocked in result.Snapshot.Blocked)
+{
+    var roots = string.Join(", ", blocked.Roots.Select(root => root.Path));
+    Console.WriteLine($"{blocked.Cause} blocked {blocked.Tasks.Count} tasks: {roots}");
+}
+```
+
+<xref:Dagline.Snapshot.Failed> lists the failed tasks in declaration order. <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: every task it blocked, and the *roots*, which are the highest nodes whose every task it blocked. When a failure blocks every task beneath a group, the group is the root, so a failure that blocked a thousand tasks beneath one group is named by that one group.
+
 ## Exit codes
 
 Dagline never sets the exit code of your process. <xref:Dagline.RunOutcomeExtensions.ToExitCode*> gives a default mapping that you are free not to use:

@@ -91,28 +91,31 @@ internal sealed class Run : ISnapshotSource
     private HashSet<int> PendingTasksThatRequire(GraphTask failed)
     {
         HashSet<int> found = [];
-        HashSet<int> unmet = [];
+        HashSet<int> cannotSucceed = [];
         Queue<GraphNode> unvisited = new();
-        MarkUnmet(failed);
+        Reach(failed);
         while (unvisited.TryDequeue(out var node))
         {
             foreach (var dependent in _graph.Requiring(node).Where(IsPending))
             {
                 if (found.Add(dependent.Position))
                 {
-                    MarkUnmet(dependent);
+                    Reach(dependent);
                 }
             }
         }
 
         return found;
 
-        // A group is looked at once, however many of the tasks beneath it the failure reaches.
-        void MarkUnmet(GraphTask task)
+        // A group is visited once, however many of the tasks beneath it the failure reaches.
+        void Reach(GraphTask task)
         {
-            foreach (var cannotSucceed in _graph.WithItsGroups(task).Where(node => unmet.Add(node.Position)))
+            foreach (var taskOrGroup in _graph.WithItsGroups(task))
             {
-                unvisited.Enqueue(cannotSucceed);
+                if (cannotSucceed.Add(taskOrGroup.Position))
+                {
+                    unvisited.Enqueue(taskOrGroup);
+                }
             }
         }
     }
@@ -120,7 +123,7 @@ internal sealed class Run : ISnapshotSource
     private bool IsPending(GraphTask task) => _nodes[task.Position].Status is NodeStatus.Pending;
 
     /// <summary>
-    /// The tasks, in declaration order, that wait for a task that has just settled or for a group that settled with it.
+    /// The tasks, in declaration order, that wait for one of the tasks that have just settled or for a group that settled with them.
     /// </summary>
     private IEnumerable<GraphTask> WaitingFor(IEnumerable<GraphTask> settled)
         => settled

@@ -85,13 +85,13 @@ public sealed record NodeSnapshot
 
     /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
-    /// or <see langword="null"/> while it has not started.
+    /// or <see langword="null"/> while it has not started. A blocked task never starts, so it has no start time.
     /// </summary>
     public DateTimeOffset? Started { get; internal init; }
 
     /// <summary>
     /// When the task settled, read from the run's <see cref="RunOptions.TimeProvider"/>,
-    /// or <see langword="null"/> while it has not settled.
+    /// or <see langword="null"/> while it has not settled. A blocked task settles at the time the task that blocked it failed.
     /// </summary>
     public DateTimeOffset? Settled { get; internal init; }
 }
