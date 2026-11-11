@@ -47,7 +47,7 @@ var checker = new EntityChecker(store);
 var builder = new GraphBuilder();
 foreach (var tenant in tenants)
 {
-    var group = builder.Group(tenant.Name);
+    var group = builder.Group(tenant.Key).Title(tenant.Name);
     var load = group.Task("load", context => store.LoadAsync(tenant, context));
     group.Task("check", context => checker.CheckAsync(tenant, context)).Requires(load);
 }

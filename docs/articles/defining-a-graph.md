@@ -30,11 +30,11 @@ var builder = new GraphBuilder();
 
 foreach (var shard in shards)
 {
-    var shardGroup = builder.Group(shard.Name);
+    var shardGroup = builder.Group(shard.Key);
 
     foreach (var tenant in shard.Tenants)
     {
-        var tenantGroup = shardGroup.Group(tenant.Name);
+        var tenantGroup = shardGroup.Group(tenant.Key);
         var load = tenantGroup.Task("load", context => LoadAsync(tenant, context));
         tenantGroup.Task("verify", context => VerifyAsync(tenant, context)).Requires(load);
     }
@@ -53,7 +53,9 @@ To add more children to a group later, keep its handle. Calling `Group` again wi
 
 Every node has a path: the segment of each group that holds it, from the root down, then its own segment, joined by `/`. The task added as `load` in the group `tenant-a` in the group `shard-3` has the path `shard-3/tenant-a/load`.
 
-The path is the identity of the node. The same path means the same work in every run, so choose every segment yourself from something stable, such as a name or a key, and not from a position in a list.
+The path is the identity of the node. The same path means the same work in every run, so choose every segment yourself from something stable and unique among its siblings, such as a key your data already has, and not from a position in a list. The examples here use `shard.Key` and `tenant.Key` for such a key.
+
+A display name is rarely a good segment: it can hold a space or another character a segment may not, two of them can be the same, and it can change. Keep it for the [title](#titles).
 
 A segment is one or more of the characters `A-Z`, `a-z`, `0-9`, `.`, `_` and `-`. Two children of one parent may not share a segment, nor have segments that differ only by case. A segment that breaks these rules is a [build error](#build-errors).
 
@@ -66,6 +68,16 @@ A segment is an identity, so it is short and stable. When people need a readable
 ```csharp
 var shardGroup = builder.Group("shard-3").Title("Shard 3 (west)");
 shardGroup.Task("load", LoadAsync).Title("Load entities");
+```
+
+In a loop, take the segment from the key and the title from the name:
+
+```csharp
+foreach (var shard in shards)
+{
+    var shardGroup = builder.Group(shard.Key).Title(shard.Name);
+    shardGroup.Task("load", context => LoadAsync(shard, context));
+}
 ```
 
 A title may hold any text and need not be unique. It is never part of the path, so changing a title does not change which work a path means. A snapshot carries it as <xref:Dagline.NodeSnapshot.Title>, which is null for a node with no title.
@@ -97,7 +109,7 @@ The upstream of a dependency may be a group. It then stands for every task benea
 var loads = builder.Group("loads");
 foreach (var shard in shards)
 {
-    loads.Group(shard.Name).Task("load", context => LoadAsync(shard, context));
+    loads.Group(shard.Key).Task("load", context => LoadAsync(shard, context));
 }
 
 builder.Task("publish", PublishAsync).Requires(loads);
@@ -134,7 +146,7 @@ List<GroupNode> shardGroups = [];
 
 foreach (var shard in shards.Where(shard => shard.IsEnabled))
 {
-    var shardGroup = builder.Group(shard.Name);
+    var shardGroup = builder.Group(shard.Key);
     shardGroup.Task("load", context => LoadAsync(shard, context));
     shardGroups.Add(shardGroup);
 }
@@ -169,7 +181,7 @@ A limit is a named ceiling on how many of the tasks that hold it may be running 
 ```csharp
 foreach (var shard in shards)
 {
-    builder.Task($"load-{shard.Name}", context => LoadAsync(shard, context)).Limit("database");
+    builder.Task($"load-{shard.Key}", context => LoadAsync(shard, context)).Limit("database");
 }
 ```
 
