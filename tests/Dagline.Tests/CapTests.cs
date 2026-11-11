@@ -67,6 +67,37 @@ public class CapTests
     }
 
     [Test]
+    public async Task A_task_that_has_just_become_ready_starts_before_a_held_task_later_in_declaration_order()
+    {
+        var builder = new GraphBuilder();
+        var prepare = builder.Task("prepare", _ => Task.CompletedTask);
+        builder.Task("publish", _ => Task.CompletedTask).Requires(prepare);
+        builder.Task("export", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, Cap = 1, Reporters = [reporter] });
+
+        // Declaration order decides, not how long a task has been ready: there is no fairness.
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        reporter.Lines.ShouldBe(
+        [
+            "run started",
+            "prepare: pending -> ready",
+            "export: pending -> ready",
+            "prepare: ready -> running",
+            "prepare: running -> succeeded",
+            "publish: pending -> ready",
+            "publish: ready -> running",
+            "publish: running -> succeeded",
+            "export: ready -> running",
+            "export: running -> succeeded",
+            "run ended: complete",
+        ]);
+    }
+
+    [Test]
     public async Task With_a_cap_of_one_the_ready_tasks_run_one_at_a_time_in_declaration_order()
     {
         var builder = new GraphBuilder();
