@@ -2,15 +2,15 @@
 
 When a run is asked to stop, nothing new starts from that moment and every running task has its cancellation signalled. That includes *after* tasks, even though *after* reads like `finally` and a reader would expect cleanup to run on the way out.
 
-The reason is that an operator who asks for a stop wants the process back in seconds, and an *after* task is a full task that may take minutes or wait on an external system. Most of them could not run anyway: tasks a stopped run never reached are not settled, so an *after* dependency on a group with unreached members is never met. Running only those whose upstreams happened to have settled would make cleanup depend on timing. Cleanup that must happen before the process exits belongs in the task's own code. Everything else happens on resume.
+The reason is that an operator who asks for a stop wants the process back in seconds, and an *after* task is a full task that may take minutes or wait on an external system. Most of them could not run anyway: tasks a stopped run never reached are not settled, so an *after* dependency on a group with unreached members is never met. Running only those whose upstreams happened to have settled would make cleanup depend on timing. Cleanup that must happen before the process exits belongs in the task's own code. Everything else happens in a later run that continues the journal.
 
 After a stop the run waits a grace period, 30 seconds by default, for its running tasks to end. A second stop ends the wait at once. Dagline cannot kill a task, so a task still running when the wait ends is recorded as cancelled, with a line on its outcome saying it did not end within the grace period, and anything it does or reports afterwards is ignored.
 
 ## Considered options
 
 - **Running *after* tasks during a stop.** Rejected for the reasons above.
-- **Leaving a task that outlasts the wait recorded as running**, as a killed process would. Rejected because it breaks a guarantee every reporter and resume can otherwise rely on: once a run has ended, no task is running.
-- **A marker of its own for such a task.** Rejected because Dagline treats it exactly as it treats any cancelled task: it never blocks a dependent and it runs again on resume.
+- **Leaving a task that outlasts the wait recorded as running**, as a killed process would. Rejected because it breaks a guarantee every reporter and every later run can otherwise rely on: once a run has ended, no task is running.
+- **A marker of its own for such a task.** Rejected because Dagline treats it exactly as it treats any cancelled task: it never blocks a dependent and it runs again when the journal is continued.
 
 ## Consequences
 

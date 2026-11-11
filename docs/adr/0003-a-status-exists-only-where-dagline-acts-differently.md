@@ -1,6 +1,6 @@
 # A status exists only where Dagline acts differently
 
-A task has one of seven statuses: pending, ready, running, succeeded, failed, blocked or cancelled. A distinction earns a status only when Dagline itself acts on it: in deciding whether a dependency is met, what may start, how a group or a run rolls up, or what runs again on resume. Everything else about a task is data attached to it.
+A task has one of seven statuses: pending, ready, running, succeeded, failed, blocked or cancelled. A distinction earns a status only when Dagline itself acts on it: in deciding whether a dependency is met, what may start, how a group or a run rolls up, or what runs again when a journal is continued. Everything else about a task is data attached to it.
 
 The reason is that the status set is public API. Consumers and reporters switch on it, so every extra status is one more case in each of them, and removing one later breaks them all.
 
@@ -8,7 +8,7 @@ Three candidates are data and not statuses:
 
 - **Waiting on an external system** is *running*. Nothing that reads a status treats a waiting task differently from a running one.
 - **Succeeded in an earlier run** is *succeeded*, with the fact that it happened earlier attached. A *requires* dependency, a group and the run outcome all have to treat it as a success anyway.
-- **A reported failure and an unexpected failure** are both *failed*. Both block dependents and both run again on resume. The outcome records which kind it was.
+- **A reported failure and an unexpected failure** are both *failed*. Both block dependents and both run again when the journal is continued. The outcome records which kind it was.
 
 Two distinctions did earn a status:
 
@@ -22,7 +22,7 @@ Two rules follow from the same principle and are easy to get backwards:
 
 ## Considered options
 
-- **A status for everything the operator might want to see** (waiting, skipped, crashed). Rejected because a reporter can show all three from the attached data, while each one as a status would add a case to dependencies, roll-up, resume and every consumer.
+- **A status for everything the operator might want to see** (waiting, skipped, crashed). Rejected because a reporter can show all three from the attached data, while each one as a status would add a case to dependencies, roll-up, continuing a journal and every consumer.
 - **Blocking a dependent only once the group it requires has settled.** Rejected because it hides the reach of a failure, possibly for hours, and makes cleanup tasks wait on work that can never happen.
 - **Marking every unreached task as cancelled when a run is stopped.** Rejected because it buries the few tasks that were actually interrupted among all those the run never got to.
 
