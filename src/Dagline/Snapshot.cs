@@ -174,7 +174,7 @@ public sealed class Snapshot
     /// How many warnings the tasks of the run have added so far, whatever the status of each task: those kept in
     /// <see cref="NodeSnapshot.Warnings"/> and those only counted in <see cref="NodeSnapshot.WarningsOmitted"/>.
     /// </summary>
-    public int WarningCount => WithWarnings.Sum(task => task.Warnings.Count + task.WarningsOmitted);
+    public int WarningCount => WithWarnings.Sum(task => task.WarningsAdded);
 
     /// <summary>Every task that has added at least one warning, in declaration order. Empty when no task has.</summary>
     /// <remarks>

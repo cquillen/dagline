@@ -148,6 +148,9 @@ public sealed record NodeSnapshot
     /// </summary>
     public int WarningsOmitted { get; internal init; }
 
+    /// <summary>How many warnings the task added: those kept and those only counted.</summary>
+    internal int WarningsAdded => Warnings.Count + WarningsOmitted;
+
     /// <summary>
     /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
     /// <see langword="null"/> when the task has set none or has cleared it, and for a group.

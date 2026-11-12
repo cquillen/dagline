@@ -43,6 +43,23 @@ namespace Dagline;
 /// The progress is one line: each line break in the task's status text is printed as a space.
 /// </para>
 /// <para>
+/// A run on a journal prints a second line after <c>run started</c>, such as <c>journal 20261111T041200Z-a3f9c2 run 2: all shards</c>,
+/// ending after the run number when the journal has no description, and the summary begins with the same text after
+/// <c>journal:</c>. The <c>run started</c> line goes on with the earlier successes, the set-asides and the journal paths not in
+/// the graph, each only when it is not zero, as in <c>run started: 3 tasks, 1 earlier success, 1 set aside, 2 journal paths not
+/// in graph (1 not succeeded)</c>. Wherever counts are listed, earlier successes follow the succeeded in brackets, as in
+/// <c>3 succeeded (1 earlier)</c>. The summary's warnings count covers every task in the graph, but only the warnings added in this
+/// run are listed: those of earlier successes are one line after them, such as
+/// <c>from earlier runs, not listed again: 1 on 1 task</c>. After the warnings the summary gains, each only when it applies,
+/// <c>left for a later run: 2 tasks</c> on a run with a journal and tasks that have not succeeded, <c>set aside: 1</c> with each
+/// path beneath it, and <c>journal paths not in graph: 2 (1 not succeeded)</c>. A run with no journal prints none of these.
+/// </para>
+/// <para>
+/// When the run's journal can no longer be written, Dagline's stop prints
+/// <c>stop requested by Dagline, journal write failed: waiting up to 30.0s for 2 running tasks</c>, and the end of the run prints
+/// <c>run ended: journal write failed after 5.0s: </c> followed by the message of the cause, then the summary.
+/// </para>
+/// <para>
 /// Every line about an event begins with the time of the event in UTC, as <c>2026-11-11T04:12:03Z</c>. Numbers are written
 /// in the invariant culture with no grouping. A duration is <c>3.1s</c> under a minute, <c>1m15s</c> under an hour and
 /// <c>2h14m</c> from there, rounded down. A list of counts names each status that has at least one task, in lifecycle order,
