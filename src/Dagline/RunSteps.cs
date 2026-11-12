@@ -10,7 +10,8 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// It owns the task instances, the ready set, the slots, the counts by status, the stop and the end rule. It holds no lock,
-/// no disposable object and no thread, and never reads a clock: each input carries the time, which every event of its steps shares.
+/// no disposable object and no thread, and never reads a clock: each input that can cause an event carries the time,
+/// which every event of its steps shares.
 /// It is not thread-safe: the run gives it one input at a time, under its lock.
 /// </para>
 /// <para>
@@ -111,19 +112,34 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// A running task reports something about itself through its <see cref="TaskContext"/>. The report is one step, with the event it
-    /// produced, or with none when it changed only the snapshot. A report on a task that is not running gives no step.
+    /// A running task reports something about itself that is never an event, such as progress, through its <see cref="TaskContext"/>.
+    /// The input carries no time, since nothing it causes has one. The report is one step with no event,
+    /// and a report on a task that is not running gives no step.
     /// </summary>
-    /// <remarks>
-    /// A task may report progress millions of times, so a report that produced no event allocates nothing here beyond
-    /// the task as it now is: it is recorded for the next snapshot, and the step it answers with is shared by all such reports.
-    /// </remarks>
+    /// <param name="task">The task that reports.</param>
+    /// <param name="report">The operation on the task's instance.</param>
+    public IReadOnlyList<Step> Report(BuiltTask task, Func<TaskInstance, TaskChange?> report)
+        => Reported(task, report(InstanceOf(task)));
+
+    /// <summary>
+    /// A running task reports something about itself that may be an event, such as a warning, through its <see cref="TaskContext"/>.
+    /// The report is one step, with the event it produced, or with none when it changed only the snapshot.
+    /// A report on a task that is not running gives no step.
+    /// </summary>
     /// <param name="task">The task that reports.</param>
     /// <param name="report">The operation on the task's instance, given the time.</param>
     /// <param name="now">When the task reports.</param>
     public IReadOnlyList<Step> Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report, DateTimeOffset now)
+        => Reported(task, report(InstanceOf(task), now));
+
+    /// <summary>
+    /// The step a report caused, given what it changed, if anything. A task may report progress millions of times,
+    /// so a report that produced no event allocates nothing here beyond the task as it now is:
+    /// it is recorded for the next snapshot, and the step it answers with is shared by all such reports.
+    /// </summary>
+    private IReadOnlyList<Step> Reported(BuiltTask task, TaskChange? reported)
     {
-        if (report(InstanceOf(task), now) is not { } change)
+        if (reported is not { } change)
         {
             return [];
         }

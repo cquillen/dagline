@@ -11,7 +11,7 @@ namespace Dagline;
 /// <para>
 /// The run owns the lock, the current snapshot, the grace-period timer, the registration on the stop signal, the source of the token
 /// every task sees, the task bodies, delivery to reporters and the end result. It reads the clock once each time it takes the lock,
-/// and passes that time to the steps. No consumer code runs under the lock: task bodies are started on the thread pool,
+/// and passes that time to the steps, except for a report that is never an event, which needs no time. No consumer code runs under the lock: task bodies are started on the thread pool,
 /// and reporters are called by <see cref="ReporterDelivery"/>.
 /// </para>
 /// <para>
@@ -97,25 +97,25 @@ internal sealed class Run : ISnapshotSource
     private void GracePeriodOver() => Give(static (steps, now) => steps.GracePeriodOver(now));
 
     /// <summary>Sets the status text of a task's progress.</summary>
-    public void SetStatusText(BuiltTask task, string? text) => Report(task, (instance, _) => instance.SetStatusText(text));
+    public void SetStatusText(BuiltTask task, string? text) => Report(task, instance => instance.SetStatusText(text));
 
     /// <summary>Sets the count of a task's progress, and the total it counts towards.</summary>
-    public void SetCount(BuiltTask task, long current, long? total) => Report(task, (instance, _) => instance.SetCount(current, total));
+    public void SetCount(BuiltTask task, long current, long? total) => Report(task, instance => instance.SetCount(current, total));
 
     /// <summary>Adds a warning to a task. A warning that is kept is published.</summary>
     public void Warn(BuiltTask task, string warning) => Report(task, (instance, now) => instance.Warn(warning, now));
 
     /// <summary>Sets the message of a task's outcome.</summary>
-    public void SetMessage(BuiltTask task, string message) => Report(task, (instance, _) => instance.SetMessage(message));
+    public void SetMessage(BuiltTask task, string message) => Report(task, instance => instance.SetMessage(message));
 
     /// <summary>Adds detail lines to a task's outcome.</summary>
-    public void AddDetail(BuiltTask task, IEnumerable<string> texts) => Report(task, (instance, _) => instance.AddDetail(texts));
+    public void AddDetail(BuiltTask task, IEnumerable<string> texts) => Report(task, instance => instance.AddDetail(texts));
 
     /// <summary>
     /// Records a reported failure: from then on the task settles failed as a reported failure, however its body ends.
     /// </summary>
     public void Fail(BuiltTask task, string message, IEnumerable<string> detail)
-        => Report(task, (instance, _) => instance.Fail(message, detail));
+        => Report(task, instance => instance.Fail(message, detail));
 
     /// <summary>
     /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
@@ -129,11 +129,25 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     public void CloseWaitingScope(BuiltTask task) => Report(task, (instance, now) => instance.CloseWaitingScope(now));
 
-    /// <summary>Gives the steps what a running task reports about itself, and carries out the step it caused, if any.</summary>
+    /// <summary>
+    /// Gives the steps a report that is never an event, such as progress, and carries out the step it caused, if any.
+    /// It reads no clock, so a task that reports often leaves the run's clock alone.
+    /// </summary>
+    private void Report(BuiltTask task, Func<TaskInstance, TaskChange?> report)
+    {
+        // Not through Give: a task may report progress millions of times, and Give would cost each report a second closure.
+        lock (_gate)
+        {
+            CarryOut(_steps.Report(task, report));
+        }
+    }
+
+    /// <summary>
+    /// Gives the steps a report that may be an event, with the time read once for it, and carries out the step it caused, if any.
+    /// </summary>
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
     private bool Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
     {
-        // Not through Give: a task may report progress millions of times, and Give would cost each report a second closure.
         lock (_gate)
         {
             var steps = _steps.Report(task, report, _timeProvider.GetUtcNow());
