@@ -18,6 +18,8 @@
   href: terminal-ui.md
 - name: Reporters
   href: reporters.md
+- name: Testing your tasks
+  href: testing-your-tasks.md
 - name: Contributing
   href: contributing.md
 - name: Glossary

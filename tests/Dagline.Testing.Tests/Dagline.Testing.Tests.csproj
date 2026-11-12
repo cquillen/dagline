@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dagline.Testing\Dagline.Testing.csproj" />
+    <ProjectReference Include="..\Dagline.TestSupport\Dagline.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>

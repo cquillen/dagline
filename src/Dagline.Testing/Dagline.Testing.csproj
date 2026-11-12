@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Test helpers for Dagline task authors: a harness that runs one task body and returns its outcome, and a clock on which every finite delay ends at once. For test projects only; it references no test framework.</Description>
+    <PackageTags>$(PackageTags);testing</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dagline\Dagline.csproj" />
+  </ItemGroup>
+
+</Project>
