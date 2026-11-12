@@ -98,6 +98,16 @@ A running task that has told Dagline it is idle until an external system changes
 
 A task waits through a helper that checks the external system at once and then at a fixed interval, and that ends at once on a stop. More in [Waiting on external systems](waiting-on-external-systems.md). Definitions: [Waiting](../../GLOSSARY.md#runs) and [Working](../../GLOSSARY.md#runs).
 
+## Journals and checkpoints
+
+A run can keep a **journal**: the durable record of a first run and every run that continues it, kept as one file in a directory your app names. Your app always chooses, for each run, between a new journal, a given journal to continue, and none. Dagline never picks one for you. A new journal can be given a **description**, free text fixed when it is created, so that an operator can tell the journals in one directory apart.
+
+To **continue** a journal is to start a run on it again. Every task that succeeded in an earlier run, and whose success still stands, is an **earlier success**: it is succeeded from the start, keeps its whole outcome, and does not run again. Every other task runs. A task that runs *after* something keeps its earlier success only when what it is after was kept too, so that a summary or cleanup task is never stale. A journal is **finished** when its latest run was complete.
+
+A running task can save a **checkpoint**: a small piece of text that is on disk before the save returns, and that a run continuing the journal hands back when the task runs again. A task that triggers external work saves what it needs to re-attach to it, so that a crash or a stop never makes it trigger that work twice. Dagline keeps the checkpoint until the task succeeds.
+
+More in [Journals](journals.md), [Running part of the work](running-part-of-the-work.md) and [Waiting on external systems](waiting-on-external-systems.md). Definitions: [Journals](../../GLOSSARY.md#journals) and [Checkpoint](../../GLOSSARY.md#runs).
+
 ## Reporters, events and the snapshot
 
 Dagline never writes to the console. What is shown of a run is the work of **reporters**: you give a run the reporters you want, and each one presents it in its own way. A reporter watches a run and cannot change it.
@@ -117,5 +127,7 @@ Dagline ships a reporter that prints a run as timestamped lines of text, and you
 - [Writing tasks](writing-tasks.md): what a task body can report and how it fails.
 - [Waiting on external systems](waiting-on-external-systems.md): the wait helper, transient errors and what a stop does to external work.
 - [Running and stopping](running-and-stopping.md): starting a run, its options, its result and stopping it.
+- [Journals](journals.md): choosing a journal, what a continuing run keeps, and what is promised after a crash.
+- [Running part of the work](running-part-of-the-work.md): subsets, gates and one journal per subset.
 - [Reporters](reporters.md): the plain-text reporter, and writing a reporter of your own.
 - [Glossary](../../GLOSSARY.md): the exact definition of every term.
