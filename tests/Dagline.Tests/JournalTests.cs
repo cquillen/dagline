@@ -93,21 +93,33 @@ public class JournalTests
     {
         using var temporary = new TemporaryDirectory();
         using var copies = new TemporaryDirectory();
+        var copying = true;
         var builder = new GraphBuilder();
         var load = builder.Task("load", _ => Task.CompletedTask);
-        builder.Task("publish", _ =>
+        var publish = builder.Task("publish", _ =>
         {
-            copies.CopyIn(Directory.GetFiles(temporary.Path, "*.journal").Single());
+            // Only in the first run: the run that continues the copy holds it.
+            if (copying)
+            {
+                copies.CopyIn(Directory.GetFiles(temporary.Path, "*.journal").Single());
+            }
+
             return Task.CompletedTask;
         }).Requires(load);
         var graph = builder.Build();
         var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        copying = false;
+        var reporter = new RecordingReporter();
 
         var fromTheCopy = await Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id) });
+            new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
 
+        fromTheCopy.Outcome.ShouldBe(RunOutcome.Complete);
         fromTheCopy.Snapshot[load.Path].IsEarlierSuccess.ShouldBeTrue();
+        fromTheCopy.Snapshot[publish.Path].IsEarlierSuccess.ShouldBeFalse();
         fromTheCopy.Snapshot.EarlierSuccesses.ShouldBe(1);
+        reporter.Events.OfType<TaskStatusChanged>().Where(changed => changed.To == NodeStatus.Succeeded)
+            .Select(changed => changed.Node.Path).ShouldBe([publish.Path]);
     }
 }

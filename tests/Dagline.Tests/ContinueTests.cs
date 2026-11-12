@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Dagline.TestSupport;
 using Microsoft.Extensions.Time.Testing;
 
@@ -87,21 +88,21 @@ public class ContinueTests
         using var temporary = new TemporaryDirectory();
         var stopNow = false;
         var stop = new StopSignal();
-        var ran = new List<string>();
+        var ran = new ConcurrentQueue<string>();
         var builder = new GraphBuilder();
         var check = builder.Task("check", context =>
         {
-            ran.Add("check");
+            ran.Enqueue("check");
             return stopNow ? Task.CompletedTask : throw context.Fail("bad data");
         });
         builder.Task("load", _ =>
         {
-            ran.Add("load");
+            ran.Enqueue("load");
             return Task.CompletedTask;
         }).Requires(check);
         var wait = builder.Task("wait", async context =>
         {
-            ran.Add("wait");
+            ran.Enqueue("wait");
             if (!stopNow)
             {
                 stop.Request();
@@ -110,7 +111,7 @@ public class ContinueTests
         });
         builder.Task("later", _ =>
         {
-            ran.Add("later");
+            ran.Enqueue("later");
             return Task.CompletedTask;
         }).After(wait).After(check);
         var graph = builder.Build();
