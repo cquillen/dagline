@@ -206,7 +206,7 @@ internal static class Summary
             return count;
         }
 
-        var text = glyphs.Text(given);
+        var text = glyphs.Text(DisplayText.OneLine(given));
         return count is null ? text : $"{text}, {count}";
     }
 

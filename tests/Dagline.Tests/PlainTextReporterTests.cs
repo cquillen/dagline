@@ -608,7 +608,8 @@ public class PlainTextReporterTests
 
         var result = await Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
 
-        result.Snapshot[check.Path].StatusText.ShouldBe("checking entities of shard-3 in two passes");
+        // The snapshot keeps status text as the task gave it, so it is the reporter that keeps its line one line.
+        result.Snapshot[check.Path].StatusText.ShouldBe(statusText);
         Lines(writer).SkipWhile(line => line != "failed: 1").ShouldBe(
         [
             "failed: 1",

@@ -31,14 +31,14 @@ public class ProgressTests
     }
 
     [Test]
-    public async Task Status_text_is_kept_as_one_line_and_empty_status_text_clears_it()
+    public async Task Status_text_is_kept_as_given_and_empty_status_text_clears_it()
     {
         var multiLine = new PausedBody();
         var empty = new PausedBody();
         var builder = new GraphBuilder();
         var loadTask = builder.Task("load", async context =>
         {
-            context.Status("checking entities\r\nof shard-3\nin two passes");
+            context.Status("checking entities\r\nof shard-3");
             await multiLine.Body(context);
             context.Status("");
             await empty.Body(context);
@@ -48,14 +48,14 @@ public class ProgressTests
         var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         await multiLine.Started;
-        var oneLine = source.Current[loadTask.Path];
+        var given = source.Current[loadTask.Path];
         multiLine.Release();
         await empty.Started;
         var cleared = source.Current[loadTask.Path];
         empty.Release();
         await run;
 
-        oneLine.StatusText.ShouldBe("checking entities of shard-3 in two passes");
+        given.StatusText.ShouldBe("checking entities\r\nof shard-3");
         cleared.StatusText.ShouldBeNull();
     }
 

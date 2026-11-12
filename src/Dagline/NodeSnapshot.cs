@@ -166,11 +166,12 @@ public sealed record NodeSnapshot
 
     /// <summary>
     /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
-    /// <see langword="null"/> when the task has set none or has cleared it, and for a group.
+    /// <see langword="null"/> when the task has set none or has cleared it, with <see langword="null"/> or empty text, and for a group.
     /// </summary>
     /// <remarks>
     /// Progress is never an event: read it from a snapshot. It is frozen when the task settles, so a settled task
-    /// still shows how far it got.
+    /// still shows how far it got. Unlike <see cref="Message"/> and <see cref="WaitingText"/>, it is kept as the task gave it,
+    /// line breaks included: a reporter that shows it on one line replaces each line break itself.
     /// </remarks>
     public string? StatusText { get; internal init; }
 

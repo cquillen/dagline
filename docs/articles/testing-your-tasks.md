@@ -161,7 +161,7 @@ public async Task A_failed_export_blocks_the_report()
 }
 ```
 
-`Failed`, `Blocked`, `Cancelled`, `NeverReached`, `WithWarnings` and `EarlierSuccesses` on <xref:Dagline.Snapshot> answer most questions about a whole run without a reporter.
+`Failed`, `Blocked`, `Cancelled`, `NeverReached`, `WithWarnings` and `Counts` on <xref:Dagline.Snapshot> answer most questions about a whole run without a reporter.
 
 ### Do not hand an instant clock to a reporter
 

@@ -225,11 +225,13 @@ internal static class PlainTextLines
             _ => null,
         };
 
-        if (task.StatusText is not { } text)
+        if (task.StatusText is not { } given)
         {
             return count;
         }
 
+        // Status text is kept as the task gave it, line breaks included, and here it has one line to fit on.
+        var text = LineBreaks.OneLine(given);
         return count is null ? text : $"{text}, {count}";
     }
 

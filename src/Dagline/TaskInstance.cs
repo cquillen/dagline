@@ -141,7 +141,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return [EndWaiting(now), SettleWith(outcome, now)];
     }
 
-    /// <summary>Sets the status text of the task's progress, as one line, or clears it when the text is empty. Progress is never an event.</summary>
+    /// <summary>
+    /// Sets the status text of the task's progress, as given, or clears it when the text is empty. Progress is never an event.
+    /// </summary>
     public TaskChange? SetStatusText(string? text)
     {
         if (!IsRunning)
@@ -149,7 +151,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
             return null;
         }
 
-        _statusText = LineBreaks.OneLineOrNone(text);
+        // Kept as given, line breaks included: measured on #98, making it one line here cost a task that reports progress in a
+        // tight loop about a tenth more time, so each reporter flattens it as it prints.
+        _statusText = string.IsNullOrEmpty(text) ? null : text;
 
         return Changed();
     }

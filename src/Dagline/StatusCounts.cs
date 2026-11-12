@@ -21,6 +21,9 @@ internal sealed class StatusCounts
     // Laid out as TaskCounts reads a tally: the count of each status, then the earlier successes, then the waiting.
     private readonly int[] _tally = new int[TallyLength];
 
+    // The last copy handed out, until the counts next change.
+    private TaskCounts? _shown;
+
     /// <param name="pending">How many tasks are pending at the start.</param>
     /// <param name="earlierSuccesses">How many tasks are earlier successes, and so succeeded from the start.</param>
     public StatusCounts(int pending, int earlierSuccesses)
@@ -67,14 +70,22 @@ internal sealed class StatusCounts
     {
         _tally[(int)from]--;
         _tally[(int)to]++;
+        _shown = null;
     }
 
     /// <summary>Counts a task's wait as it begins or ends: one more waiting task, or one fewer.</summary>
-    public void Count(WaitingChanged waited) => _tally[TaskCounts.WaitingAt] += waited.Waiting ? 1 : -1;
+    public void Count(WaitingChanged waited)
+    {
+        _tally[TaskCounts.WaitingAt] += waited.Waiting ? 1 : -1;
+        _shown = null;
+    }
 
     /// <summary>Writes the counts as they are now to the start of <paramref name="tally"/>, as <see cref="TaskCounts"/> reads them.</summary>
     public void CopyTo(Span<int> tally) => _tally.CopyTo(tally);
 
-    /// <summary>The counts as they are now, copied.</summary>
-    public TaskCounts ToTaskCounts() => TaskCounts.From(_tally);
+    /// <summary>
+    /// The counts as they are now, copied. Until they next change, every call gives the same copy: a group whose counts stay the
+    /// same while the tasks beneath it are given warnings shares one between its snapshots.
+    /// </summary>
+    public TaskCounts ToTaskCounts() => _shown ??= TaskCounts.From(_tally);
 }

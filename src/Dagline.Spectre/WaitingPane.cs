@@ -49,7 +49,7 @@ internal static class WaitingPane
         var line = TaskLine.Start(StatusMark.Waiting(glyphs), node, column, glyphs);
         if (node.StatusText is { } status)
         {
-            line = line.Add(glyphs.Text(status));
+            line = line.Add(glyphs.Text(DisplayText.OneLine(status)));
         }
         else if (node.WaitingText is { } waitingText)
         {

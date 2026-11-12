@@ -86,7 +86,7 @@ static async Task CheckAsync(Tenant tenant, EntityStore store, TaskContext conte
 }
 ```
 
-- <xref:Dagline.TaskContext.Status*> replaces the status text. Pass `null` to clear it. The text is kept as you give it. Keep it to one line: the plain-text reporter prints a line break in it as a space.
+- <xref:Dagline.TaskContext.Status*> replaces the status text. Pass `null` or empty text to clear it. Other text is kept as you give it. Keep it to one line: the reporters print a line break in it as a space.
 - <xref:Dagline.TaskContext.Count*> replaces the count and its total. The total is optional: leave it out for a running tally. A call without a total clears the last one. A negative count or total throws `ArgumentOutOfRangeException`.
 - The text and the count are independent: setting one leaves the other as it was.
 
@@ -132,7 +132,7 @@ They show as <xref:Dagline.NodeSnapshot.Message> and <xref:Dagline.NodeSnapshot.
 
 A message and waiting text follow one rule, applied where the task reports them: each is kept as one line, every line break replaced by a space, and empty text means none. So `context.Message("")`, `context.Fail("")` and `context.Waiting("")` leave the task with no message or no waiting text, and a reporter only ever tests for null. The <xref:Dagline.WaitingChanged> event carries the waiting text as it is kept. A message an earlier run recorded in a [journal](journals.md) is read back as it was written.
 
-A warning is always one line too. Status text is kept as given, line breaks included.
+A warning is always one line too. Status text follows half of the rule: empty status text means none, so `context.Status("")` clears it like `context.Status(null)`, but other text is kept as given, line breaks included, and each reporter prints a line break in it as a space. A task may report status text many thousands of times a second, and making it one line each time was measured to slow that loop, so the work is left to the reporter, which does it only when it prints.
 
 ## Failures
 

@@ -46,6 +46,10 @@ internal sealed class RunSteps
     private readonly RunJournal? _journal;
     // How many warnings the tasks beneath each group hold, indexed by position among the nodes, so a task's place is unused.
     private readonly int[] _warningsBeneath;
+
+    // The positions of the groups changed since the last event. Each is recorded once, as it is when that change is closed:
+    // a task given many warnings between two events would otherwise cost a new snapshot of every group above it for each.
+    private readonly HashSet<int> _groupsChanged = [];
     private readonly Continuation _continuation;
 
     private StepUnderWay? _step;
@@ -165,7 +169,7 @@ internal sealed class RunSteps
             foreach (var group in task.Groups)
             {
                 _warningsBeneath[group]++;
-                _snapshots.Record(group, NodeSnapshotOf(_graph.GroupAt(group)));
+                _groupsChanged.Add(group);
             }
         }
 
@@ -572,8 +576,9 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Records a task as it is after a change to its instance, for the next snapshot. A change of status is counted in the run
-    /// and in every group that holds the task. The event the change produced is published in the step under way.
+    /// Records a task as it is after a change to its instance, for the next snapshot. A change of status, and the begin or end
+    /// of a wait, is counted in the run and in every group that holds the task. The event the change produced is published in the
+    /// step under way.
     /// </summary>
     private void Apply(BuiltTask task, TaskChange change)
     {
@@ -582,7 +587,7 @@ internal sealed class RunSteps
         {
             RecordStatusChange(moved);
             _counts.Move(moved.From, moved.To);
-            foreach (var group in task.Groups.Select(_graph.GroupAt))
+            foreach (var group in task.Groups)
             {
                 MoveBeneath(group, moved.From, moved.To);
             }
@@ -593,7 +598,7 @@ internal sealed class RunSteps
             foreach (var group in task.Groups)
             {
                 _groupCounts[group].Count(waited);
-                _snapshots.Record(group, NodeSnapshotOf(_graph.GroupAt(group)));
+                _groupsChanged.Add(group);
             }
         }
 
@@ -604,18 +609,18 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Counts one task's change of status in a group that holds it, and records the group as it is now for the next snapshot.
+    /// Counts one task's change of status in a group that holds it, and marks the group to be recorded for the next snapshot.
     /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
     /// </summary>
-    private void MoveBeneath(BuiltGroup group, NodeStatus from, NodeStatus to)
+    private void MoveBeneath(int group, NodeStatus from, NodeStatus to)
     {
-        _groupCounts[group.Position].Move(from, to);
-        var moved = NodeSnapshotOf(group);
-        _snapshots.Record(group.Position, moved);
+        var counts = _groupCounts[group];
+        counts.Move(from, to);
+        _groupsChanged.Add(group);
 
-        if (moved.Status.IsSettled())
+        if (counts.GroupStatus.IsSettled())
         {
-            _settledInThisStep.Add(group);
+            _settledInThisStep.Add(_graph.GroupAt(group));
         }
     }
 
@@ -760,7 +765,16 @@ internal sealed class RunSteps
     private void Publish(RunEvent runEvent) => _step!.Events.Add(new StepEvent(runEvent, ChangeSinceLastEvent()));
 
     /// <summary>What has changed in the snapshot since the last event, which from now on is part of the snapshot taken next.</summary>
-    private SnapshotChange ChangeSinceLastEvent() => _snapshots.Close(_milestones, _counts);
+    private SnapshotChange ChangeSinceLastEvent()
+    {
+        foreach (var group in _groupsChanged)
+        {
+            _snapshots.Record(group, NodeSnapshotOf(_graph.GroupAt(group)));
+        }
+
+        _groupsChanged.Clear();
+        return _snapshots.Close(_milestones, _counts);
+    }
 
     /// <summary>Begins a new step, once the step under way, if any, is decided.</summary>
     private void Begin()

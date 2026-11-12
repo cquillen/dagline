@@ -119,5 +119,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Text a task reports follows one rule, applied where the task reports it: a message and waiting text are each one line, and empty text is none. Setting an empty message clears the message, a failure reported with an empty message leaves none, and `WaitingChanged.Text` carries the one-line text, null when the scope gave empty text. A message recorded in a journal is read back as written. Status text is unchanged: it is still kept as given.
 - Both reporters take these answers from the snapshot. What they print is unchanged, except that a failure with an empty message no longer draws a blank line in the display's problems pane, and the display's stop banner names who asked for the stop from the snapshot, so it is never wrong in the moment before the stop's event is handled.
 - Docs: the new snapshot members in the Reporters article, the rule for the text a task reports in the Writing tasks article, and, in the coding standards, when a member goes onto the snapshot types.
+- `TaskCounts`, the public, immutable count of tasks per status, wherever counts appear: an indexer by status, and `Total`, `Settled` (the tasks whose status is settled), `Unsucceeded` (the total less the succeeded), `EarlierSuccesses` (among the succeeded), and `Waiting` and `Working` (among the running, which together they make up). It has no public constructor, is not a dictionary and is not enumerable. A task's own counts are those of one task: one for its status, with waiting and earlier success counted when they hold.
+- A group answers for the tasks beneath it: `NodeSnapshot.WarningCount` is the sum of their warnings, a warning beyond the 100 kept included; `NodeSnapshot.IsWaiting` is true when it has running tasks and every one of them is waiting; `NodeSnapshot.IsWorking` is true when its status is running and it is not waiting. A group's snapshot is recorded again whenever a task beneath it begins or ends waiting or is given a warning. Progress never touches a group.
+- Empty status text is none: `TaskContext.Status("")` clears the status text, like `Status(null)`. Status text that is not empty is still kept as given, line breaks included, and the reporters go on printing each line break as a space: making it one line where the task reports it was measured to slow a task that reports progress in a tight loop.
+- Both reporters take every total, settled count, count of tasks that have not succeeded, earlier-success count and waiting or working count from `TaskCounts`, and the display takes a group's waiting and warnings from the group's own snapshot. What they print is unchanged.
+- Docs: `TaskCounts` and the group roll-up in the Reporters article, and empty status text in the Writing tasks article.
+
+### Changed
+
+- `Snapshot.Counts`, `NodeSnapshot.Counts` and `GroupSettled.Counts` are now `TaskCounts`, not `IReadOnlyDictionary<NodeStatus, int>`, and the last parameter of `GroupSettled`'s constructor takes a `TaskCounts`. Read a status's count the same way, `counts[status]`; for a sum use `Total` rather than adding up `Values`.
+### Removed
+
+- `Snapshot.EarlierSuccesses`, `NodeSnapshot.EarlierSuccesses` and `GroupSettled.EarlierSuccesses`: read `Counts.EarlierSuccesses` instead.
 
 [Unreleased]: https://github.com/cquillen/dagline/commits/main

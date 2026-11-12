@@ -61,7 +61,7 @@ internal static class WorkingPane
 
         if (node.StatusText is { } status)
         {
-            line = line.Add((countCells > 0 ? DisplayText.Between : "") + glyphs.Text(status));
+            line = line.Add((countCells > 0 ? DisplayText.Between : "") + glyphs.Text(DisplayText.OneLine(status)));
         }
 
         return TaskLine.Finish(line, now - (node.Started ?? now), width, glyphs);
