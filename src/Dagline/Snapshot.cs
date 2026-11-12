@@ -42,6 +42,9 @@ public sealed class Snapshot
         Limits = limits;
         Journal = journal.Info;
         EarlierSuccesses = journal.EarlierSuccesses;
+        SetAside = journal.SetAside;
+        JournalPathsNotInGraph = journal.JournalPathsNotInGraph;
+        JournalPathsNotInGraphUnsucceeded = journal.JournalPathsNotInGraphUnsucceeded;
     }
 
     /// <summary>When the run started, read from the run's <see cref="RunOptions.TimeProvider"/>.</summary>
@@ -100,6 +103,34 @@ public sealed class Snapshot
     /// Earlier successes are counted as succeeded in <see cref="Counts"/>, from the first snapshot on. The number is fixed for the run.
     /// </remarks>
     public int EarlierSuccesses { get; }
+
+    /// <summary>
+    /// The paths of the tasks whose earlier success this run set aside, in declaration order. Empty for a run with no journal,
+    /// for a new journal, and when every success on record was kept.
+    /// </summary>
+    /// <remarks>
+    /// A task the journal records as succeeded is set aside when it is <em>after</em> a node that is not an earlier success in this
+    /// run: a task that is not one, or a group with such a task beneath it. A <em>requires</em> dependency never sets a success aside.
+    /// A task set aside starts pending and runs again. The set-asides are written to the journal before any task starts, and from
+    /// then on the task has no success on record, in this run and in later ones, until it succeeds again. The list is fixed for the run.
+    /// </remarks>
+    public IReadOnlyList<NodePath> SetAside { get; }
+
+    /// <summary>
+    /// How many paths the journal holds that this run's graph does not have as a task: a path no longer in the graph, or one that is
+    /// a group in the graph. Zero for a run with no journal and for a new journal.
+    /// </summary>
+    /// <remarks>
+    /// Such a path is left in the journal untouched and is not part of the run: it has no node, no event and no part in the run
+    /// outcome. When a later run's graph has it as a task again, what the journal holds for it applies again. The number is fixed for the run.
+    /// </remarks>
+    public int JournalPathsNotInGraph { get; }
+
+    /// <summary>
+    /// How many of the <see cref="JournalPathsNotInGraph"/> have not succeeded: the journal holds no success for the path, or the
+    /// success was set aside. This is the work a run on a smaller graph leaves behind, which a complete run does not show.
+    /// </summary>
+    public int JournalPathsNotInGraphUnsucceeded { get; }
 
     /// <summary>Every failed task, in declaration order. Empty when no task has failed.</summary>
     /// <remarks>

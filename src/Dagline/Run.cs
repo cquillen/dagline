@@ -169,6 +169,33 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
+    /// <summary>The checkpoint of a task as it is now: empty when there is none.</summary>
+    public string CheckpointOf(BuiltTask task)
+    {
+        lock (_gate)
+        {
+            return _steps.CheckpointOf(task);
+        }
+    }
+
+    /// <summary>
+    /// Saves a task's checkpoint, or clears it when <paramref name="text"/> is empty. Its entry is written and flushed to the disk
+    /// under the lock, so that the order of the file is the order of the run's decisions and a save never lands after its task's settle.
+    /// The clock is read once for the entry, and not at all for a run with no journal.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
+    public void ChangeCheckpoint(BuiltTask task, string text)
+    {
+        lock (_gate)
+        {
+            var now = _journal is null ? default : _timeProvider.GetUtcNow();
+            if (_steps.ChangeCheckpoint(task, text, now) is { } entry)
+            {
+                _journal!.Append([entry], flush: true);
+            }
+        }
+    }
+
     /// <summary>
     /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
     /// </summary>

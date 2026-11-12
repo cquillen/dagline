@@ -44,6 +44,7 @@ internal sealed class RunSteps
     private readonly RunSettings _settings;
     private readonly RunJournal? _journal;
     private readonly FrozenDictionary<int, int> _groupEarlierSuccesses;
+    private readonly Continuation _continuation;
 
     private StepUnderWay? _step;
     private RunMilestones _milestones = new(Started: default, Stop: null, Ended: null, Outcome: null);
@@ -53,7 +54,7 @@ internal sealed class RunSteps
     /// <param name="settings">The settings of the run: the sizes of its slots and its grace period.</param>
     /// <param name="journal">
     /// The journal the run is on, as it was when opened, or <see langword="null"/> for a run with no journal, whose steps record nothing.
-    /// A task the journal holds as an earlier success begins succeeded and is never made ready.
+    /// A task the journal holds as an earlier success begins succeeded and is never made ready, unless the run sets it aside.
     /// </param>
     public RunSteps(Graph graph, RunSettings settings, RunJournal? journal)
     {
@@ -63,12 +64,13 @@ internal sealed class RunSteps
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
         _instances = new TaskInstance?[graph.Nodes.Length];
+        _continuation = Continuation.Of(graph, journal?.Earlier);
         var earlierSuccesses = new int[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
         {
-            var instance = journal?.Earlier.EarlierSuccessAt(task.Path) is { } recorded
+            var instance = _continuation.EarlierSuccessOf(task) is { } recorded
                 ? TaskInstance.EarlierSuccess(task, recorded)
-                : new TaskInstance(task);
+                : new TaskInstance(task, journal?.Earlier.CheckpointAt(task.Path) ?? "");
             _instances[task.Position] = instance;
             if (instance.Status is NodeStatus.Succeeded)
             {
@@ -94,7 +96,12 @@ internal sealed class RunSteps
             graph.Nodes.Select(AtTheStart),
             graph.Positions,
             _slots,
-            new SnapshotJournal(journal?.Info, earlierInRun));
+            new SnapshotJournal(journal?.Info, earlierInRun)
+            {
+                SetAside = [.. _continuation.SetAside.Select(task => task.Path)],
+                JournalPathsNotInGraph = _continuation.PathsNotInGraph,
+                JournalPathsNotInGraphUnsucceeded = _continuation.PathsNotInGraphUnsucceeded,
+            });
     }
 
     /// <summary>
@@ -223,6 +230,32 @@ internal sealed class RunSteps
     {
         LetGo(StoppedWaitingReason.GracePeriodOver, now);
         return Decided();
+    }
+
+    /// <summary>The checkpoint of a task as it is now: empty when there is none.</summary>
+    public string CheckpointOf(BuiltTask task) => InstanceOf(task).Checkpoint;
+
+    /// <summary>
+    /// A running task saves a checkpoint, or clears it when <paramref name="text"/> is empty, through its <see cref="TaskContext"/>.
+    /// It makes no step, no event and no change to any snapshot.
+    /// </summary>
+    /// <param name="task">The task whose checkpoint changes.</param>
+    /// <param name="text">The checkpoint, or empty to clear it.</param>
+    /// <param name="now">When the checkpoint changes. A run with no journal records nothing, and need not read the clock for it.</param>
+    /// <returns>
+    /// The entry to write and flush before the call returns, or <see langword="null"/> when there is nothing to write: the run has no journal,
+    /// or the task cleared a checkpoint it did not have.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
+    public JournalEntry? ChangeCheckpoint(BuiltTask task, string text, DateTimeOffset now)
+    {
+        if (!InstanceOf(task).ChangeCheckpoint(text) || _journal is null)
+        {
+            return null;
+        }
+
+        var path = task.Path.ToString();
+        return text.Length == 0 ? new CheckpointClearedEntry(path, now) : new CheckpointSavedEntry(path, now, text);
     }
 
     /// <summary>
@@ -543,7 +576,10 @@ internal sealed class RunSteps
         };
     }
 
-    /// <summary>Records the run-started entry in the step under way, with the cap and the size of each limit the graph names.</summary>
+    /// <summary>
+    /// Records the run-started entry in the step under way, with the cap, the size of each limit the graph names and the two
+    /// journal-path counts, then the set-asides, which a run decides before it starts.
+    /// </summary>
     private void RecordRunStarted(DateTimeOffset now)
     {
         if (_journal is null)
@@ -554,7 +590,18 @@ internal sealed class RunSteps
         var limits = _graph.LimitNames
             .Zip(_settings.Sizes.Limits)
             .ToDictionary(limit => limit.First.Text, limit => limit.Second, LimitName.TextComparer);
-        Record(new RunStartedEntry(now, _journal.User, _journal.Machine, _settings.Sizes.Cap, limits));
+        Record(new RunStartedEntry(
+            now,
+            _journal.User,
+            _journal.Machine,
+            _settings.Sizes.Cap,
+            limits,
+            _continuation.PathsNotInGraph,
+            _continuation.PathsNotInGraphUnsucceeded));
+        foreach (var task in _continuation.SetAside)
+        {
+            Record(new SetAsideEntry(task.Path.ToString(), now));
+        }
     }
 
     /// <summary>Records a task's start or settle in the step under way. Becoming ready and being pending are never recorded.</summary>

@@ -6,7 +6,11 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A path's status is its latest settle. A path the journal records only as started, or not at all, has no settle.
+/// A path's status is its latest settle, or not succeeded once a later set-aside names it. A path the journal records only as
+/// started, or not at all, has no settle.
+/// </para>
+/// <para>
+/// A path's checkpoint is its latest save, and stands until a later clearing or a later settle that is a success.
 /// </para>
 /// <para>
 /// A new rule of reading, such as a set-aside or a checkpoint, is a case in <see cref="Add"/> and what it keeps per path.
@@ -16,7 +20,9 @@ namespace Dagline;
 internal sealed class JournalFold
 {
     private readonly Dictionary<string, TaskSettledEntry> _latestSettles = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _setAside = new(StringComparer.Ordinal);
     private readonly Dictionary<string, NodeStatus> _lastStatuses = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _checkpoints = new(StringComparer.Ordinal);
     private RunStartedEntry? _latestRunStarted;
     private RunEndedEntry? _latestRunEnded;
 
@@ -42,6 +48,9 @@ internal sealed class JournalFold
     /// <summary>The journal as a snapshot of the run that continues it next shows it.</summary>
     public JournalInfo NextRun => new(Id, Description, Runs + 1);
 
+    /// <summary>Every path the journal has an entry for, as the file spells it. Only a task's path is ever recorded.</summary>
+    public IReadOnlyCollection<string> Paths => _lastStatuses.Keys;
+
     /// <summary>
     /// The latest run the journal records, or <see langword="null"/> when no run was ever recorded. Its end is
     /// <see langword="null"/> when the journal records none for it.
@@ -56,8 +65,8 @@ internal sealed class JournalFold
     public RunOutcome? LatestOutcome => _latestRunEnded?.Outcome;
 
     /// <summary>
-    /// How many paths have each status as their last recorded one, with every status present: the latest settle, or running when
-    /// the path's latest entry is a start.
+    /// How many paths have each status as their last recorded one, with every status present: the latest settle, pending once a
+    /// later set-aside names it, or running when the path's latest entry is a start.
     /// </summary>
     public IReadOnlyDictionary<NodeStatus, int> LastStatusCounts()
     {
@@ -83,11 +92,22 @@ internal sealed class JournalFold
     }
 
     /// <summary>
-    /// The latest settle of the task at <paramref name="path"/> when it is a success: an earlier success for a run that continues
-    /// the journal. <see langword="null"/> when the path has no settle or its latest is not a success.
+    /// The latest settle of the task at <paramref name="path"/> when it is a success that has not been set aside since: an earlier
+    /// success for a run that continues the journal. <see langword="null"/> when the path has no such settle.
     /// </summary>
-    public TaskSettledEntry? EarlierSuccessAt(NodePath path)
-        => _latestSettles.TryGetValue(path.ToString(), out var settled) && settled.Status is NodeStatus.Succeeded ? settled : null;
+    public TaskSettledEntry? EarlierSuccessAt(NodePath path) => EarlierSuccessAt(path.ToString());
+
+    /// <inheritdoc cref="EarlierSuccessAt(NodePath)"/>
+    public TaskSettledEntry? EarlierSuccessAt(string path)
+        => !_setAside.Contains(path) && _latestSettles.TryGetValue(path, out var settled) && settled.Status is NodeStatus.Succeeded
+            ? settled
+            : null;
+
+    /// <summary>
+    /// The checkpoint of the task at <paramref name="path"/>: its latest save, unless it was cleared or the task succeeded since,
+    /// whatever else is recorded in between. Empty when there is none.
+    /// </summary>
+    public string CheckpointAt(NodePath path) => _checkpoints.GetValueOrDefault(path.ToString(), "");
 
     private void Add(JournalEntry entry)
     {
@@ -102,8 +122,24 @@ internal sealed class JournalFold
                 _lastStatuses[started.Path] = NodeStatus.Running;
                 break;
             case TaskSettledEntry settled:
-                _latestSettles[settled.Path] = settled;
                 _lastStatuses[settled.Path] = settled.Status;
+                _latestSettles[settled.Path] = settled;
+                _setAside.Remove(settled.Path);
+                if (settled.Status is NodeStatus.Succeeded)
+                {
+                    _checkpoints.Remove(settled.Path);
+                }
+
+                break;
+            case SetAsideEntry setAside:
+                _lastStatuses[setAside.Path] = NodeStatus.Pending;
+                _setAside.Add(setAside.Path);
+                break;
+            case CheckpointSavedEntry saved:
+                _checkpoints[saved.Path] = saved.Text;
+                break;
+            case CheckpointClearedEntry cleared:
+                _checkpoints.Remove(cleared.Path);
                 break;
             case RunEndedEntry ended:
                 _latestRunEnded = ended;

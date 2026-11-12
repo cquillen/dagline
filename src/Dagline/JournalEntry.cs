@@ -23,6 +23,9 @@ namespace Dagline;
 [JsonDerivedType(typeof(TaskStartedEntry), "taskStarted")]
 [JsonDerivedType(typeof(TaskSettledEntry), "taskSettled")]
 [JsonDerivedType(typeof(RunEndedEntry), "runEnded")]
+[JsonDerivedType(typeof(SetAsideEntry), "setAside")]
+[JsonDerivedType(typeof(CheckpointSavedEntry), "checkpointSaved")]
+[JsonDerivedType(typeof(CheckpointClearedEntry), "checkpointCleared")]
 internal abstract record JournalEntry;
 
 /// <summary>The first line of every journal.</summary>
@@ -38,12 +41,24 @@ internal sealed record HeaderEntry(int Version, string Id, DateTimeOffset Create
 /// <param name="Machine">The name of the machine the run's process ran on.</param>
 /// <param name="Cap">The cap of the run.</param>
 /// <param name="Limits">The size of each limit the run's graph names, by name.</param>
+/// <param name="PathsNotInGraph">How many paths the journal held that are not a task of the run's graph.</param>
+/// <param name="PathsNotInGraphUnsucceeded">How many of those had no success on record, or one that was set aside.</param>
 internal sealed record RunStartedEntry(
     DateTimeOffset Time,
     string User,
     string Machine,
     int Cap,
-    IReadOnlyDictionary<string, int> Limits) : JournalEntry;
+    IReadOnlyDictionary<string, int> Limits,
+    int PathsNotInGraph,
+    int PathsNotInGraphUnsucceeded) : JournalEntry;
+
+/// <summary>
+/// A run set aside the earlier success of a task that is <em>after</em> something which was not an earlier success in that run.
+/// From here on the path has no success on record, until a later settle gives it one.
+/// </summary>
+/// <param name="Path">The path of the task.</param>
+/// <param name="Time">When the run that set it aside started.</param>
+internal sealed record SetAsideEntry(string Path, DateTimeOffset Time) : JournalEntry;
 
 /// <summary>A task started running.</summary>
 /// <param name="Path">The path of the task.</param>
@@ -92,3 +107,14 @@ internal sealed record TaskSettledEntry(
 /// <param name="Time">When the run ended.</param>
 /// <param name="Outcome">How it ended.</param>
 internal sealed record RunEndedEntry(DateTimeOffset Time, RunOutcome Outcome) : JournalEntry;
+
+/// <summary>A running task saved a checkpoint, which replaces any it had.</summary>
+/// <param name="Path">The path of the task.</param>
+/// <param name="Time">When it saved it.</param>
+/// <param name="Text">The checkpoint, never empty: saving an empty text is clearing.</param>
+internal sealed record CheckpointSavedEntry(string Path, DateTimeOffset Time, string Text) : JournalEntry;
+
+/// <summary>A running task cleared the checkpoint it had.</summary>
+/// <param name="Path">The path of the task.</param>
+/// <param name="Time">When it cleared it.</param>
+internal sealed record CheckpointClearedEntry(string Path, DateTimeOffset Time) : JournalEntry;

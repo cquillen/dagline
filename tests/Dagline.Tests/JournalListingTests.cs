@@ -172,6 +172,27 @@ public class JournalListingTests
     }
 
     [Test]
+    public async Task A_path_set_aside_since_its_success_counts_as_pending()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        var check = builder.Task("check", context => throw context.Fail("bad data"));
+        builder.Task("summary", _ => Task.CompletedTask).After(check);
+        var graph = builder.Build();
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var stop = new StopSignal();
+        stop.Request();
+
+        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) }, stop);
+        var summary = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
+
+        summary.Ending.ShouldBe(JournalEnding.Stopped);
+        summary.Counts[NodeStatus.Failed].ShouldBe(1);
+        summary.Counts[NodeStatus.Pending].ShouldBe(1);
+        summary.Counts[NodeStatus.Succeeded].ShouldBe(0);
+    }
+
+    [Test]
     public async Task A_journal_is_finished_only_while_its_latest_run_was_complete()
     {
         using var temporary = new TemporaryDirectory();

@@ -91,4 +91,14 @@ internal sealed class SnapshotTaker(
 /// </summary>
 /// <param name="Info">The journal the run is on, or <see langword="null"/> for a run with no journal.</param>
 /// <param name="EarlierSuccesses">How many tasks of the graph are earlier successes.</param>
-internal sealed record SnapshotJournal(JournalInfo? Info, int EarlierSuccesses);
+internal sealed record SnapshotJournal(JournalInfo? Info, int EarlierSuccesses)
+{
+    /// <summary>The paths of the earlier successes the run set aside, in declaration order.</summary>
+    public IReadOnlyList<NodePath> SetAside { get; init; } = [];
+
+    /// <summary>How many journal paths the run did not find in its graph.</summary>
+    public int JournalPathsNotInGraph { get; init; }
+
+    /// <summary>How many of the journal paths not in the graph have not succeeded.</summary>
+    public int JournalPathsNotInGraphUnsucceeded { get; init; }
+}

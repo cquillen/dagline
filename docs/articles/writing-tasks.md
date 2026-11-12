@@ -33,6 +33,7 @@ A run creates one context for each task it starts. The context gives the body:
 | `Fail` | A [reported failure](#failures). |
 | `StatusOf` | [The status of a node](#reading-the-status-of-a-dependency) this task depends on. |
 | `WaitUntil`, `Waiting` | [Waiting on an external system](waiting-on-external-systems.md): checking at an interval, marked as idle. |
+| `Checkpoint`, `SaveCheckpointAsync`, `ClearCheckpointAsync` | A [checkpoint](#checkpoints): text the task keeps for a later run of itself. |
 
 A task **succeeds** when its body completes without an exception and without having called `Fail`. Otherwise it **fails**: see [Failures](#failures).
 
@@ -211,6 +212,33 @@ A group's status is derived from the tasks beneath it. For any other node, such 
 
 `StatusOf` gives the status and nothing else: no message, no detail and no data. A task starts only once its dependencies are met, so every node it can ask about has already settled. One it requires has succeeded, and one it runs after has succeeded, failed or been blocked.
 
+## Checkpoints
+
+A task can keep a **checkpoint**: one piece of text, at most 4,096 bytes as UTF-8, that Dagline hands back when the task runs again in a later run that continues the same [journal](journals.md). It is typically the id of work the task started in an external system, so that the later run re-attaches to that work instead of starting it a second time.
+
+```csharp
+builder.Task("export", async context =>
+{
+    var job = context.Checkpoint;
+    if (job == "")
+    {
+        job = await jobs.SubmitAsync("export", context.CancellationToken);
+        await context.SaveCheckpointAsync(job);
+    }
+
+    await WaitForJobAsync(job, context);
+});
+```
+
+- `Checkpoint` is empty when there is none, and reads back the latest save within a run.
+- `SaveCheckpointAsync` replaces the checkpoint and completes only once it is flushed to the disk. Saving an empty string clears it, and `ClearCheckpointAsync` does the same. Clearing when there is none writes nothing.
+- The checkpoint is kept through a failure, a cancellation and a killed process, and discarded when the task succeeds.
+- A save during the grace period after a stop succeeds. One made after the task has settled, or after the run has let go of it, throws `InvalidOperationException`.
+- A checkpoint is private to the task: it is in no event and no snapshot.
+- With `Journal.None` it lives in memory for the run, under the same rules, so a task's code is the same in a test.
+
+Do not pass the context's `CancellationToken` to a save that records work the task has just started: a stop would cancel the save, and a later run would start the work again. [Waiting on external systems](waiting-on-external-systems.md#checkpoints-re-attaching-instead-of-starting-twice) gives the whole pattern, clearing a checkpoint for a fresh start, and the one window a checkpoint cannot close.
+
 ## When the run is stopped
 
 An app can ask a run to stop: see [Stopping a run](running-and-stopping.md#stopping-a-run). The task finds out through <xref:Dagline.TaskContext.CancellationToken>, which every running task sees signalled the moment the stop is applied. Pass it to everything the body awaits, so the task ends promptly:
@@ -247,11 +275,12 @@ Such a task has the message `still running when the run stopped waiting`, in pla
 Its body may go on, but nothing it does changes the run:
 
 - `Status`, `Count`, `Warn`, `Message`, `Detail` and `Fail` do nothing and do not throw. `Waiting` returns a scope that does nothing, and disposing a scope does nothing.
-- `StatusOf`, `Path`, `TimeProvider` and `CancellationToken` keep working, and the token stays signalled.
+- `SaveCheckpointAsync` and `ClearCheckpointAsync` throw `InvalidOperationException`, since nothing they did would be kept.
+- `StatusOf`, `Checkpoint`, `Path`, `TimeProvider` and `CancellationToken` keep working, and the token stays signalled.
 - When the body ends, however it ends, no event is published and no snapshot changes. An exception from it is observed and dropped, so it never surfaces as an unobserved task exception.
 
 A body that honours its token never gets here. Pass the token to everything you await, and keep any cleanup short enough to fit in the grace period.
 
 ## After the task has settled
 
-Once a task has settled, its outcome is fixed. If a body leaves work running that still holds the context, `Status`, `Count`, `Warn`, `Message`, `Detail` and `Fail` then change nothing and publish nothing. They still check their arguments, and `Fail` still returns an exception. `StatusOf` still answers.
+Once a task has settled, its outcome is fixed. If a body leaves work running that still holds the context, `Status`, `Count`, `Warn`, `Message`, `Detail` and `Fail` then change nothing and publish nothing. They still check their arguments, and `Fail` still returns an exception. `StatusOf` and `Checkpoint` still answer. `SaveCheckpointAsync` and `ClearCheckpointAsync` throw `InvalidOperationException`, so that a task never believes a checkpoint was kept when it was not.

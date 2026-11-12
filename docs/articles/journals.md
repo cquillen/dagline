@@ -64,7 +64,7 @@ A directory that does not exist gives an empty list. Each <xref:Dagline.JournalS
 - `Id`, `Created` and `Description`: which journal it is.
 - `Runs`: how many runs it has had, and `LatestRun`: when the latest started and ended, and the user and machine that ran it. `LatestRun` is null only when the journal's first run was never recorded.
 - `Ending`: how the latest run ended (see [Endings](#endings)), and `Finished`: true only when the latest run was complete.
-- `Counts`: how many tasks the journal records in each status, by the last status recorded for each path. A task that started and never settled, as when its process was killed, counts as running.
+- `Counts`: how many tasks the journal records in each status, by the last status recorded for each path. A task whose success was [set aside](#an-after-task-runs-again-when-what-it-is-after-runs-again) since counts as pending, and one that started and never settled, as when its process was killed, counts as running. Paths that are no longer in your graph count too, since the listing has no graph.
 
 The listing reads each journal with the same code that a continuing run uses, so what it shows is what a run that continues the journal would find.
 
@@ -76,7 +76,7 @@ A task whose latest settle in the journal is a success is an **earlier success**
 - It does not run, it never changes status, and no event is published for it. It is in the run's first snapshot, where <xref:Dagline.NodeSnapshot.IsEarlierSuccess> is true.
 - A dependency of either kind on it is met from the start.
 
-Every other task starts pending and runs: one that failed, was blocked or was cancelled, one the earlier run never reached, and one that is new to the graph.
+Every other task starts pending and runs: one that failed, was blocked or was cancelled, one the earlier run never reached, and one that is new to the graph. It gets nothing from earlier runs except its [checkpoint](writing-tasks.md#checkpoints), if it saved one and has not succeeded since.
 
 Groups follow from their tasks. A group made only of earlier successes is settled from the start and gets no event. A group that mixes earlier successes with tasks that settle in this run gets one <xref:Dagline.GroupSettled> when its last task settles, and <xref:Dagline.GroupSettled.EarlierSuccesses> says how many of its tasks were earlier successes.
 
@@ -86,6 +86,41 @@ A journal whose latest run was complete can be continued like any other. With an
 
 Each run chooses its own cap and limit sizes. A run that continues a journal may use different ones from the runs before it.
 
+### An *after* task runs again when what it is after runs again
+
+One rule decides whether an earlier success is kept, and it depends on the kind of dependency:
+
+- A task that is ***after*** something keeps its earlier success only if everything it is after is itself an earlier success in this run. Against a group that means every task beneath it at any depth, and an empty group qualifies. Otherwise the success is **set aside**: the task starts pending and runs again once its dependencies are met.
+- A task that only ***requires*** something never loses its earlier success because of a change upstream, not even when a group it requires gained a task that has not run.
+
+An *after* task exists to act on how its upstreams ended, such as a summary or a cleanup, so it acts again when they end again and is never stale. A *requires* task is usually one that did real work, perhaps in an external system, and running it again unasked would do that work twice. If you want finished work to run again, start a new journal.
+
+```csharp
+var check = builder.Task("check", CheckAsync);
+var summary = builder.Task("summary", SummariseAsync).After(check);    // set aside when check runs again
+var publish = builder.Task("publish", PublishAsync).Requires(summary); // keeps its success
+```
+
+The rule is applied in dependency order. A task set aside is not an earlier success, so a task that is *after* it is set aside too, while a task that *requires* it keeps its own earlier success.
+
+The run lists the paths it set aside in <xref:Dagline.Snapshot.SetAside>, in declaration order. A set-aside is written to the journal with the start of the run, on disk before any task starts. From then on the task has no success on record, in later runs too, until it succeeds again: if this run is stopped before the task runs, the next run does not bring back the stale success, even though everything the task is after is an earlier success by then.
+
+Whether a group counts as an earlier success is judged by the graph of this run. A task *after* the group `shards` keeps its success when the journal is continued with the same shards, and loses it when `shards` gained a shard whose tasks have not succeeded.
+
+## A graph that differs from its journal
+
+The lists that shape a graph are fetched before every build, so the graph a continuing run is given will often differ from the one the journal was written with. None of the differences is an error. The only link between a graph and a journal is the path:
+
+- **A path in the graph and not in the journal** is an ordinary pending task.
+- **A path in the journal and not in the graph** is left untouched and is not part of the run. It has no node in the snapshot, no event and no effect on the run outcome. If a later run's graph has the path again, what the journal holds for it applies again, its earlier success included.
+- **A path that is a task in one and a group in the other** counts as not in the graph. A rename is a removal and an addition.
+
+The run counts what it left untouched, so that a reporter can show it:
+
+- <xref:Dagline.Snapshot.JournalPathsNotInGraph> is how many paths the journal holds that are not a task of this run's graph.
+- <xref:Dagline.Snapshot.JournalPathsNotInGraphUnsucceeded> is how many of those have not succeeded: the journal holds no success for the path, or its success was set aside.
+
+The second count matters when a journal is continued with a smaller graph. The run outcome covers only the run's graph, so a run that completes can still leave work in the journal that never succeeded. That count is the signal. [Running part of the work](running-part-of-the-work.md) shows how this comes about.
 ## Endings
 
 <xref:Dagline.JournalSummary.Ending> says how a journal's latest run ended:
@@ -131,8 +166,8 @@ Dagline never deletes or expires a journal itself. How long a record is kept is 
 
 ## The file
 
-A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start, each task's start, each task's settle with its whole outcome, and each run's end. Progress, waiting and the status of a group are never recorded.
+A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start and the earlier successes it set aside, each task's start, each task's settle with its whole outcome, each [checkpoint](writing-tasks.md#checkpoints) saved or cleared, and each run's end. Progress, waiting and the status of a group are never recorded.
 
-Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A failure and every task it blocks share one write.
+Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write.
 
-The file is readable text, so you can look into it with any tool when something went wrong. Its format is not a stable contract, and may change between early releases. Anyone who can read the directory can read the file, so a task's outcome must never hold secrets.
+The file is readable text, so you can look into it with any tool when something went wrong. Its format is not a stable contract, and may change between early releases. Anyone who can read the directory can read the file, so a task's outcome and its checkpoint must never hold secrets.
