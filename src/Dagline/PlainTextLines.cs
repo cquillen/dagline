@@ -73,7 +73,7 @@ internal static class PlainTextLines
     private static string Began(WaitingChanged began)
         => began.Text is { } text
             // The text is kept as the task gave it, line breaks included, and here it has one line to fit on.
-            ? $"waiting {began.Path}: {TaskReportRules.OneLine(text)}"
+            ? $"waiting {began.Path}: {LineBreaks.OneLine(text)}"
             : $"waiting {began.Path}";
 
     private static string Requested(TimeSpan gracePeriod, int running)
@@ -170,7 +170,7 @@ internal static class PlainTextLines
         }
 
         // Status text is kept as the task gave it, line breaks included, and here it has one line to fit on.
-        var text = TaskReportRules.OneLine(given);
+        var text = LineBreaks.OneLine(given);
         return count is null ? text : $"{text}, {count}";
     }
 

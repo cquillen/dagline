@@ -50,4 +50,45 @@ public class RunTimeTests
         result.Snapshot.Nodes[1].Started.ShouldBe(prepareSettled);
         result.Snapshot.Nodes[1].Settled.ShouldBe(runEnd);
     }
+
+    [Test]
+    public async Task A_report_that_is_never_an_event_does_not_read_the_clock()
+    {
+        // Every read moves this clock on by a second, so the time of an event shows how often the clock was read before it.
+        var clock = new FakeTimeProvider(_runStart) { AutoAdvanceAmount = TimeSpan.FromSeconds(1) };
+        var builder = new GraphBuilder();
+        builder.Task("load", context =>
+        {
+            for (var entity = 1; entity <= 60; entity++)
+            {
+                context.Status($"loading entity {entity}");
+                context.Count(entity, 60);
+            }
+
+            context.Message("loaded 60 entities");
+            context.Detail("entity 3: no owner");
+            _ = context.Fail("1 bad entity", "entity 3: no owner");
+            return Task.CompletedTask;
+        });
+        var reporter = new RecordingReporter();
+
+        var result = await Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+
+        var loadSettled = _runStart.AddSeconds(1);
+        reporter.Events.Select(runEvent => (EventLine.Describe(runEvent), runEvent.At)).ShouldBe(
+        [
+            ("run started", _runStart),
+            ("load: pending -> ready", _runStart),
+            ("load: ready -> running", _runStart),
+            ("load: running -> failed", loadSettled),
+            ("run ended: incomplete", loadSettled),
+        ]);
+
+        result.Snapshot.Started.ShouldBe(_runStart);
+        result.Snapshot.Ended.ShouldBe(loadSettled);
+        result.Snapshot.Nodes[0].Started.ShouldBe(_runStart);
+        result.Snapshot.Nodes[0].Settled.ShouldBe(loadSettled);
+    }
 }

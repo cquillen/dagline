@@ -416,6 +416,37 @@ public class GracePeriodTests
     }
 
     [Test]
+    public async Task A_task_left_behind_after_it_reported_a_failure_is_cancelled_and_blocks_nothing()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var load = new PausedBody();
+            var builder = new GraphBuilder();
+            var loadTask = builder.Task("load", async context =>
+            {
+                _ = context.Fail("2 bad entities", "entity 3: missing owner");
+                await load.Body(context);
+            });
+            var publishTask = builder.Task("publish", _ => Task.CompletedTask).Requires(loadTask);
+            var stop = new StopSignal();
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, stop);
+            await load.Started;
+            stop.Request();
+            var result = await run;
+
+            var leftBehind = result.Snapshot[loadTask.Path];
+            leftBehind.Status.ShouldBe(NodeStatus.Cancelled);
+            leftBehind.Failure.ShouldBeNull();
+            leftBehind.Message.ShouldBe(_leftBehind);
+            leftBehind.Detail.ShouldBe(["entity 3: missing owner"]);
+            result.Snapshot[publishTask.Path].Status.ShouldBe(NodeStatus.Pending);
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
+            load.Release();
+        }
+    }
+
+    [Test]
     public async Task A_task_left_behind_with_a_waiting_scope_open_stops_waiting_immediately_before_it_is_cancelled()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)

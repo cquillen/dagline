@@ -8,7 +8,7 @@ namespace Dagline;
 /// kept up to date as tasks start and settle. The cap behaves as a limit that every task holds.
 /// </summary>
 /// <remarks>
-/// It is not safe to use from several threads at once: the run that owns it changes it one step at a time.
+/// It is not safe to use from several threads at once: <see cref="RunSteps"/> owns it and changes it one step at a time.
 /// </remarks>
 /// <param name="limitNames">Every limit the graph names, as <see cref="Graph.LimitNames"/> gives them.</param>
 /// <param name="sizes">The size of the cap and of each of those limits.</param>
@@ -17,31 +17,55 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     private readonly int[] _inUse = new int[sizes.Limits.Length];
     private int _running;
 
-    /// <summary>The cap with its size and how many tasks are running now.</summary>
-    public LimitUse Cap => new(sizes.Cap, _running);
+    /// <summary>How many numbers a tally of the slots in use takes: one for the cap, then one for each limit.</summary>
+    public int TallyLength => 1 + _inUse.Length;
 
-    /// <summary>Whether every slot of the cap is in use, so that no task can start until one settles.</summary>
-    public bool CapIsFull => _running == sizes.Cap;
+    private bool CapIsFull => _running == sizes.Cap;
 
     /// <summary>
-    /// Each limit the graph names with its size and the slots in use now, in the order the graph first names them.
+    /// Writes the slots in use now to the start of <paramref name="tally"/>: the cap's, then each limit's,
+    /// in the order the graph first names them.
     /// </summary>
-    public ReadOnlyDictionary<string, LimitUse> Limits
-        => new(limitNames.Index().ToDictionary(
-            limit => limit.Item.Text,
-            limit => new LimitUse(sizes.Limits[limit.Index], _inUse[limit.Index]),
-            LimitName.TextComparer));
+    public void CopyTo(Span<int> tally)
+    {
+        tally[0] = _running;
+        _inUse.CopyTo(tally[1..]);
+    }
+
+    /// <summary>The cap with its size and the slots in use that <see cref="CopyTo"/> wrote to <paramref name="tally"/>.</summary>
+    public LimitUse CapIn(ReadOnlySpan<int> tally) => new(sizes.Cap, tally[0]);
+
+    /// <summary>
+    /// Each limit the graph names with its size and the slots in use that <see cref="CopyTo"/> wrote to <paramref name="tally"/>,
+    /// in the order the graph first names them.
+    /// </summary>
+    public ReadOnlyDictionary<string, LimitUse> LimitsIn(ReadOnlySpan<int> tally)
+    {
+        // A loop, not LINQ: a run takes one of these for every event, and LINQ's delegate and iterator cost more than the dictionary.
+        var limits = new Dictionary<string, LimitUse>(limitNames.Length, LimitName.TextComparer);
+        for (var limit = 0; limit < limitNames.Length; limit++)
+        {
+            limits.Add(limitNames[limit].Text, new LimitUse(sizes.Limits[limit], tally[1 + limit]));
+        }
+
+        return new(limits);
+    }
 
     /// <summary>
     /// Takes one slot of the cap and of every limit a task holds, if each has one free.
     /// A task that does not fit takes none, so it never holds one slot while it waits for another.
+    /// The cap is looked at first, since every task holds a slot of it.
     /// </summary>
-    /// <returns><see langword="true"/> when the task now holds its slots and may start.</returns>
-    public bool TryTake(BuiltTask task)
+    public SlotsAnswer Take(BuiltTask task)
     {
-        if (CapIsFull || task.HeldLimits.Any(limit => _inUse[limit] == sizes.Limits[limit]))
+        if (CapIsFull)
         {
-            return false;
+            return SlotsAnswer.CapFull;
+        }
+
+        if (task.HeldLimits.Any(limit => _inUse[limit] == sizes.Limits[limit]))
+        {
+            return SlotsAnswer.LimitFull;
         }
 
         _running++;
@@ -50,7 +74,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
             _inUse[limit]++;
         }
 
-        return true;
+        return SlotsAnswer.Took;
     }
 
     /// <summary>Gives back the slots a task took when it started.</summary>
