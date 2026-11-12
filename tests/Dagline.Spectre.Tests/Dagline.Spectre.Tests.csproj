@@ -2,6 +2,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dagline.Spectre\Dagline.Spectre.csproj" />
+    <ProjectReference Include="..\Dagline.TestSupport\Dagline.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console.Testing" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
 </Project>

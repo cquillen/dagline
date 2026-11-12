@@ -75,7 +75,7 @@ A reporter is something that presents a run to people while it happens. Each rep
 
 The list is read once when the run starts. A reporter cannot change the run, and Dagline itself never writes to the console: what your app prints is up to you and your reporters.
 
-The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships.
+The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Auto()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
 
 ## Sizing the cap and limits
 
@@ -181,21 +181,20 @@ foreach (var blocked in result.Snapshot.Blocked)
 
 ## Stopping a run
 
-An app can ask a run to stop. It creates a <xref:Dagline.StopSignal>, passes it to `RunAsync`, and calls <xref:Dagline.StopSignal.Request*> from wherever it decides: a console's cancel event, a file appearing, a timer.
+An app can ask a run to stop. It passes a <xref:Dagline.StopSignal> to `RunAsync`, and a request on the signal stops the run. The usual one is Ctrl+C, which the `Dagline.Spectre` package hooks in one call:
 
 ```csharp
-var stop = new StopSignal();
-Console.CancelKeyPress += (_, e) =>
-{
-    e.Cancel = true; // keep the process alive so the run can wind down
-    stop.Request();
-};
+using Dagline.Spectre;
+
+using var stop = ConsoleStop.Hook();
 
 var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, stop);
 return result.Outcome.ToExitCode();
 ```
 
-Dagline never hooks Ctrl+C or a process signal itself: a library should not take over your process, so what asks for a stop is up to your app. The code above wires the console's own cancel event by hand. The `Dagline.Spectre` package will offer that as one call.
+<xref:Dagline.Spectre.ConsoleStop.Hook*> gives a signal hooked to the console's cancel key. The first Ctrl+C requests a stop and the second requests again, which ends the [grace period](#the-grace-period); both are swallowed so that the process lives on and the run winds down. From the third on nothing is swallowed, so the operating system ends the process. Disposing it unhooks the key. See [The terminal display](terminal-ui.md#stopping).
+
+Dagline itself never hooks Ctrl+C or a process signal: a library should not take over your process, so what asks for a stop is up to your app. To wire a stop yourself, create a `new StopSignal()` and call <xref:Dagline.StopSignal.Request*> from wherever you decide: a file appearing, a timer, a message from another process.
 
 `Request` is safe to call from any thread, a console's cancel handler included. It never blocks and never throws. `IsRequested` says whether a stop has been asked for, and `Requests` counts every call. A run given no signal cannot be stopped.
 

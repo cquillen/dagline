@@ -6,8 +6,10 @@ A reporter watches a run and cannot change it. Nothing a reporter does, or fails
 
 The `Dagline` package ships one reporter, [the plain-text reporter](#the-plain-text-reporter), which prints a run as timestamped lines. The sections before it are for writing your own.
 
+On a terminal, use the display from the `Dagline.Spectre` package instead: <xref:Dagline.Spectre.SpectreReporter.Auto*> gives the display when standard output is a terminal and the plain-text reporter when it is redirected, so the same code serves an operator and a log file. See [The terminal display](terminal-ui.md).
+
 > [!NOTE]
-> While a display is up, your app's own logging goes to a file and not to the console: see [Terminal UI](terminal-ui.md).
+> While the display is up, your app's own logging goes to a file and not to the console: see [The terminal display](terminal-ui.md#your-apps-own-output).
 
 ## Events and the snapshot
 

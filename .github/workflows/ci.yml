@@ -38,6 +38,15 @@ jobs:
 
       - run: dotnet test -c Release --no-build --coverage --coverage-output-format cobertura --report-trx --results-directory ${{ github.workspace }}/TestResults
 
+      # Output redirected to a file, so the auto-choosing reporter must print plain text and the run must end complete.
+      - name: Run the Basic sample with output redirected
+        shell: bash
+        run: |
+          dotnet run --project samples/Dagline.Samples.Basic -c Release --no-build > basic-sample.txt
+          cat basic-sample.txt
+          grep -q 'run ended: complete' basic-sample.txt
+          if grep -q $'\x1b' basic-sample.txt; then echo 'The Basic sample wrote control sequences to redirected output.' >&2; exit 1; fi
+
       - name: Validate packages
         if: runner.os == 'Linux'
         run: dotnet pack -c Release --no-build
