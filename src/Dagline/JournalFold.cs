@@ -6,7 +6,8 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A path's status is its latest settle. A path the journal records only as started, or not at all, has no settle.
+/// A path's status is its latest settle, or not succeeded once a later set-aside names it. A path the journal records only as
+/// started, or not at all, has no settle.
 /// </para>
 /// <para>
 /// A new rule of reading, such as a set-aside or a checkpoint, is a case in <see cref="Add"/> and what it keeps per path.
@@ -16,6 +17,8 @@ namespace Dagline;
 internal sealed class JournalFold
 {
     private readonly Dictionary<string, TaskSettledEntry> _latestSettles = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _setAside = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _paths = new(StringComparer.Ordinal);
 
     private JournalFold(HeaderEntry header)
     {
@@ -39,6 +42,9 @@ internal sealed class JournalFold
     /// <summary>The journal as a snapshot of the run that continues it next shows it.</summary>
     public JournalInfo NextRun => new(Id, Description, Runs + 1);
 
+    /// <summary>Every path the journal has an entry for, as the file spells it. Only a task's path is ever recorded.</summary>
+    public IReadOnlyCollection<string> Paths => _paths;
+
     /// <summary>Folds the entries of one journal, in the order of the file, under its header.</summary>
     public static JournalFold Of(HeaderEntry header, IEnumerable<JournalEntry> entries)
     {
@@ -52,11 +58,16 @@ internal sealed class JournalFold
     }
 
     /// <summary>
-    /// The latest settle of the task at <paramref name="path"/> when it is a success: an earlier success for a run that continues
-    /// the journal. <see langword="null"/> when the path has no settle or its latest is not a success.
+    /// The latest settle of the task at <paramref name="path"/> when it is a success that has not been set aside since: an earlier
+    /// success for a run that continues the journal. <see langword="null"/> when the path has no such settle.
     /// </summary>
-    public TaskSettledEntry? EarlierSuccessAt(NodePath path)
-        => _latestSettles.TryGetValue(path.ToString(), out var settled) && settled.Status is NodeStatus.Succeeded ? settled : null;
+    public TaskSettledEntry? EarlierSuccessAt(NodePath path) => EarlierSuccessAt(path.ToString());
+
+    /// <inheritdoc cref="EarlierSuccessAt(NodePath)"/>
+    public TaskSettledEntry? EarlierSuccessAt(string path)
+        => !_setAside.Contains(path) && _latestSettles.TryGetValue(path, out var settled) && settled.Status is NodeStatus.Succeeded
+            ? settled
+            : null;
 
     private void Add(JournalEntry entry)
     {
@@ -65,8 +76,17 @@ internal sealed class JournalFold
             case RunStartedEntry:
                 Runs++;
                 break;
+            case TaskStartedEntry started:
+                _paths.Add(started.Path);
+                break;
             case TaskSettledEntry settled:
+                _paths.Add(settled.Path);
                 _latestSettles[settled.Path] = settled;
+                _setAside.Remove(settled.Path);
+                break;
+            case SetAsideEntry setAside:
+                _paths.Add(setAside.Path);
+                _setAside.Add(setAside.Path);
                 break;
         }
     }
