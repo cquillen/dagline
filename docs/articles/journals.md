@@ -54,7 +54,7 @@ A task whose latest settle in the journal is a success is an **earlier success**
 - It does not run, it never changes status, and no event is published for it. It is in the run's first snapshot, where <xref:Dagline.NodeSnapshot.IsEarlierSuccess> is true.
 - A dependency of either kind on it is met from the start.
 
-Every other task starts pending and runs: one that failed, was blocked or was cancelled, one the earlier run never reached, and one that is new to the graph.
+Every other task starts pending and runs: one that failed, was blocked or was cancelled, one the earlier run never reached, and one that is new to the graph. It gets nothing from earlier runs except its [checkpoint](writing-tasks.md#checkpoints), if it saved one and has not succeeded since.
 
 Groups follow from their tasks. A group made only of earlier successes is settled from the start and gets no event. A group that mixes earlier successes with tasks that settle in this run gets one <xref:Dagline.GroupSettled> when its last task settles, and <xref:Dagline.GroupSettled.EarlierSuccesses> says how many of its tasks were earlier successes.
 
@@ -66,8 +66,8 @@ Each run chooses its own cap and limit sizes. A run that continues a journal may
 
 ## The file
 
-A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start, each task's start, each task's settle with its whole outcome, and each run's end. Progress, waiting and the status of a group are never recorded.
+A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start, each task's start, each task's settle with its whole outcome, each [checkpoint](writing-tasks.md#checkpoints) saved or cleared, and each run's end. Progress, waiting and the status of a group are never recorded.
 
-Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A failure and every task it blocks share one write.
+Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write.
 
-The file is readable text, so you can look into it with any tool when something went wrong. Its format is not a stable contract, and may change between early releases. Anyone who can read the directory can read the file, so a task's outcome must never hold secrets.
+The file is readable text, so you can look into it with any tool when something went wrong. Its format is not a stable contract, and may change between early releases. Anyone who can read the directory can read the file, so a task's outcome and its checkpoint must never hold secrets.
