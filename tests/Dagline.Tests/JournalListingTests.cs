@@ -102,8 +102,8 @@ public class JournalListingTests
         using var copies = new TemporaryDirectory();
         var load = new PausedBody();
         var builder = new GraphBuilder();
-        builder.Task("load", load.Body);
-        builder.Task("report", _ => Task.CompletedTask);
+        var report = builder.Task("report", _ => Task.CompletedTask);
+        builder.Task("load", load.Body).After(report);
         var holding = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.New(temporary.Path) });
         await load.Started;
         copies.CopyIn(Directory.GetFiles(temporary.Path, "*.journal").Single());
@@ -117,6 +117,7 @@ public class JournalListingTests
         summary.Runs.ShouldBe(1);
         summary.LatestRun.ShouldNotBeNull().Ended.ShouldBeNull();
         summary.Counts[NodeStatus.Running].ShouldBe(1);
+        summary.Counts[NodeStatus.Succeeded].ShouldBe(1);
     }
 
     [Test]
@@ -242,6 +243,17 @@ public class JournalListingTests
 
         listed.ShouldBeEmpty();
         Directory.Exists(temporary.Combine("missing")).ShouldBeFalse();
+    }
+
+    [Test]
+    public async Task A_listing_cancelled_before_it_begins_is_cancelled_even_with_no_journals_to_read()
+    {
+        using var temporary = new TemporaryDirectory();
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => Journals.ListAsync(temporary.Path, cancelled.Token));
+        await Should.ThrowAsync<OperationCanceledException>(() => Journals.ListAsync(temporary.Combine("missing"), cancelled.Token));
     }
 
     [Test]
