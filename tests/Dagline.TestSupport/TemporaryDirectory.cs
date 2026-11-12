@@ -20,6 +20,21 @@ public sealed class TemporaryDirectory : IDisposable
     /// <param name="relative">The path relative to the directory.</param>
     public string Combine(string relative) => System.IO.Path.Combine(Path, relative);
 
+    /// <summary>
+    /// Copies a file into this directory under its own name, as it is at this instant, even while a run holds it open and writes to it.
+    /// A test copies a journal mid-run this way to see what had reached the file by then.
+    /// </summary>
+    /// <param name="source">The full path of the file to copy.</param>
+    /// <returns>The full path of the copy.</returns>
+    public string CopyIn(string source)
+    {
+        var copy = Combine(System.IO.Path.GetFileName(source));
+        using var reading = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var writing = new FileStream(copy, FileMode.Create, FileAccess.Write);
+        reading.CopyTo(writing);
+        return copy;
+    }
+
     /// <summary>Deletes the directory and everything in it. A file another process still holds is left for the system to clear.</summary>
     public void Dispose()
     {

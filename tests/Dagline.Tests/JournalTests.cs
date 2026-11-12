@@ -27,4 +27,86 @@ public class JournalTests
         info.Run.ShouldBe(1);
         Directory.GetFiles(directory).Select(Path.GetFileName).ShouldBe([$"{info.Id}.journal"]);
     }
+
+    [Test]
+    public async Task Two_new_journals_created_at_the_same_instant_get_different_ids()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var graph = builder.Build();
+
+        var first = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.New(temporary.Path), TimeProvider = new FakeTimeProvider(_created) });
+        var second = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.New(temporary.Path), TimeProvider = new FakeTimeProvider(_created) });
+
+        second.Snapshot.Journal!.Id.ShouldNotBe(first.Snapshot.Journal!.Id);
+        Directory.GetFiles(temporary.Path).Length.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task Continuing_an_id_that_is_not_there_throws_and_publishes_no_event()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var graph = builder.Build();
+        var reporter = new RecordingReporter();
+
+        await Should.ThrowAsync<JournalNotFoundException>(() => Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Path, "20261111T041200Z-a3f9c2"), Reporters = [reporter] }));
+        await Should.ThrowAsync<JournalNotFoundException>(() => Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Combine("missing"), "20261111T041200Z-a3f9c2"), Reporters = [reporter] }));
+
+        reporter.Events.ShouldBeEmpty();
+    }
+
+    [Test]
+    [Arguments("20261111T041200Z-A3F9C2")]
+    [Arguments("20261111T041200Z-a3f9c")]
+    [Arguments("2026-11-11T041200Z-a3f9c2")]
+    [Arguments("../20261111T041200Z-a3f9c2")]
+    [Arguments("20261111T041200Z-a3f9c2\n")]
+    [Arguments("")]
+    public void An_id_not_in_the_id_format_is_an_argument_error(string id)
+    {
+        Should.Throw<ArgumentException>(() => Journal.Continue("journals", id)).ParamName.ShouldBe("id");
+    }
+
+    [Test]
+    public void A_journal_needs_a_directory()
+    {
+        Should.Throw<ArgumentNullException>(() => Journal.New(null!));
+        Should.Throw<ArgumentException>(() => Journal.New(" "));
+        Should.Throw<ArgumentException>(() => Journal.Continue("", "20261111T041200Z-a3f9c2"));
+        Should.Throw<ArgumentNullException>(() => Journal.Continue("journals", null!));
+    }
+
+    [Test]
+    public async Task A_settle_is_in_the_file_before_a_dependent_starts()
+    {
+        using var temporary = new TemporaryDirectory();
+        using var copies = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => Task.CompletedTask);
+        builder.Task("publish", _ =>
+        {
+            copies.CopyIn(Directory.GetFiles(temporary.Path).Single());
+            return Task.CompletedTask;
+        }).Requires(load);
+        var graph = builder.Build();
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+
+        var fromTheCopy = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id) });
+
+        fromTheCopy.Snapshot[load.Path].IsEarlierSuccess.ShouldBeTrue();
+        fromTheCopy.Snapshot.EarlierSuccesses.ShouldBe(1);
+    }
 }
