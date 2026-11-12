@@ -120,7 +120,7 @@ public class WorkingAndWaitingTests
     [Test]
     public async Task When_more_tasks_are_working_than_fit_the_pane_says_how_many_it_left_out()
     {
-        PausedBody[] bodies = [new(), new(), new(), new(), new()];
+        var bodies = Enumerable.Range(0, 12).Select(_ => new PausedBody()).ToArray();
         var builder = new GraphBuilder();
         var group = builder.Group("g");
         for (var i = 0; i < bodies.Length; i++)
@@ -128,7 +128,7 @@ public class WorkingAndWaitingTests
             group.Task($"t{i + 1}", bodies[i].Body);
         }
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 9);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 15);
         foreach (var body in bodies)
         {
             await body.Started;
@@ -144,10 +144,9 @@ public class WorkingAndWaitingTests
 
         frame.SkipWhile(line => !line.StartsWith("── Working", StringComparison.Ordinal)).ShouldBe(
         [
-            "── Working (5) " + new string('─', 65),
-            "● g/t1" + new string(' ', 72) + "0s",
-            "● g/t2" + new string(' ', 72) + "0s",
-            "  and 3 more working",
+            "── Working (12) " + new string('─', 64),
+            .. Enumerable.Range(1, 8).Select(i => $"● g/t{i}" + new string(' ', 72) + "0s"),
+            "  and 4 more working",
         ]);
     }
 

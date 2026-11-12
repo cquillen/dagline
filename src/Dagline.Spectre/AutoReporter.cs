@@ -29,7 +29,7 @@ internal sealed class AutoReporter(TextWriter? plainText, SpectreOptions options
     {
         var writer = plainText ?? Console.Out;
         return UsesDisplay()
-            ? new Display(new Terminal(_console), _clock, Glyphs.Unicode, writer)
+            ? new Display(new Terminal(_console), _clock, options.Ascii ? Glyphs.Ascii : Glyphs.Unicode, writer)
             : new PlainTextReporter(writer, _clock);
     }
 

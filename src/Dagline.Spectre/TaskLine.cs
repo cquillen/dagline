@@ -28,10 +28,14 @@ internal static class TaskLine
         return mark.Add(path).PadTo(mark.Width + column);
     }
 
-    /// <summary><paramref name="left"/> with <paramref name="time"/> at the right edge of a line <paramref name="width"/> cells wide.</summary>
+    /// <summary>
+    /// <paramref name="left"/> with <paramref name="time"/> at the right edge of a line <paramref name="width"/> cells wide.
+    /// The left gives way, so the time is always kept: panes are drawn only from <see cref="Frame.LeastWidth"/> columns, which
+    /// leaves <see cref="StyledLine.Spread"/> room to keep the right.
+    /// </summary>
     public static StyledLine Finish(StyledLine left, TimeSpan time, int width, Glyphs glyphs)
         => StyledLine.Spread(left, StyledLine.Of(DisplayText.Duration(time)), width, glyphs.Ellipsis);
 
-    /// <summary>The last line of a pane that was cut short, saying what it left out.</summary>
+    /// <summary>The last line of a pane that was cut short, saying what it left out. The problems pane ends with one too.</summary>
     public static StyledLine More(string text) => StyledLine.Of("  " + text, Palette.Dim);
 }

@@ -34,6 +34,9 @@ internal sealed record Glyphs(
     /// <summary>The default set.</summary>
     public static Glyphs Unicode { get; } = new("✓", "✗", "●", "○", "◌", "·", "⊘", "■", "▲", "━", "─", "─", "…", "·");
 
+    /// <summary>The set for a terminal or font without the Unicode glyphs: every character is ASCII.</summary>
+    public static Glyphs Ascii { get; } = new("+", "x", "*", "o", "~", ".", "/", "#", "!", "=", "-", "-", "...", "|");
+
     /// <summary>The glyph of a status. A running task that is waiting is drawn with <see cref="Waiting"/> instead.</summary>
     public string For(NodeStatus status) => status switch
     {

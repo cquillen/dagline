@@ -70,6 +70,11 @@ public class GroupsTests
             throw context.Fail("broken");
         });
         validate.Group("shard-3").Task("z", _ => Task.CompletedTask);
+        for (var shard = 4; shard <= 8; shard++)
+        {
+            validate.Group($"shard-{shard}").Task("z", _ => Task.CompletedTask);
+        }
+
         var process = builder.Group("process");
         process.Group("shard-1").Task("e", Waiting(e));
         process.Group("shard-2").Task("f", Waiting(f));
@@ -78,14 +83,18 @@ public class GroupsTests
         finish.Task("t2", _ => Task.CompletedTask).After(process);
         finish.Task("t3", _ => Task.CompletedTask).After(process);
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 10);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15);
         await x.Started;
         await display.Handled("waiting process/shard-1/e: job");
         await display.Handled("waiting process/shard-2/f: job");
         await display.Handled("prepare/p1: running -> succeeded");
         await display.Handled("prepare/p2: running -> succeeded");
         await display.Handled("validate/shard-2/y: running -> failed");
-        await display.Handled("validate/shard-3/z: running -> succeeded");
+        for (var shard = 3; shard <= 8; shard++)
+        {
+            await display.Handled($"validate/shard-{shard}/z: running -> succeeded");
+        }
+
         var frame = display.NextFrame();
         x.Release();
         e.Release();
@@ -96,7 +105,7 @@ public class GroupsTests
         [
             "── Groups " + new string('─', 50),
             "✓ prepare  ✓✓ 2/2",
-            "● validate ●✗✓ 1/3 ✗1 ▲1",
+            "● validate ●✗✓✓✓✓✓✓ 6/8 ✗1 ▲1",
             "◌ process  ◌◌ 0/2",
             "· finish   ··· 0/3",
         ]);
@@ -109,15 +118,15 @@ public class GroupsTests
         var builder = new GraphBuilder();
         var first = builder.Task("gate", gate.Body);
         var big = builder.Group("big");
-        for (var i = 1; i <= 20; i++)
+        for (var i = 1; i <= 30; i++)
         {
             big.Task($"done-{i}", _ => Task.CompletedTask);
             big.Task($"later-{i}", _ => Task.CompletedTask).After(first);
         }
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 40, 12);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15);
         await gate.Started;
-        for (var i = 1; i <= 20; i++)
+        for (var i = 1; i <= 30; i++)
         {
             await display.Handled($"big/done-{i}: running -> succeeded");
         }
@@ -131,9 +140,9 @@ public class GroupsTests
 
         frame.Skip(3).Take(3).ShouldBe(
         [
-            "── Groups " + new string('─', 30),
+            "── Groups " + new string('─', 50),
             "● gate 0/1",
-            "· big  " + new string('━', 13) + new string('─', 14) + " 20/40",
+            "· big  " + new string('━', 23) + new string('─', 24) + " 30/60",
         ]);
     }
 

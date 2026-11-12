@@ -70,18 +70,20 @@ internal sealed class DisplayRun : IAsyncDisposable
     /// An event, as <see cref="EventLine.Describe"/> writes it, that the display is not handed until <see cref="ReleaseHeld"/>,
     /// nor any event after it: the run moves on while the display falls behind.
     /// </param>
+    /// <param name="ascii">Whether the display draws with the glyph set that uses only ASCII.</param>
     public static async Task<DisplayRun> StartAsync(
         Graph graph,
         int width,
         int height,
         RunOptions? options = null,
         StopSignal? stop = null,
-        string? holdBefore = null)
+        string? holdBefore = null,
+        bool ascii = false)
     {
         var clock = new FakeTimeProvider(RunStart);
         var console = new TestConsole().Size(new Size(width, height)).EmitAnsiSequences();
         IReporter display = SpectreReporter.Auto(
-            options: new SpectreOptions { Display = DisplayMode.Force, Console = console, TimeProvider = clock });
+            options: new SpectreOptions { Display = DisplayMode.Force, Ascii = ascii, Console = console, TimeProvider = clock });
         var held = holdBefore is null ? null : new HeldReporter(display, holdBefore);
         var reporter = new WatchedReporter(held ?? display);
         var runOptions = (options ?? new RunOptions { Journal = Journal.None }) with { TimeProvider = clock, Reporters = [reporter] };

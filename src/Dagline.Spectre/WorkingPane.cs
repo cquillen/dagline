@@ -35,7 +35,7 @@ internal static class WorkingPane
         var fits = working.Count <= rows - 1;
         var shown = fits ? working : working.Take(rows - 2).ToList();
         var column = TaskLine.PathColumn(snapshot, width);
-        var countCells = shown.Select(node => CountText(node).Length).Max();
+        var countCells = shown.Select(node => CountText(node).Length).DefaultIfEmpty(0).Max();
         List<StyledLine> lines = [title, .. shown.Select(node => Line(node, column, countCells, width, now, glyphs))];
         if (!fits)
         {
