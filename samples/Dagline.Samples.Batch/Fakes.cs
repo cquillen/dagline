@@ -66,10 +66,14 @@ public enum JobStatus
 /// </summary>
 public sealed class FakeScheduler(string directory, TimeProvider clock, double timeScale = 1)
 {
+    private readonly HashSet<string> _checked = [];
     private int _triggers;
 
     /// <summary>Names of jobs that end in error. None unless the app says so.</summary>
     public IReadOnlySet<string> JobsThatEndInError { get; init; } = new HashSet<string>();
+
+    /// <summary>Names of jobs whose first status call on this scheduler throws. None unless the app says so.</summary>
+    public IReadOnlySet<string> JobsWhoseFirstStatusCallThrows { get; init; } = new HashSet<string>();
 
     /// <summary>How many triggers this scheduler has accepted.</summary>
     public int Triggers => Volatile.Read(ref _triggers);
@@ -100,8 +104,22 @@ public sealed class FakeScheduler(string directory, TimeProvider clock, double t
     }
 
     /// <summary>The status of a job, by the id its trigger returned.</summary>
-    public async Task<JobStatus> GetStatusAsync(string id, CancellationToken cancellationToken) =>
-        StatusOf(await FindAsync(id, cancellationToken));
+    public async Task<JobStatus> GetStatusAsync(string id, CancellationToken cancellationToken)
+    {
+        var name = NameOf(id);
+        bool first;
+        lock (_checked)
+        {
+            first = _checked.Add(name);
+        }
+
+        if (first && JobsWhoseFirstStatusCallThrows.Contains(name))
+        {
+            throw new InvalidOperationException($"the status call for job {id} failed: the scheduler did not answer");
+        }
+
+        return StatusOf(await FindAsync(id, cancellationToken));
+    }
 
     /// <summary>A few lines of a job's log, by the id its trigger returned.</summary>
     public async Task<IReadOnlyList<string>> GetLogAsync(string id, CancellationToken cancellationToken)
@@ -136,8 +154,7 @@ public sealed class FakeScheduler(string directory, TimeProvider clock, double t
 
     private async Task<JobFile> FindAsync(string id, CancellationToken cancellationToken)
     {
-        var name = id[..id.LastIndexOf('-')];
-        var job = await ReadAsync(name, cancellationToken);
+        var job = await ReadAsync(NameOf(id), cancellationToken);
         return job is not null && job.Id == id ? job : throw new InvalidOperationException($"no job {id}");
     }
 
@@ -148,6 +165,8 @@ public sealed class FakeScheduler(string directory, TimeProvider clock, double t
             ? JsonSerializer.Deserialize<JobFile>(await File.ReadAllTextAsync(path, cancellationToken))
             : null;
     }
+
+    private static string NameOf(string id) => id[..id.LastIndexOf('-')];
 
     private string PathOf(string name) => Path.Combine(directory, $"{name}.json");
 
