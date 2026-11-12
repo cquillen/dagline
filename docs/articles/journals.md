@@ -168,7 +168,7 @@ Dagline never deletes or expires a journal itself. How long a record is kept is 
 
 A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start and the earlier successes it set aside, each task's start, each task's settle with its whole outcome, each [checkpoint](writing-tasks.md#checkpoints) saved or cleared, and each run's end. Progress, waiting and the status of a group are never recorded.
 
-Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write. A new journal's first line and its first run's start reach the disk before any task starts, and on Unix systems so does the journal's entry in its directory, so the file itself survives a crash.
+Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write. A new journal's first line and its first run's start reach the disk before any task starts, and on Unix systems so does the journal's entry in its directory, and the entry of each directory Dagline created for it, so the file itself survives a crash.
 
 The file is readable text, so you can look into it with any tool when something went wrong. Its format is not a stable contract, and may change between early releases. Anyone who can read the directory can read the file, so a task's outcome and its checkpoint must never hold secrets.
 

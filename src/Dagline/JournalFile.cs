@@ -45,7 +45,7 @@ internal sealed class JournalFile : IDisposable
     /// <summary>
     /// Creates a new journal in <paramref name="directory"/>, creating the directory if it is missing, with an id from the time on
     /// <paramref name="clock"/>, and holds it. The header is written and flushed before this returns, and on Unix systems the
-    /// directory's entries too, so that the new file's name survives a crash. If a file with the id drawn
+    /// directory's entries too, and those of the parent of each directory created, so that the new file's path survives a crash. If a file with the id drawn
     /// already exists, or another run has claimed that id, a new suffix is drawn.
     /// </summary>
     /// <exception cref="JournalOpenException">
@@ -141,11 +141,22 @@ internal sealed class JournalFile : IDisposable
         _claim.Dispose();
     }
 
+    /// <summary>
+    /// Creates <paramref name="directory"/> and any missing directory above it, and on a Unix system flushes the entries of the
+    /// parent of each one created, so that the path to the new journal survives a crash as its name does.
+    /// </summary>
     private static void CreateDirectory(string directory)
     {
         try
         {
+            var missing = new List<string>();
+            for (var path = Path.GetFullPath(directory); path is not null && !Directory.Exists(path); path = Path.GetDirectoryName(path))
+            {
+                missing.Add(path);
+            }
+
             Directory.CreateDirectory(directory);
+            missing.ForEach(created => DirectoryEntries.Flush(Path.GetDirectoryName(created)!));
         }
         catch (Exception cannotCreate) when (FileSystemFailure.Is(cannotCreate))
         {
