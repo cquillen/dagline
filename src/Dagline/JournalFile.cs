@@ -142,7 +142,9 @@ internal sealed class JournalFile : IDisposable
             try
             {
                 using var reader = new StreamReader(stream, _encoding, leaveOpen: true);
-                var fold = Read(reader, path);
+                var whole = WholeLines(reader.ReadToEnd());
+                var fold = Read(new StringReader(whole), path);
+                stream.SetLength(_encoding.GetByteCount(whole));
                 stream.Seek(0, SeekOrigin.End);
                 return new JournalFile(stream, held, fold);
             }
@@ -181,7 +183,7 @@ internal sealed class JournalFile : IDisposable
             throw new JournalOpenException(path, cannotOpen);
         }
 
-        using var lines = new StringReader(text);
+        using var lines = new StringReader(WholeLines(text));
         return Read(lines, path);
     }
 
@@ -248,6 +250,12 @@ internal sealed class JournalFile : IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// The text of a journal up to the end of its last whole line. A line is whole once its line feed is written, so text after the
+    /// last line feed is a final line that a killed process cut short, and is dropped.
+    /// </summary>
+    private static string WholeLines(string text) => text[..(text.LastIndexOf((char)_lineFeed) + 1)];
 
     private static JournalFold Read(TextReader reader, string path)
     {
