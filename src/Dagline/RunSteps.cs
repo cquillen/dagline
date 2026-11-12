@@ -52,7 +52,7 @@ internal sealed class RunSteps
     private int _requestsApplied;
     private bool _recording;
     private bool _stoppedByDagline;
-    private JournalWriteException? _failedWrite;
+    private Exception? _writeFailure;
 
     /// <param name="graph">The graph the run runs.</param>
     /// <param name="settings">The settings of the run: the sizes of its slots and its grace period.</param>
@@ -252,7 +252,7 @@ internal sealed class RunSteps
             return [];
         }
 
-        _failedWrite = new JournalWriteException(cause);
+        _writeFailure = cause;
         if (!HasStopped)
         {
             _stoppedByDagline = true;
@@ -560,11 +560,13 @@ internal sealed class RunSteps
     private void End(DateTimeOffset now)
     {
         Begin();
-        if (_failedWrite is { } error)
+        if (_writeFailure is { } cause)
         {
             _milestones = _milestones with { Ended = now };
-            _step!.Ends = new RunEnd(null, error, _requestsApplied);
-            Publish(new RunEnded(now, null, error));
+            _step!.Ends = new RunEnd(null, cause, _requestsApplied);
+
+            // The run builds this RunEnded as it publishes it: its exception carries the final snapshot.
+            _step.Events.Add(new StepEvent(null, ChangeSinceLastEvent()));
             return;
         }
 

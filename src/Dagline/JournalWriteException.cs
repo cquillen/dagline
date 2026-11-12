@@ -21,13 +21,8 @@ namespace Dagline;
 /// </remarks>
 public sealed class JournalWriteException : DaglineException
 {
-    internal JournalWriteException(Exception innerException)
-        : base($"The run's journal can no longer be written: {innerException.Message}", innerException)
-    {
-    }
-
     internal JournalWriteException(Exception innerException, Snapshot snapshot)
-        : this(innerException)
+        : base($"The run's journal can no longer be written: {innerException.Message}", innerException)
     {
         Snapshot = snapshot;
     }
@@ -36,6 +31,5 @@ public sealed class JournalWriteException : DaglineException
     /// The run as it was: from <see cref="Runner.RunAsync"/> and on <see cref="RunEnded"/>, the final snapshot, which has an end time
     /// and no run outcome; from a checkpoint save, the snapshot as of the failed save.
     /// </summary>
-    // Set by the run as it publishes RunEnded, since the final snapshot is taken only then, after the event that carries this exists.
-    public Snapshot Snapshot { get; internal set; } = null!;
+    public Snapshot Snapshot { get; }
 }

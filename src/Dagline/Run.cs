@@ -47,6 +47,7 @@ internal sealed class Run : ISnapshotSource
     private JournalFile? _journal;
     private Exception? _writeFailure;
     private bool _writeFailureGiven;
+    private JournalWriteException? _endedWith;
     private IDisposable? _hearsTheSignal;
     private ITimer? _gracePeriodTimer;
     private volatile Snapshot? _current;
@@ -324,7 +325,7 @@ internal sealed class Run : ISnapshotSource
             _journal = null;
         }
 
-        Publish(step.Events);
+        Publish(step);
         foreach (var task in step.Starts)
         {
             _ = Task.Run(() => RunBodyAsync(task));
@@ -345,7 +346,7 @@ internal sealed class Run : ISnapshotSource
             // but RunEnded is still to come would leave that reporter to be waited for.
             _delivery.ListenBeyond(end.RequestsApplied);
             _delivery.Complete();
-            if (end.Error is { } error)
+            if (_endedWith is { } error)
             {
                 _ended.SetException(error);
             }
@@ -375,8 +376,9 @@ internal sealed class Run : ISnapshotSource
     /// event is handed to reporters, so a reporter never reads a current snapshot older than an event it holds.
     /// A step with no events changed only the snapshot, so it only marks the current snapshot as out of date.
     /// </summary>
-    private void Publish(IReadOnlyList<StepEvent> events)
+    private void Publish(Step step)
     {
+        var events = step.Events;
         if (events.Count == 0)
         {
             _current = null;
@@ -388,13 +390,18 @@ internal sealed class Run : ISnapshotSource
         {
             var snapshot = _steps.SnapshotAfter(events[i]);
             _current = snapshot;
-            if (events[i].Event is RunEnded { Error: JournalWriteException failed })
-            {
-                failed.Snapshot = snapshot;
-            }
-
-            _delivery.Publish(events[i].Event, snapshot);
+            _delivery.Publish(events[i].Event ?? EndedByFailedWrite(step.Ends!.Value.WriteFailure!, snapshot), snapshot);
         }
+    }
+
+    /// <summary>
+    /// The <see cref="RunEnded"/> of a run whose journal write failed, built once its final snapshot exists, with the one
+    /// <see cref="JournalWriteException"/> that the event carries and the run ends with.
+    /// </summary>
+    private RunEnded EndedByFailedWrite(Exception cause, Snapshot final)
+    {
+        _endedWith = new JournalWriteException(cause, final);
+        return new RunEnded(final.Ended!.Value, null, _endedWith);
     }
 
     // No token: a run is stopped through its signal, and a task body takes none.

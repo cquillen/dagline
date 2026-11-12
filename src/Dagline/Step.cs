@@ -32,10 +32,19 @@ internal sealed record Step(
 /// One event of a step, with what it changed in the run's snapshot. <see cref="RunSteps.SnapshotAfter"/> takes the snapshot
 /// just after the event from it, as the run publishes the event, so a step holds no snapshot of its own.
 /// </summary>
-internal readonly record struct StepEvent(RunEvent Event, SnapshotChange Change);
+/// <param name="Event">
+/// The event, or <see langword="null"/> for the <see cref="RunEnded"/> of a run that ends because a journal write failed. The run
+/// builds that one as it publishes it, from <see cref="RunEnd.WriteFailure"/>, since its <see cref="JournalWriteException"/> carries
+/// the final snapshot, which exists only then.
+/// </param>
+/// <param name="Change">What the event changed in the run's snapshot.</param>
+internal readonly record struct StepEvent(RunEvent? Event, SnapshotChange Change);
 
 /// <summary>
-/// How a run ends: exactly one of its outcome and the error it ends with, and how many stop requests it applied, so that the wait
-/// for reporters hears only later ones.
+/// How a run ends: exactly one of its outcome and the failed journal write it ends with, and how many stop requests it applied, so
+/// that the wait for reporters hears only later ones.
 /// </summary>
-internal readonly record struct RunEnd(RunOutcome? Outcome, JournalWriteException? Error, int RequestsApplied);
+/// <param name="Outcome">The run outcome, or <see langword="null"/> when a journal write failed.</param>
+/// <param name="WriteFailure">The file system's exception from the failed journal write, or <see langword="null"/> when there was none.</param>
+/// <param name="RequestsApplied">How many stop requests the run applied.</param>
+internal readonly record struct RunEnd(RunOutcome? Outcome, Exception? WriteFailure, int RequestsApplied);
