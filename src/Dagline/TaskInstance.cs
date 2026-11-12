@@ -194,7 +194,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return new TaskChange(ToNodeSnapshot(), new WarningAdded(now, task.Path, kept));
     }
 
-    /// <summary>Sets the message, as one line. It is never an event.</summary>
+    /// <summary>Sets the message, as one line, or clears it when the message is empty. It is never an event.</summary>
     public TaskChange? SetMessage(string message)
     {
         if (!IsRunning)
@@ -239,7 +239,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
-    /// Opens one waiting scope. The first open scope begins the wait, with its text and <paramref name="now"/>,
+    /// Opens one waiting scope. The first open scope begins the wait, with its text as one line (none when empty) and <paramref name="now"/>,
     /// and produces <see cref="WaitingChanged"/>. A scope that overlaps one already open produces nothing.
     /// </summary>
     public TaskChange? OpenWaitingScope(string? text, DateTimeOffset now)
@@ -256,9 +256,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         }
 
         _waitingSince = now;
-        _waitingText = text;
+        _waitingText = LineBreaks.OneLineOrNone(text);
 
-        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: true, text, Since: now));
+        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: true, _waitingText, Since: now));
     }
 
     /// <summary>
@@ -360,7 +360,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return new TaskChange(moved, new TaskStatusChanged(now, moved, from, Status));
     }
 
-    private void ReplaceMessage(string message) => _message = LineBreaks.OneLine(message);
+    private void ReplaceMessage(string message) => _message = LineBreaks.OneLineOrNone(message);
 
     private void AddDetailLines(IEnumerable<string> texts)
     {

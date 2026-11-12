@@ -148,8 +148,15 @@ public sealed record NodeSnapshot
     /// </summary>
     public int WarningsOmitted { get; internal init; }
 
-    /// <summary>How many warnings the task added: those kept and those only counted.</summary>
-    internal int WarningsAdded => Warnings.Count + WarningsOmitted;
+    /// <summary>
+    /// How many warnings the task was given: those kept in <see cref="Warnings"/> and those only counted in
+    /// <see cref="WarningsOmitted"/>. Zero for a group for now.
+    /// </summary>
+    /// <remarks>
+    /// It counts every call of <see cref="TaskContext.Warn"/> the task made while it ran, and for an earlier success the warnings
+    /// it succeeded with. A group does not yet add up the warnings of the tasks beneath it.
+    /// </remarks>
+    public int WarningCount => Warnings.Count + WarningsOmitted;
 
     /// <summary>
     /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
@@ -198,6 +205,23 @@ public sealed record NodeSnapshot
     public string? WaitingText { get; internal init; }
 
     /// <summary>
+    /// <see langword="true"/> for a task that is running and waiting: one with a <see cref="TaskContext.Waiting"/> scope open.
+    /// <see langword="false"/> for a task that is not running, and for a group for now.
+    /// </summary>
+    /// <remarks>
+    /// A running task is either waiting or working, never both: <see cref="IsWorking"/> is the other half. Waiting is a marker
+    /// on a running task, never a status. A group does not yet say whether the tasks beneath it are waiting.
+    /// </remarks>
+    public bool IsWaiting => !IsGroup && Status is NodeStatus.Running && WaitingSince is not null;
+
+    /// <summary>
+    /// <see langword="true"/> for a task that is running and not waiting. <see langword="false"/> for a task that is not running,
+    /// and for a group for now.
+    /// </summary>
+    /// <remarks>A group does not yet say whether the tasks beneath it are working.</remarks>
+    public bool IsWorking => !IsGroup && Status is NodeStatus.Running && WaitingSince is null;
+
+    /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,
     /// or <see langword="null"/> while it has not started. A blocked task never starts, so it has no start time.
     /// </summary>
@@ -208,4 +232,14 @@ public sealed record NodeSnapshot
     /// or <see langword="null"/> while it has not settled. A blocked task settles at the time the task that blocked it failed.
     /// </summary>
     public DateTimeOffset? Settled { get; internal init; }
+
+    /// <summary>
+    /// How long the task ran: <see cref="Settled"/> less <see cref="Started"/>. <see langword="null"/> unless the task has both,
+    /// so for a task that has not settled, for a blocked task, for an earlier success and for a group.
+    /// </summary>
+    /// <remarks>
+    /// Both times are read from the run's <see cref="RunOptions.TimeProvider"/>. A task the run let go of after a stop ran
+    /// until the run let go of it, which is when it settled as cancelled.
+    /// </remarks>
+    public TimeSpan? Ran => Settled - Started;
 }

@@ -266,7 +266,7 @@ internal static class PlainTextLines
                 :
                 [
                     Invariant(
-                        $"  from earlier runs, not listed again: {earlier.Sum(task => task.WarningsAdded)} on {CountsText.Tasks(earlier.Count)}"),
+                        $"  from earlier runs, not listed again: {earlier.Sum(task => task.WarningCount)} on {CountsText.Tasks(earlier.Count)}"),
                 ],
         ];
     }

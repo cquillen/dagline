@@ -1,11 +1,11 @@
 namespace Dagline;
 
-/// <summary>The one home of each question asked of a status.</summary>
+/// <summary>
+/// The one home of each question asked of a status that only Dagline asks. Whether a status is settled is public, in
+/// <see cref="NodeStatusExtensions"/>.
+/// </summary>
 internal static class NodeStatusRules
 {
-    public static bool IsSettled(this NodeStatus status)
-        => status is NodeStatus.Succeeded or NodeStatus.Failed or NodeStatus.Blocked or NodeStatus.Cancelled;
-
     public static bool Meets(this NodeStatus upstream, DependencyKind kind) => kind switch
     {
         DependencyKind.Requires => upstream is NodeStatus.Succeeded,
