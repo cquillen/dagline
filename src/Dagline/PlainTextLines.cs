@@ -116,8 +116,7 @@ internal static class PlainTextLines
 
     private static string Began(WaitingChanged began)
         => began.Text is { } text
-            // The text is kept as the task gave it, line breaks included, and here it has one line to fit on.
-            ? $"waiting {began.Path}: {LineBreaks.OneLine(text)}"
+            ? $"waiting {began.Path}: {text}"
             : $"waiting {began.Path}";
 
     private static string Requested(StopRequested requested, int running)
@@ -144,22 +143,20 @@ internal static class PlainTextLines
     private static string Settled(NodeSnapshot task)
     {
         var unexpected = task.Failure is FailureKind.Unexpected ? $" ({NameText.Of(FailureKind.Unexpected)})" : "";
-        var message = task.Message is { Length: > 0 } set ? $": {set}" : "";
+        var message = task.Message is { } set ? $": {set}" : "";
 
         return $"{NameText.Of(task.Status)} {task.Path} in {Ran(task)}{unexpected}{message}";
     }
 
-    private static string Ran(NodeSnapshot task) => DurationText.Of((task.Settled - task.Started) ?? TimeSpan.Zero);
+    private static string Ran(NodeSnapshot task) => DurationText.Of(task.Ran ?? TimeSpan.Zero);
 
     private static IEnumerable<string> Summary(Snapshot snapshot)
     {
-        var blockedBy = snapshot.Blocked.ToDictionary(blocked => blocked.Cause);
-
         return
         [
             .. snapshot.Journal is { } journal ? [$"journal: {Named(journal)}"] : Array.Empty<string>(),
             Counts(snapshot),
-            .. Section("failed", snapshot.Failed, task => Entry(task, blockedBy.GetValueOrDefault(task.Path))),
+            .. Section("failed", snapshot.Failed, task => Entry(task, snapshot.TryGetBlocked(task.Path, out var blocked) ? blocked : null)),
             .. Section("cancelled", snapshot.Cancelled, task => Entry(task, blocked: null)),
             .. Warnings(snapshot),
             .. LeftForALaterRun(snapshot),
@@ -199,7 +196,7 @@ internal static class PlainTextLines
             yield return $"    progress: {progress}";
         }
 
-        if (task.Message is { Length: > 0 } message)
+        if (task.Message is { } message)
         {
             yield return $"    message: {message}";
         }

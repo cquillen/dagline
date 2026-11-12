@@ -21,7 +21,7 @@ internal static class WorkingPane
     public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, DateTimeOffset now, Glyphs glyphs, int rows)
     {
         var running = snapshot.Counts[NodeStatus.Running];
-        var working = snapshot.Nodes.Where(Running.IsWorking).ToList();
+        var working = snapshot.Working;
         var title = StyledLine.Of($"Working ({DisplayText.Number(working.Count)})", Palette.Bold);
         if (running > 0 && working.Count == 0 && rows >= 1)
         {
@@ -35,7 +35,7 @@ internal static class WorkingPane
         }
 
         var fits = working.Count <= rows - 1;
-        var shown = fits ? working : working.Take(rows - 2).ToList();
+        IReadOnlyList<NodeSnapshot> shown = fits ? working : [.. working.Take(rows - 2)];
         var column = TaskLine.PathColumn(snapshot, width);
         var countCells = shown.Select(node => CountText(node).Length).DefaultIfEmpty(0).Max();
         List<StyledLine> lines =

@@ -123,10 +123,16 @@ context.Message($"checked {entities.Count} entities");
 context.Detail($"tenant {tenant.Name}: {entities.Count} entities", $"oldest: {oldest:yyyy-MM-dd}");
 ```
 
-- <xref:Dagline.TaskContext.Message*> replaces the message. A line break in it is replaced by a space.
+- <xref:Dagline.TaskContext.Message*> replaces the message. A line break in it is replaced by a space. An empty message clears it, so `context.Message("")` takes back a message set earlier.
 - <xref:Dagline.TaskContext.Detail*> adds lines after those already there. Text that holds line breaks is split into one line per break, so a multi-line text can be passed whole.
 
 They show as <xref:Dagline.NodeSnapshot.Message> and <xref:Dagline.NodeSnapshot.Detail>, and the event of the task settling carries them, so a reporter can print the message on the line that says the task succeeded.
+
+### One rule for the text a task reports
+
+A message and waiting text follow one rule, applied where the task reports them: each is kept as one line, every line break replaced by a space, and empty text means none. So `context.Message("")`, `context.Fail("")` and `context.Waiting("")` leave the task with no message or no waiting text, and a reporter only ever tests for null. The <xref:Dagline.WaitingChanged> event carries the waiting text as it is kept. A message an earlier run recorded in a [journal](journals.md) is read back as it was written.
+
+A warning is always one line too. Status text is kept as given, line breaks included.
 
 ## Failures
 

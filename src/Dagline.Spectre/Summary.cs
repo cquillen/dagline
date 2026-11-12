@@ -66,7 +66,7 @@ internal static class Summary
                 Heading("Cancelled", snapshot.Cancelled.Count),
                 .. snapshot.Cancelled.Select(task => StatusMark.For(NodeStatus.Cancelled, glyphs).Line(" ")
                     .Add(task.Path.ToString())
-                    .Add(task.Message is { Length: > 0 } message ? DisplayText.Between + glyphs.Text(message) : "", Palette.Dim)),
+                    .Add(task.Message is { } message ? DisplayText.Between + glyphs.Text(message) : "", Palette.Dim)),
             ];
 
     /// <summary>
@@ -90,7 +90,7 @@ internal static class Summary
             [
                 StatusMark.Warning(glyphs).Line(" ")
                     .Add(task.Path.ToString())
-                    .Add(DisplayText.Between + DisplayText.Number(TaskCounts.Warnings(task)), Palette.Warning),
+                    .Add(DisplayText.Between + DisplayText.Number(task.WarningCount), Palette.Warning),
                 .. Kept(task.Warnings, task.WarningsOmitted, "warning", "warnings", glyphs),
             ]),
             .. earlier.Count == 0
@@ -98,7 +98,7 @@ internal static class Summary
                 :
                 [
                     StatusMark.Warning(glyphs).Line(" ").Add(
-                        $"{DisplayText.Count(earlier.Sum(TaskCounts.Warnings), "warning", "warnings")} on "
+                        $"{DisplayText.Count(earlier.Sum(task => task.WarningCount), "warning", "warnings")} on "
                         + $"{DisplayText.Count(earlier.Count, "task", "tasks")} from earlier runs, not listed again",
                         Palette.Dim),
                 ],
@@ -149,11 +149,10 @@ internal static class Summary
             return [];
         }
 
-        var blockedBy = snapshot.Blocked.ToDictionary(blocked => blocked.Cause);
         return
         [
             Heading("Failures", snapshot.Failed.Count),
-            .. snapshot.Failed.SelectMany(task => Failure(task, blockedBy.GetValueOrDefault(task.Path), glyphs)),
+            .. snapshot.Failed.SelectMany(task => Failure(task, snapshot.TryGetBlocked(task.Path, out var blocked) ? blocked : null, glyphs)),
         ];
     }
 
@@ -167,7 +166,7 @@ internal static class Summary
         [
             task.Failure is FailureKind.Unexpected ? "unexpected failure" : "reported failure",
             .. task.Settled is { } at ? [DisplayText.Time(at)] : Array.Empty<string>(),
-            $"ran {DisplayText.Duration((task.Settled - task.Started) ?? TimeSpan.Zero)}",
+            $"ran {DisplayText.Duration(task.Ran ?? TimeSpan.Zero)}",
             .. Progress(task, glyphs) is { } progress ? [$"got to {progress}"] : Array.Empty<string>(),
         ];
 
@@ -175,7 +174,7 @@ internal static class Summary
             .Add(task.Path.ToString())
             .Add(DisplayText.Between + string.Join($" {glyphs.Separator} ", facts), Palette.Dim);
 
-        if (task.Message is { Length: > 0 } message)
+        if (task.Message is { } message)
         {
             yield return StyledLine.Of(DisplayText.Indent + glyphs.Text(message));
         }

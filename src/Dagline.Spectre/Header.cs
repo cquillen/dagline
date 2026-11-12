@@ -45,10 +45,7 @@ internal static class Header
 
     /// <summary>One bar for the whole run: the settled and running tasks by status, then the rest of the tasks empty.</summary>
     private static StyledLine Bar(Snapshot snapshot, int width, Glyphs glyphs)
-    {
-        var waiting = snapshot.Nodes.Count(Running.IsWaiting);
-        return StatusBar.Of(snapshot.Counts, snapshot.EarlierSuccesses, waiting, width, glyphs);
-    }
+        => StatusBar.Of(snapshot.Counts, snapshot.EarlierSuccesses, snapshot.Waiting.Count, width, glyphs);
 
     private static StyledLine Slots(Snapshot snapshot, Glyphs glyphs)
     {

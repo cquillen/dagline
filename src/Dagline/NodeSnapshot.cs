@@ -111,7 +111,9 @@ public sealed record NodeSnapshot
     /// and shows from the moment it is set, while the task is still running. For an unexpected failure it is the message
     /// of the exception that escaped the task body, which replaces any the task had set. When the exception's
     /// <see cref="Exception.Message"/> itself throws or gives <see langword="null"/>, it is the full name of the exception's type.
-    /// Each line break in the text given is replaced by a space.
+    /// Each line break in the text given is replaced by a space, and empty text is no message: setting an empty message clears
+    /// the one set before, and a failure reported with an empty message, or an exception whose message is empty, leaves none.
+    /// An earlier success has the message an earlier run recorded, as it was recorded.
     /// </remarks>
     public string? Message { get; internal init; }
 
@@ -196,11 +198,11 @@ public sealed record NodeSnapshot
     public DateTimeOffset? WaitingSince { get; internal init; }
 
     /// <summary>
-    /// What the task's current wait is for, as given to the scope that began it, or <see langword="null"/> when that scope gave no text,
-    /// while the task is not waiting, and for a group.
+    /// What the task's current wait is for, as given to the scope that began it, or <see langword="null"/> when that scope gave no text
+    /// or empty text, while the task is not waiting, and for a group.
     /// </summary>
     /// <remarks>
-    /// While scopes overlap it stays the text of the one that opened first. Like <see cref="WaitingSince"/>, it is cleared when the wait ends.
+    /// Each line break in the text given is replaced by a space, so it is one line. While scopes overlap it stays the text of the one that opened first. Like <see cref="WaitingSince"/>, it is cleared when the wait ends.
     /// </remarks>
     public string? WaitingText { get; internal init; }
 

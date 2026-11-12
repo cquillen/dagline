@@ -22,8 +22,8 @@ internal static class DisplayText
     public static string Time(DateTimeOffset at) => at.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Text a task gave, such as its status text or waiting text, on one line: each line break is printed as a space, as the plain-text
-    /// reporter prints it.
+    /// Status text on one line: each line break is printed as a space, as the plain-text reporter prints it. A message and
+    /// waiting text already arrive as one line.
     /// </summary>
     public static string OneLine(string text) => text.ReplaceLineEndings(" ");
 

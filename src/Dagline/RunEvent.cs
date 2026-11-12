@@ -106,7 +106,10 @@ public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warni
 /// <param name="At">When the marker began or ended.</param>
 /// <param name="Path">The path of the task.</param>
 /// <param name="Waiting"><see langword="true"/> when the wait began, <see langword="false"/> when it ended.</param>
-/// <param name="Text">What the task is waiting for, as given to the scope that began the wait, or <see langword="null"/> when it gave none.</param>
+/// <param name="Text">
+/// What the task is waiting for, as given to the scope that began the wait, on one line: each line break is a space.
+/// <see langword="null"/> when that scope gave no text or empty text.
+/// </param>
 /// <param name="Since">When the wait began. On a begin it equals <paramref name="At"/>; on an end it is the begin's time.</param>
 public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) : RunEvent(At);
 
