@@ -47,6 +47,14 @@ jobs:
           grep -q 'run ended: complete' basic-sample.txt
           if grep -q $'\x1b' basic-sample.txt; then echo 'The Basic sample wrote control sequences to redirected output.' >&2; exit 1; fi
 
+      # A clean run of the Batch sample at reference scale, in a fresh data directory, must end complete (exit code 0).
+      - name: Run the Batch sample
+        shell: bash
+        run: |
+          data_dir="$RUNNER_TEMP/batch-data"
+          rm -rf "$data_dir"
+          dotnet run --project samples/Dagline.Samples.Batch -c Release --no-build -- --fast --plain --dir "$data_dir"
+
       - name: Validate packages
         if: runner.os == 'Linux'
         run: dotnet pack -c Release --no-build
