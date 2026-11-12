@@ -58,18 +58,26 @@ public abstract record Journal
     }
 
     /// <summary>
-    /// The journal <paramref name="id"/> in <paramref name="directory"/>, for a run that continues it: every task the journal records
-    /// as succeeded is an earlier success, and every other task runs.
+    /// The journal <paramref name="id"/> in <paramref name="directory"/>, for a run that continues it: a task the journal records as
+    /// succeeded is an earlier success and does not run, unless its success is set aside, and every other task runs.
     /// </summary>
     /// <param name="directory">The directory the journal is in.</param>
     /// <param name="id">The journal's id, as <see cref="JournalInfo.Id"/> gave it.</param>
     /// <returns>The choice, to set as <see cref="RunOptions.Journal"/>.</returns>
     /// <remarks>
     /// <para>
-    /// A task whose latest settle in the journal is a success is an <em>earlier success</em>: it is succeeded from the start of the run,
+    /// A task whose latest settle in the journal is a success, with no set-aside recorded since, is an <em>earlier success</em>
+    /// unless this run sets it aside, as below: it is succeeded from the start of the run,
     /// with its message, detail lines and warnings and the time it succeeded, and no start time. It does not run, no event is
     /// published for it, and a dependency of either kind on it is met from the start. Every other task starts pending, whether it
     /// failed, was blocked or cancelled, or was never reached.
+    /// </para>
+    /// <para>
+    /// A task that is <em>after</em> something keeps its earlier success only when everything it is after is an earlier success in
+    /// this run. Otherwise its success is set aside: it starts pending and its body runs again, its path is in
+    /// <see cref="Snapshot.SetAside"/>, and the journal records the set-aside before any task starts. The rule is applied in
+    /// dependency order, so it spreads through <em>after</em> dependencies and never through <em>requires</em>. The bodies that run
+    /// are those of every task that is not an earlier success, set-aside tasks included.
     /// </para>
     /// <para>
     /// The run may use a different cap and different limit sizes from the runs before it. A journal whose latest run was complete

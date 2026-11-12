@@ -23,7 +23,7 @@ static Task PrepareAsync(TaskContext context) => Task.CompletedTask;
 static Task PublishAsync(TaskContext context) => Task.CompletedTask;
 ```
 
-Every task starts pending, except a task that a [journal](journals.md) the run continues records as succeeded. A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the cap and its limits](#sizing-the-cap-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
+Every task starts pending, except a task that a [journal](journals.md) the run continues records as succeeded and whose success [stands](journals.md#an-after-task-runs-again-when-what-it-is-after-runs-again). A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the cap and its limits](#sizing-the-cap-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
 
 Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock, through which it also reports progress, warnings and its outcome: see [Writing tasks](writing-tasks.md).
 
@@ -49,7 +49,7 @@ The graph is not changed by a run. You can run the same built graph again, and e
 The journal choice is required, so that running with no journal is something you chose and can see in the code. There are three choices:
 
 - <xref:Dagline.Journal.New*> starts a new journal in a directory you name, so that a later run can continue it.
-- <xref:Dagline.Journal.Continue*> continues a given journal: every task it records as succeeded is kept as an earlier success and does not run, and every other task runs.
+- <xref:Dagline.Journal.Continue*> continues a given journal: a task it records as succeeded is kept as an earlier success and does not run, and every other task runs. The exception is a task *after* something that runs again: its success is [set aside](journals.md#an-after-task-runs-again-when-what-it-is-after-runs-again) and it runs too.
 - <xref:Dagline.Journal.None> records nothing, and a later run cannot continue it.
 
 ```csharp
@@ -271,6 +271,7 @@ A run on a [journal](journals.md) writes to it all through the run. If a write f
 - Nothing more is written to the journal. Events still describe what happens, so reporters show the run to its end, but none of it is recorded.
 - The run ends with an error and no run outcome: <xref:Dagline.RunEnded> carries a <xref:Dagline.JournalWriteException> in `Error`, with `Outcome` null, and `RunAsync` throws that exception once reporters have handled every event. Its `Snapshot` is the final snapshot, which has an end time and no run outcome, and its inner exception is the file system's own: an `IOException`, or an `UnauthorizedAccessException` when the process may no longer write the file. `ReporterErrors` is not available.
 - A checkpoint save that fails, or that comes after a failed write, throws `JournalWriteException` to the task that called it, with the snapshot as of that save.
+- The one exception is the last write of a run, its end. By then the run outcome is decided and nothing is left to stop, so `RunEnded` carries the outcome and `RunAsync` returns it as usual. Only the journal shows the failure: it has no end recorded.
 
 ```csharp
 try

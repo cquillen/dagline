@@ -151,7 +151,7 @@ await Journals.DeleteAsync("journals/export", "20261111T041200Z-a3f9c2");
 
 Its returned task faults with `JournalInUseException` while a run holds the journal, so it can never pull a file from under a run, and with <xref:Dagline.JournalNotFoundException> when the journal is not there. An id not in the id format is refused by the call itself, with `ArgumentException`.
 
-Dagline never deletes or expires a journal itself. How long a record is kept is your app's policy: delete a journal once it is finished, after a number of days, or never.
+Dagline never deletes or expires a journal itself. How long a record is kept is your app's policy: delete a journal once it is finished, after a number of days, or never. A finished journal can still hold work that never succeeded, in paths a smaller graph did not have, and deleting it gives that work up: check its `Counts` first if your app runs subsets (see [A journal can be finished with work left in it](running-part-of-the-work.md#a-journal-can-be-finished-with-work-left-in-it)).
 
 ## When a journal cannot be used
 
