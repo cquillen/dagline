@@ -12,12 +12,14 @@ namespace Dagline.Testing;
 /// </para>
 /// <para>
 /// <see cref="For"/> only wraps the body: nothing runs and nothing touches the disk until the first run. That run starts a new
-/// journal in a directory the harness creates under <see cref="Path.GetTempPath"/>, and <see cref="DisposeAsync"/> deletes
-/// it.
+/// journal in a directory the harness creates under <see cref="Path.GetTempPath"/>, and every later run continues that journal,
+/// as <see cref="Journal.Continue"/> does. So a task gets back in a later run the checkpoint it saved in an earlier one that
+/// ended failed or cancelled, and a task that succeeded is an earlier success that does not run again.
+/// <see cref="DisposeAsync"/> deletes the directory.
 /// </para>
 /// <para>
-/// The grace period is unlimited, so the run never lets go of the task: a body that ignores a stop keeps the call from
-/// returning, and the test's own timeout is what fails it.
+/// The grace period is unlimited in every run, so the run never lets go of the task: a body that ignores a stop keeps the call
+/// from returning, and the test's own timeout is what fails it.
 /// </para>
 /// <para>
 /// A harness does one run at a time. It is not safe to call from two threads at once. It works with any test framework and
@@ -28,16 +30,19 @@ public sealed class TaskHarness : IAsyncDisposable
 {
     private readonly Graph _graph;
     private readonly NodePath _task;
-    private readonly TimeProvider _clock;
+    private readonly TimeProvider _runClock;
+    private readonly TimeProvider _stopClock;
     private string? _directory;
+    private string? _journalId;
     private bool _disposed;
 
-    private TaskHarness(TaskBody body, TimeProvider clock)
+    private TaskHarness(TaskBody body, TimeProvider runClock, TimeProvider stopClock)
     {
         var builder = new GraphBuilder();
         _task = builder.Task("task", body).Path;
         _graph = builder.Build();
-        _clock = clock;
+        _runClock = runClock;
+        _stopClock = stopClock;
     }
 
     /// <summary>Wraps <paramref name="body"/> in a harness. Nothing runs and nothing touches the disk until the first run.</summary>
@@ -46,20 +51,21 @@ public sealed class TaskHarness : IAsyncDisposable
     /// The clock every run uses, as <see cref="RunOptions.TimeProvider"/>, and so the one the body sees as
     /// <see cref="TaskContext.TimeProvider"/>. It is used as is. With none, <see cref="RunAsync"/> uses an
     /// <see cref="InstantClock"/> with the default guard, one for the life of the harness, so its guard counts fake time across
-    /// runs.
+    /// runs, and <see cref="RunUntilWaitingThenStopAsync"/> uses a clock on which no delay ever ends.
     /// </param>
     /// <returns>The harness. Dispose it to delete its temporary journal.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="body"/> is <see langword="null"/>.</exception>
     public static TaskHarness For(TaskBody body, TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(body);
-        return new TaskHarness(body, clock ?? new InstantClock());
+        return new TaskHarness(body, clock ?? new InstantClock(), clock ?? new NeverEndingClock());
     }
 
     /// <summary>Runs the task to the end of the run and returns its outcome from the run's final snapshot.</summary>
     /// <returns>
     /// The task's outcome. <see cref="TaskOutcome.Waited"/> is <see langword="true"/> if the task began waiting at least once in
-    /// this run.
+    /// this run. When the task succeeded in an earlier run of this harness, the body is not called and the earlier success's
+    /// outcome is returned, with <see cref="TaskOutcome.Waited"/> <see langword="false"/>.
     /// </returns>
     /// <remarks>
     /// An exception the task body throws never comes out of this call: it is the task's unexpected failure, returned as an
@@ -72,24 +78,40 @@ public sealed class TaskHarness : IAsyncDisposable
     /// with more fake time passed than its guard. This is thrown in place of the outcome, which would be the unexpected failure
     /// the guard caused, so a check that never returns <see langword="true"/> fails the test with this exception.
     /// </exception>
-    public async Task<TaskOutcome> RunAsync()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _directory ??= CreateDirectory();
+    public Task<TaskOutcome> RunAsync() => RunWithAsync(_runClock, stopAtWait: null);
 
-        var watcher = new WaitWatcher();
-        var options = new RunOptions
-        {
-            Journal = Journal.New(_directory),
-            TimeProvider = _clock,
-            GracePeriod = Timeout.InfiniteTimeSpan,
-            Reporters = [watcher],
-        };
-
-        var result = await Runner.RunAsync(_graph, options).ConfigureAwait(false);
-        (_clock as InstantClock)?.ThrowIfPastGuard();
-        return TaskOutcome.From(result.Snapshot[_task], watcher.Waited);
-    }
+    /// <summary>
+    /// Runs the task, requests a stop as soon as it begins waiting, as an operator would, and returns the outcome the run ends
+    /// with. This is how a first run is cut short, so that a later <see cref="RunAsync"/> can test how the task re-attaches.
+    /// </summary>
+    /// <returns>
+    /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntil"/> it is
+    /// <see cref="NodeStatus.Cancelled"/> with <see cref="TaskOutcome.Waited"/> <see langword="true"/>. A task that handles the
+    /// stop itself, by catching the cancellation and reporting, returns the outcome it chose. A task that settles without ever
+    /// waiting returns its own outcome, and the call does not hang.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// The stop is requested once, through a <see cref="StopSignal"/> of this run's own, when the harness's reporter sees the
+    /// first <see cref="WaitingChanged"/> that begins a wait. The grace period is unlimited, so the run waits for the task to end
+    /// however long it takes.
+    /// </para>
+    /// <para>
+    /// With no clock passed to <see cref="For"/>, the run uses a clock on which no delay ever ends, so the task is still waiting
+    /// when the stop arrives. A clock passed in is used as is. With an <see cref="InstantClock"/> passed in this is a race by
+    /// nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is returned.
+    /// </para>
+    /// <para>
+    /// Exceptions are as for <see cref="RunAsync"/>: one from the body is the task's unexpected failure, and one from the run
+    /// itself comes out unchanged.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The harness has been disposed.</exception>
+    /// <exception cref="ClockGuardException">
+    /// The clock passed to <see cref="For"/> is an <see cref="InstantClock"/>, and the run ended with more fake time passed than
+    /// its guard.
+    /// </exception>
+    public Task<TaskOutcome> RunUntilWaitingThenStopAsync() => RunWithAsync(_stopClock, stopAtWait: new StopSignal());
 
     /// <summary>
     /// Deletes the harness's temporary directory and its journal, if a run created them. Disposing twice is harmless, and a run
@@ -108,18 +130,52 @@ public sealed class TaskHarness : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    private async Task<TaskOutcome> RunWithAsync(TimeProvider clock, StopSignal? stopAtWait)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _directory ??= CreateDirectory();
+
+        var watcher = new WaitWatcher(stopAtWait);
+        var options = new RunOptions
+        {
+            Journal = _journalId is null ? Journal.New(_directory) : Journal.Continue(_directory, _journalId),
+            TimeProvider = clock,
+            GracePeriod = Timeout.InfiniteTimeSpan,
+            Reporters = [watcher],
+        };
+
+        RunResult result;
+        try
+        {
+            result = await Runner.RunAsync(_graph, options, stopAtWait).ConfigureAwait(false);
+        }
+        finally
+        {
+            _journalId ??= watcher.JournalId;
+        }
+
+        (clock as InstantClock)?.ThrowIfPastGuard();
+        return TaskOutcome.From(result.Snapshot[_task], watcher.Waited);
+    }
+
     private static string CreateDirectory() =>
         Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"dagline-harness-{Guid.NewGuid():N}")).FullName;
 
-    private sealed class WaitWatcher : IReporter
+    private sealed class WaitWatcher(StopSignal? stopAtWait) : IReporter
     {
         public bool Waited { get; private set; }
 
+        public string? JournalId { get; private set; }
+
         public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
         {
-            if (runEvent is WaitingChanged { Waiting: true })
+            JournalId ??= snapshot.Journal?.Id;
+            if (runEvent is WaitingChanged { Waiting: true } && !Waited)
             {
                 Waited = true;
+
+                // A second request would end the unlimited grace wait and let go of the task.
+                stopAtWait?.Request();
             }
 
             return ValueTask.CompletedTask;
