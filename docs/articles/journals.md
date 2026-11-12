@@ -149,7 +149,7 @@ The lock file stays behind after a run, and one left by a process that was kille
 await Journals.DeleteAsync("journals/export", "20261111T041200Z-a3f9c2");
 ```
 
-It throws `JournalInUseException` while a run holds the journal, so it can never pull a file from under a run, and <xref:Dagline.JournalNotFoundException> when the journal is not there. An id not in the id format is refused with `ArgumentException`.
+Its returned task faults with `JournalInUseException` while a run holds the journal, so it can never pull a file from under a run, and with <xref:Dagline.JournalNotFoundException> when the journal is not there. An id not in the id format is refused by the call itself, with `ArgumentException`.
 
 Dagline never deletes or expires a journal itself. How long a record is kept is your app's policy: delete a journal once it is finished, after a number of days, or never.
 

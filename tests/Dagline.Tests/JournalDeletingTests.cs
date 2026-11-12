@@ -54,6 +54,34 @@ public class JournalDeletingTests
     }
 
     [Test]
+    public async Task A_failed_deletion_is_reported_through_the_returned_task()
+    {
+        using var temporary = new TemporaryDirectory();
+
+        var deleting = Journals.DeleteAsync(temporary.Path, "20261111T041200Z-a3f9c2");
+
+        await Should.ThrowAsync<JournalNotFoundException>(deleting);
+    }
+
+    [Test]
+    public async Task A_deletion_cancelled_before_it_begins_is_reported_through_the_returned_task()
+    {
+        using var temporary = new TemporaryDirectory();
+
+        var deleting = Journals.DeleteAsync(temporary.Path, "20261111T041200Z-a3f9c2", new CancellationToken(canceled: true));
+
+        await Should.ThrowAsync<OperationCanceledException>(deleting);
+        deleting.IsCanceled.ShouldBeTrue();
+    }
+
+    [Test]
+    public void An_id_not_in_the_id_format_is_refused_by_the_call_itself()
+    {
+        Should.Throw<ArgumentException>(() => { _ = Journals.DeleteAsync("journals", "../20261111T041200Z-a3f9c2"); })
+            .ParamName.ShouldBe("id");
+    }
+
+    [Test]
     [Arguments("../20261111T041200Z-a3f9c2")]
     [Arguments("20261111T041200Z-A3F9C2")]
     [Arguments("")]

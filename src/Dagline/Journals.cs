@@ -65,26 +65,58 @@ public static class Journals
     /// <param name="directory">The directory the journal is in.</param>
     /// <param name="id">The journal's id, as <see cref="JournalSummary.Id"/> or <see cref="JournalInfo.Id"/> gave it.</param>
     /// <param name="cancellationToken">Cancels the deletion before it begins. Once a file has been removed it is not put back.</param>
-    /// <returns>A task that completes once both files are gone.</returns>
+    /// <returns>
+    /// A task that completes once both files are gone. A failure to delete, and a cancellation, are reported through this task.
+    /// </returns>
     /// <remarks>
+    /// <para>
     /// The journal is held while it is deleted, so a run can never start on it halfway, and a run never has it pulled from under it.
     /// A lock file left behind without a holder, as every run that has ended leaves one, does not stand in the way.
+    /// </para>
+    /// <para>
+    /// The arguments are checked by the call itself, which throws before any task is returned. Every other exception listed here
+    /// faults the returned task, and a cancellation cancels it.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="directory"/> or <paramref name="id"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="directory"/> or <paramref name="id"/> is <see langword="null"/>. It is thrown by the call itself.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="directory"/> is empty or only white space, or <paramref name="id"/> is not in the id format, so that an id can
-    /// never name a file outside the directory.
+    /// never name a file outside the directory. It is thrown by the call itself.
     /// </exception>
     /// <exception cref="JournalInUseException">A run holds the journal.</exception>
     /// <exception cref="JournalNotFoundException">The directory has no journal with the id.</exception>
     /// <exception cref="JournalOpenException">The lock file or the journal cannot be opened or removed.</exception>
-    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was signalled before the deletion began. Nothing is deleted.
+    /// </exception>
     public static Task DeleteAsync(string directory, string id, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         var location = JournalLocation.Of(directory, id);
-        cancellationToken.ThrowIfCancellationRequested();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled(cancellationToken);
+        }
 
+        try
+        {
+            Delete(location);
+            return Task.CompletedTask;
+        }
+        catch (Exception failed) when (failed is JournalNotFoundException or JournalInUseException or JournalOpenException)
+        {
+            return Task.FromException(failed);
+        }
+    }
+
+    /// <summary>Deletes the journal at <paramref name="location"/> and its lock file, claiming the journal while it does.</summary>
+    /// <exception cref="JournalNotFoundException">The directory has no journal with the id.</exception>
+    /// <exception cref="JournalInUseException">A run holds the journal.</exception>
+    /// <exception cref="JournalOpenException">The lock file or the journal cannot be opened or removed.</exception>
+    private static void Delete(JournalLocation location)
+    {
         location.ThrowIfNotFound();
         using var claim = JournalLock.ClaimToDelete(location);
         try
@@ -95,8 +127,6 @@ public static class Journals
         {
             throw new JournalOpenException(location.FilePath, cannotDelete);
         }
-
-        return Task.CompletedTask;
     }
 
     private static List<JournalLocation> JournalsIn(string directory)
