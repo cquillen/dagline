@@ -9,7 +9,8 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It owns the task instances, the ready set, the slots, the counts by status, the stop and the end rule. It holds no lock,
+/// It owns the task instances, the ready set, the slots, the counts by status, the stop, the end rule and which journal entries
+/// each step records. It holds no lock,
 /// no disposable object and no thread, and never reads a clock: each input that can cause an event carries the time,
 /// which every event of its steps shares.
 /// It is not thread-safe: the run gives it one input at a time, under its lock.

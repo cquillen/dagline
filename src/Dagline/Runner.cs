@@ -21,7 +21,9 @@ public static class Runner
     /// </returns>
     /// <remarks>
     /// <para>
-    /// Every task starts pending. A task becomes ready once every dependency it has is met. Each change of status is applied
+    /// Every task starts pending, except an earlier success: a task that the journal the run continues records as succeeded, which
+    /// is succeeded from the start, never runs and gets no event (see <see cref="Journal.Continue"/>). A task becomes ready once every
+    /// dependency it has is met. Each change of status is applied
     /// one at a time, so the order of a run's events depends only on the order in which task bodies end.
     /// </para>
     /// <para>
@@ -62,6 +64,12 @@ public static class Runner
     /// and <see cref="RunOutcome.Complete"/> when every task succeeded, stop or no stop.
     /// </para>
     /// <para>
+    /// A run on a journal opens it at the call, before the run exists: a new journal is created with its first line flushed to the disk,
+    /// and one to continue is read in full. The run writes each step's entries before anything else the step does, and flushes every
+    /// settle to the disk before any dependent starts and before its event is published. It closes the journal in the step that ends
+    /// the run, after flushing the run's end, so a later run can continue it as soon as this task completes.
+    /// </para>
+    /// <para>
     /// Dagline never writes to the console and never hooks a console or process signal: the app decides what requests a stop.
     /// </para>
     /// </remarks>
@@ -71,6 +79,10 @@ public static class Runner
     /// The cap or a size is below 1, the graph names a limit that the options give no size, or the grace period is below zero
     /// or above <see cref="uint.MaxValue"/> - 1 milliseconds and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
     /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
+    /// </exception>
+    /// <exception cref="JournalNotFoundException">
+    /// <see cref="RunOptions.Journal"/> continues a journal that is not in its directory. It is thrown at the call, after the options
+    /// have been checked: no task has started, no event has been published and no reporter has been called.
     /// </exception>
     public static Task<RunResult> RunAsync(Graph graph, RunOptions options, StopSignal? stop = null)
     {

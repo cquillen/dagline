@@ -23,7 +23,7 @@ static Task PrepareAsync(TaskContext context) => Task.CompletedTask;
 static Task PublishAsync(TaskContext context) => Task.CompletedTask;
 ```
 
-Every task starts pending. A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the cap and its limits](#sizing-the-cap-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
+Every task starts pending, except a task that a [journal](journals.md) the run continues records as succeeded. A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the cap and its limits](#sizing-the-cap-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
 
 Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock, through which it also reports progress, warnings and its outcome: see [Writing tasks](writing-tasks.md).
 
@@ -46,7 +46,18 @@ The graph is not changed by a run. You can run the same built graph again, and e
 
 ### Journal
 
-The journal choice is required, so that running with no journal is something you chose and can see in the code. <xref:Dagline.Journal.None> is the only choice so far: the run records nothing, and a later run cannot continue it.
+The journal choice is required, so that running with no journal is something you chose and can see in the code. There are three choices:
+
+- <xref:Dagline.Journal.New*> starts a new journal in a directory you name, so that a later run can continue it.
+- <xref:Dagline.Journal.Continue*> continues a given journal: every task it records as succeeded is kept as an earlier success and does not run, and every other task runs.
+- <xref:Dagline.Journal.None> records nothing, and a later run cannot continue it.
+
+```csharp
+var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New("journals/export", "all shards") });
+Console.WriteLine($"journal {result.Snapshot.Journal!.Id}");
+```
+
+[Journals](journals.md) covers the three choices, what a continuing run keeps and what it runs again.
 
 ### TimeProvider
 
@@ -281,6 +292,8 @@ The options cannot be used to run the graph:
 
 It is thrown at the call too: no task has started, no event has been published and no reporter has been called.
 
-`RunConfigurationException` derives from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
+`RunAsync` throws <xref:Dagline.JournalNotFoundException> when <xref:Dagline.Journal.Continue*> names a journal that is not in its directory, after the options have been checked and also before anything has happened. See [Journals](journals.md#continuing-a-journal).
+
+`RunConfigurationException` and `JournalNotFoundException` derive from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
 
 A graph that cannot run never reaches `RunAsync`. `Build` refuses it with a <xref:Dagline.GraphException>, which has the same base: see [Build errors](defining-a-graph.md#build-errors).

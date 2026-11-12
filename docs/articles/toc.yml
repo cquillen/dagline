@@ -10,6 +10,8 @@
   href: waiting-on-external-systems.md
 - name: Running and stopping
   href: running-and-stopping.md
+- name: Journals
+  href: journals.md
 - name: Terminal UI
   href: terminal-ui.md
 - name: Reporters
