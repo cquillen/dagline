@@ -25,7 +25,7 @@ The faults:
 - `poll`: the first status call of the first job throws.
 - `job`: the last job ends in error.
 
-A run without `--fault` is the operator having fixed things. Before each run the sample prints one line saying whether it starts a new journal or continues the newest unfinished one for the same shards.
+A run without `--fault` is the operator having fixed things. Before each run the sample prints one line saying whether it starts a new journal or continues the newest unfinished one for the same shards. The tenant count is not part of that match, so keep `--tenants` the same when you continue, or pass `--new`.
 
 ## Exit codes
 
@@ -50,7 +50,7 @@ Look for the validations filling the shard rows, at most four per shard, and no 
 ### 2. A failed validation, then the fix
 
 ```shell
-dotnet run --project samples/Dagline.Samples.Batch -- --fast --fault validate
+dotnet run --project samples/Dagline.Samples.Batch -- --fast --new --fault validate
 dotnet run --project samples/Dagline.Samples.Batch -- --fast
 ```
 

@@ -25,7 +25,7 @@ while (arguments.TryDequeue(out var option))
             break;
         case "--tenants" when arguments.TryDequeue(out var count) && int.TryParse(count, out tenantsPerShard) && tenantsPerShard > 0:
             break;
-        case "--dir" when arguments.TryDequeue(out var path):
+        case "--dir" when arguments.TryDequeue(out var path) && !string.IsNullOrWhiteSpace(path):
             directory = path;
             break;
         case "--new":

@@ -2,7 +2,7 @@ using Dagline.Testing;
 
 namespace Dagline.Samples.Batch.Tests;
 
-public class BatchTasksTests
+public sealed class BatchTasksTests
 {
     private static readonly TimeSpan _interval = TimeSpan.FromSeconds(2);
 
