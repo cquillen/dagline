@@ -13,9 +13,15 @@ namespace Dagline;
 /// A report, an opened waiting scope and a closed waiting scope apply only while the task is running. On a task that is not running,
 /// such as one the run has let go of, each is ignored and gives <see langword="null"/>.
 /// </para>
+/// <para>
+/// It holds the task's data itself, and makes a <see cref="NodeSnapshot"/> of it for each change without keeping one.
+/// An instance lives as long as its run, and one that held on to its latest snapshot would point from a long-lived object
+/// at a new one with every change, which makes the garbage collector collect an older generation far more often.
+/// </para>
 /// <para>It is not thread-safe: the run calls it under its lock.</para>
 /// </remarks>
-internal sealed class TaskInstance
+/// <param name="task">The task this is an instance of.</param>
+internal sealed class TaskInstance(BuiltTask task)
 {
     /// <summary>How many warnings, and separately how many detail lines, are kept for one task. The rest are counted.</summary>
     private const int _kept = 100;
@@ -23,24 +29,59 @@ internal sealed class TaskInstance
     private bool _failureReported;
     private int _openWaitingScopes;
 
-    public TaskInstance(BuiltTask task)
-        => Snapshot = new NodeSnapshot(task, NodeStatus.Pending, StatusCounts.OfOneTask(NodeStatus.Pending));
+    private FailureKind? _failure;
+    private NodePath? _blockedBy;
+    private string? _message;
+    private IReadOnlyList<string> _detail = [];
+    private int _detailOmitted;
+    private IReadOnlyList<string> _warnings = [];
+    private int _warningsOmitted;
+    private string? _statusText;
+    private long? _count;
+    private long? _total;
+    private DateTimeOffset? _waitingSince;
+    private string? _waitingText;
+    private DateTimeOffset? _started;
+    private DateTimeOffset? _settled;
 
-    /// <summary>The task as a snapshot shows it now.</summary>
-    public NodeSnapshot Snapshot { get; private set; }
+    public NodeStatus Status { get; private set; } = NodeStatus.Pending;
 
-    public NodeStatus Status => Snapshot.Status;
-
+    // Each report checks this itself: a helper that took the report as a lambda cost every report a closure.
     private bool IsRunning => Status is NodeStatus.Running;
 
+    /// <summary>The task as a snapshot shows it now. Each call makes a new one.</summary>
+    public NodeSnapshot ToNodeSnapshot() => new(task, Status, StatusCounts.OfOneTask(Status))
+    {
+        Failure = _failure,
+        BlockedBy = _blockedBy,
+        Message = _message,
+        Detail = _detail,
+        DetailOmitted = _detailOmitted,
+        Warnings = _warnings,
+        WarningsOmitted = _warningsOmitted,
+        StatusText = _statusText,
+        Count = _count,
+        Total = _total,
+        WaitingSince = _waitingSince,
+        WaitingText = _waitingText,
+        Started = _started,
+        Settled = _settled,
+    };
+
     /// <summary>Moves the task from pending to ready: every dependency is met.</summary>
-    public TaskChange MakeReady(DateTimeOffset now) => Move(Snapshot with { Status = NodeStatus.Ready }, now);
+    public TaskChange MakeReady(DateTimeOffset now) => Moved(from: MoveTo(NodeStatus.Ready), now);
 
     /// <summary>Moves the task from ready to running, as of <paramref name="now"/>.</summary>
-    public TaskChange Start(DateTimeOffset now) => Move(Snapshot with { Status = NodeStatus.Running, Started = now }, now);
+    public TaskChange Start(DateTimeOffset now)
+    {
+        var from = MoveTo(NodeStatus.Running);
+        _started = now;
+
+        return Moved(from, now);
+    }
 
     /// <summary>Settles a pending task as blocked by the failed task at <paramref name="cause"/>.</summary>
-    public TaskChange Block(NodePath cause, DateTimeOffset now) => Move(Settled(TaskOutcome.Blocked(cause), now), now);
+    public TaskChange Block(NodePath cause, DateTimeOffset now) => SettleWith(TaskOutcome.Blocked(cause), now);
 
     /// <summary>
     /// Settles a running task, and decides the outcome it records. <see cref="TaskOutcome.LeftBehind"/> wins over everything and
@@ -69,41 +110,89 @@ internal sealed class TaskInstance
 
         if (_openWaitingScopes == 0)
         {
-            return [Move(Settled(outcome, now), now)];
+            return [SettleWith(outcome, now)];
         }
 
         _openWaitingScopes = 0;
-        return [EndWaiting(now), Move(Settled(outcome, now), now)];
+        return [EndWaiting(now), SettleWith(outcome, now)];
     }
 
     /// <summary>Sets the status text of the task's progress. Progress is never an event.</summary>
-    public TaskChange? SetStatusText(string? text) => Change(task => task with { StatusText = text });
+    public TaskChange? SetStatusText(string? text)
+    {
+        if (!IsRunning)
+        {
+            return null;
+        }
+
+        _statusText = text;
+
+        return Changed();
+    }
 
     /// <summary>Sets the count of the task's progress, and the total it counts towards. Progress is never an event.</summary>
-    public TaskChange? SetCount(long current, long? total) => Change(task => task with { Count = current, Total = total });
+    public TaskChange? SetCount(long current, long? total)
+    {
+        if (!IsRunning)
+        {
+            return null;
+        }
+
+        _count = current;
+        _total = total;
+
+        return Changed();
+    }
 
     /// <summary>
     /// Adds a warning, as one line, while the task has fewer than the number kept, and produces <see cref="WarningAdded"/>.
     /// A warning beyond the number kept is only counted, and produces nothing.
     /// </summary>
-    public TaskChange? Warn(string warning, DateTimeOffset now) => WhileRunning(() =>
+    public TaskChange? Warn(string warning, DateTimeOffset now)
     {
-        if (Snapshot.Warnings.Count >= _kept)
+        if (!IsRunning)
         {
-            Snapshot = Snapshot with { WarningsOmitted = Snapshot.WarningsOmitted + 1 };
-            return new TaskChange(Snapshot, Event: null);
+            return null;
+        }
+
+        if (_warnings.Count >= _kept)
+        {
+            _warningsOmitted++;
+
+            return Changed();
         }
 
         var kept = LineBreaks.OneLine(warning);
-        Snapshot = Snapshot with { Warnings = [.. Snapshot.Warnings, kept] };
-        return new TaskChange(Snapshot, new WarningAdded(now, Snapshot.Path, kept));
-    });
+        _warnings = [.. _warnings, kept];
+
+        return new TaskChange(ToNodeSnapshot(), new WarningAdded(now, task.Path, kept));
+    }
 
     /// <summary>Sets the message, as one line. It is never an event.</summary>
-    public TaskChange? SetMessage(string message) => Change(task => WithMessage(task, message));
+    public TaskChange? SetMessage(string message)
+    {
+        if (!IsRunning)
+        {
+            return null;
+        }
+
+        ReplaceMessage(message);
+
+        return Changed();
+    }
 
     /// <summary>Adds detail lines, one for each line of each text, up to the number kept. It is never an event.</summary>
-    public TaskChange? AddDetail(IEnumerable<string> texts) => Change(task => WithDetail(task, texts));
+    public TaskChange? AddDetail(IEnumerable<string> texts)
+    {
+        if (!IsRunning)
+        {
+            return null;
+        }
+
+        AddDetailLines(texts);
+
+        return Changed();
+    }
 
     /// <summary>
     /// Records a reported failure: sets the message and adds the detail lines, and from now on the task settles failed
@@ -111,101 +200,121 @@ internal sealed class TaskInstance
     /// </summary>
     public TaskChange? Fail(string message, IEnumerable<string> detail)
     {
-        var change = Change(task => WithDetail(WithMessage(task, message), detail));
-        _failureReported |= change is not null;
-        return change;
+        if (!IsRunning)
+        {
+            return null;
+        }
+
+        ReplaceMessage(message);
+        AddDetailLines(detail);
+        _failureReported = true;
+
+        return Changed();
     }
 
     /// <summary>
     /// Opens one waiting scope. The first open scope begins the wait, with its text and <paramref name="now"/>,
     /// and produces <see cref="WaitingChanged"/>. A scope that overlaps one already open produces nothing.
     /// </summary>
-    public TaskChange? OpenWaitingScope(string? text, DateTimeOffset now) => WhileRunning(() =>
+    public TaskChange? OpenWaitingScope(string? text, DateTimeOffset now)
     {
+        if (!IsRunning)
+        {
+            return null;
+        }
+
         _openWaitingScopes++;
         if (_openWaitingScopes > 1)
         {
-            return new TaskChange(Snapshot, Event: null);
+            return Changed();
         }
 
-        Snapshot = Snapshot with { WaitingSince = now, WaitingText = text };
-        return new TaskChange(Snapshot, new WaitingChanged(now, Snapshot.Path, Waiting: true, text, Since: now));
-    });
+        _waitingSince = now;
+        _waitingText = text;
+
+        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: true, text, Since: now));
+    }
 
     /// <summary>
     /// Closes one waiting scope. The last open scope ends the wait and produces <see cref="WaitingChanged"/>.
     /// Closing a scope that leaves another open produces nothing.
     /// </summary>
-    public TaskChange? CloseWaitingScope(DateTimeOffset now) => WhileRunning(() =>
+    public TaskChange? CloseWaitingScope(DateTimeOffset now)
     {
-        if (_openWaitingScopes == 0)
+        if (!IsRunning || _openWaitingScopes == 0)
         {
             return null;
         }
 
         _openWaitingScopes--;
-        return _openWaitingScopes > 0 ? new TaskChange(Snapshot, Event: null) : EndWaiting(now);
-    });
+
+        return _openWaitingScopes > 0 ? Changed() : EndWaiting(now);
+    }
 
     private TaskChange EndWaiting(DateTimeOffset now)
     {
-        var waiting = Snapshot;
-        Snapshot = Snapshot with { WaitingSince = null, WaitingText = null };
-        return new TaskChange(Snapshot, new WaitingChanged(now, Snapshot.Path, Waiting: false, waiting.WaitingText, waiting.WaitingSince!.Value));
+        var since = _waitingSince!.Value;
+        var text = _waitingText;
+        _waitingSince = null;
+        _waitingText = null;
+
+        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: false, text, since));
     }
 
-    /// <summary>Applies a report that is never an event to a running task.</summary>
-    private TaskChange? Change(Func<NodeSnapshot, NodeSnapshot> report) => WhileRunning(() =>
-    {
-        Snapshot = report(Snapshot);
-        return new TaskChange(Snapshot, Event: null);
-    });
+    /// <summary>The task as it is after a report that is never an event.</summary>
+    private TaskChange Changed() => new(ToNodeSnapshot(), Event: null);
 
     /// <summary>
-    /// Carries out an operation on the task while it is running. On a task that is not running it is ignored, and gives
-    /// <see langword="null"/>.
-    /// </summary>
-    private TaskChange? WhileRunning(Func<TaskChange?> operation) => IsRunning ? operation() : null;
-
-    /// <summary>
-    /// The task as it is once it has settled with an outcome. What it reported while it ran stays, except that an outcome
+    /// Settles the task with an outcome. What it reported while it ran stays, except that an outcome
     /// with a message of its own replaces the task's message and adds its detail lines.
     /// </summary>
-    private NodeSnapshot Settled(TaskOutcome outcome, DateTimeOffset now)
+    private TaskChange SettleWith(TaskOutcome outcome, DateTimeOffset now)
     {
-        var settled = Snapshot with { Status = outcome.Status, Settled = now, Failure = outcome.Failure, BlockedBy = outcome.BlockedBy };
-
-        return outcome.ReplacingMessage is null
-            ? settled
-            : WithDetail(WithMessage(settled, outcome.ReplacingMessage), outcome.AddedDetail);
-    }
-
-    /// <summary>Puts the task as it is after a change of status in place of the task as it was, if the status may move that way.</summary>
-    /// <exception cref="InvalidOperationException">The change would move the status backwards, or out of a settled status.</exception>
-    private TaskChange Move(NodeSnapshot changed, DateTimeOffset now)
-    {
-        var from = Status;
-        var to = changed.Status;
-        if (!from.CanMoveTo(to))
+        var from = MoveTo(outcome.Status);
+        _settled = now;
+        _failure = outcome.Failure;
+        _blockedBy = outcome.BlockedBy;
+        if (outcome.ReplacingMessage is not null)
         {
-            throw new InvalidOperationException($"The task '{Snapshot.Path}' cannot move from {from} to {to}: a status only moves forward.");
+            ReplaceMessage(outcome.ReplacingMessage);
+            AddDetailLines(outcome.AddedDetail);
         }
 
-        Snapshot = changed with { Counts = StatusCounts.OfOneTask(to) };
-        return new TaskChange(Snapshot, new TaskStatusChanged(now, Snapshot, from, to));
+        return Moved(from, now);
     }
 
-    private static NodeSnapshot WithMessage(NodeSnapshot task, string message) => task with { Message = LineBreaks.OneLine(message) };
+    /// <summary>Moves the task to a status, if the status may move that way.</summary>
+    /// <returns>The status it moved from.</returns>
+    /// <exception cref="InvalidOperationException">The change would move the status backwards, or out of a settled status.</exception>
+    private NodeStatus MoveTo(NodeStatus to)
+    {
+        var from = Status;
+        if (!from.CanMoveTo(to))
+        {
+            throw new InvalidOperationException($"The task '{task.Path}' cannot move from {from} to {to}: a status only moves forward.");
+        }
 
-    private static NodeSnapshot WithDetail(NodeSnapshot task, IEnumerable<string> texts)
+        Status = to;
+
+        return from;
+    }
+
+    /// <summary>The task as it is after a change of status, with the event that says so.</summary>
+    private TaskChange Moved(NodeStatus from, DateTimeOffset now)
+    {
+        var moved = ToNodeSnapshot();
+
+        return new TaskChange(moved, new TaskStatusChanged(now, moved, from, Status));
+    }
+
+    private void ReplaceMessage(string message) => _message = LineBreaks.OneLine(message);
+
+    private void AddDetailLines(IEnumerable<string> texts)
     {
         string[] lines = [.. texts.SelectMany(LineBreaks.Lines)];
-        var kept = Math.Min(lines.Length, _kept - task.Detail.Count);
+        var kept = Math.Min(lines.Length, _kept - _detail.Count);
 
-        return task with
-        {
-            Detail = [.. task.Detail, .. lines.Take(kept)],
-            DetailOmitted = task.DetailOmitted + lines.Length - kept,
-        };
+        _detail = [.. _detail, .. lines.Take(kept)];
+        _detailOmitted += lines.Length - kept;
     }
 }

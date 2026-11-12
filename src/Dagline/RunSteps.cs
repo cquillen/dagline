@@ -34,7 +34,6 @@ internal sealed class RunSteps
     private readonly TaskInstance?[] _instances;
     private readonly Slots _slots;
     private readonly List<Step> _decided = [];
-    private readonly NodeSnapshot[] _nodes;
     private readonly SnapshotTaker _snapshots;
 
     private StepUnderWay? _step;
@@ -58,8 +57,7 @@ internal sealed class RunSteps
             _instances[task.Position] = new TaskInstance(task);
         }
 
-        _nodes = [.. graph.Nodes.Select(AtTheStart)];
-        _snapshots = new SnapshotTaker(_nodes, graph.Positions, _slots);
+        _snapshots = new SnapshotTaker(graph.Nodes.Select(AtTheStart), graph.Positions, _slots);
     }
 
     /// <summary>
@@ -164,8 +162,12 @@ internal sealed class RunSteps
         return Decided();
     }
 
-    /// <summary>The status, as it is now, of the node at <paramref name="position"/>.</summary>
-    public NodeStatus StatusAt(int position) => _nodes[position].Status;
+    /// <summary>
+    /// The status, as it is now, of the node at <paramref name="position"/>: a task's is its instance's,
+    /// and a group's is derived from the counts of the tasks beneath it.
+    /// </summary>
+    public NodeStatus StatusAt(int position)
+        => _instances[position] is { } instance ? instance.Status : _groupCounts[position].GroupStatus;
 
     /// <summary>
     /// The snapshot of the run just after an event of a decided step: as it was then, however far the run has got since.
@@ -358,15 +360,15 @@ internal sealed class RunSteps
     }
 
     private bool DependenciesAreMet(BuiltTask task)
-        => task.Upstreams.All(upstream => _nodes[upstream.Position].Status.Meets(upstream.Kind));
+        => task.Upstreams.All(upstream => StatusAt(upstream.Position).Meets(upstream.Kind));
 
     /// <summary>Publishes one event for each group the current step settled: the deepest first, then in declaration order.</summary>
     private void AnnounceSettledGroups(DateTimeOffset now)
     {
         foreach (var group in _settledInThisStep.OrderByDescending(group => group.Depth).ThenBy(group => group.Position))
         {
-            var settled = _nodes[group.Position];
-            Publish(new GroupSettled(now, group.Path, settled.Status, settled.Counts));
+            var counts = _groupCounts[group.Position];
+            Publish(new GroupSettled(now, group.Path, counts.GroupStatus, counts.ToDictionary()));
         }
 
         _settledInThisStep.Clear();
@@ -416,12 +418,12 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Puts a task as it is after a change to its instance in place of the task as it was. A change of status is counted in the run
+    /// Records a task as it is after a change to its instance, for the next snapshot. A change of status is counted in the run
     /// and in every group that holds the task. The event the change produced is published in the step under way.
     /// </summary>
     private void Apply(BuiltTask task, TaskChange change)
     {
-        Record(task.Position, change.Task);
+        _snapshots.Record(task.Position, change.Task);
         if (change.Event is TaskStatusChanged moved)
         {
             _counts.Move(moved.From, moved.To);
@@ -438,36 +440,34 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Counts one task's change of status in a group that holds it, and derives the group's status again.
+    /// Counts one task's change of status in a group that holds it, and records the group as it is now for the next snapshot.
     /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
     /// </summary>
     private void MoveBeneath(BuiltGroup group, NodeStatus from, NodeStatus to)
     {
-        var counts = _groupCounts[group.Position];
-        counts.Move(from, to);
-        var status = counts.GroupStatus;
-        Record(group.Position, _nodes[group.Position] with { Status = status, Counts = counts.ToDictionary() });
+        _groupCounts[group.Position].Move(from, to);
+        var moved = NodeSnapshotOf(group);
+        _snapshots.Record(group.Position, moved);
 
-        if (status.IsSettled())
+        if (moved.Status.IsSettled())
         {
             _settledInThisStep.Add(group);
         }
     }
 
     private NodeSnapshot AtTheStart(BuiltNode node)
-        => _groupCounts.TryGetValue(node.Position, out var counts)
-            ? new NodeSnapshot(node, counts.GroupStatus, counts.ToDictionary())
-            : InstanceOf((BuiltTask)node).Snapshot;
+        => node is BuiltGroup group ? NodeSnapshotOf(group) : InstanceOf((BuiltTask)node).ToNodeSnapshot();
+
+    /// <summary>A group as a snapshot shows it now: its status and counts are those of the tasks beneath it, and nothing else is attached to it.</summary>
+    private NodeSnapshot NodeSnapshotOf(BuiltGroup group)
+    {
+        var counts = _groupCounts[group.Position];
+
+        return new NodeSnapshot(group, counts.GroupStatus, counts.ToDictionary());
+    }
 
     // Indexed by position among the nodes, so a group's place is empty.
     private TaskInstance InstanceOf(BuiltTask task) => _instances[task.Position]!;
-
-    /// <summary>Puts a node as it is after a change in place of the node as it was, and records the change for the next snapshot.</summary>
-    private void Record(int position, NodeSnapshot node)
-    {
-        _nodes[position] = node;
-        _snapshots.Record(position, node);
-    }
 
     private void Publish(RunEvent runEvent) => _step!.Events.Add(new StepEvent(runEvent, ChangeSinceLastEvent()));
 
