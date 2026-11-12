@@ -172,4 +172,24 @@ public class JournalHoldingTests
 
         thrown.Version.ShouldBe(1);
     }
+
+    [Test]
+    public async Task A_journal_with_an_entry_missing_its_path_throws_on_continuing_and_on_listing()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var graph = builder.Build();
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var id = first.Snapshot.Journal!.Id;
+        await File.AppendAllTextAsync(temporary.Combine($"{id}.journal"), "{\"entry\":\"taskStarted\"}\n");
+
+        var thrown = await Should.ThrowAsync<JournalFormatException>(() => Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Path, id) }));
+        var listed = await Should.ThrowAsync<JournalFormatException>(() => Journals.ListAsync(temporary.Path));
+
+        thrown.Version.ShouldBe(1);
+        listed.Version.ShouldBe(1);
+    }
 }
