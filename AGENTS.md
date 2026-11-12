@@ -19,6 +19,7 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 - `tests/Dagline.TestSupport`: helpers the test projects share (recording reporter, paused task bodies, fake clock helper); holds no tests, never packed
 - `samples/`: runnable console apps
 - `samples/Dagline.Samples.Batch`: the acceptance sample, the reference scenario at reference scale over a fake entity store and a fake job scheduler
+- `samples/Dagline.Samples.Batch.Tests`: the sample's three harness tests, written as a consumer's; the acceptance test of `Dagline.Testing` and the worked example its docs point to
 - `docs/`: DocFX site, published to GitHub Pages
 
 ## Rules

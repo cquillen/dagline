@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dagline.Samples.Batch\Dagline.Samples.Batch.csproj" />
+    <ProjectReference Include="..\..\src\Dagline.Testing\Dagline.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Shouldly" />
+  </ItemGroup>
+
+  <!-- The only real time in a test: a stuck test fails after 30 seconds. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="TUnit.Core.TimeoutAttribute">
+      <_Parameter1>30000</_Parameter1>
+      <_Parameter1_IsLiteral>true</_Parameter1_IsLiteral>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>
