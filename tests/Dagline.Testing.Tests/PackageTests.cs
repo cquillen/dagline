@@ -56,7 +56,7 @@ public class PackageTests
         await process.WaitForExitAsync();
         process.ExitCode.ShouldBe(0, output);
 
-        var properties = JsonDocument.Parse(output).RootElement.GetProperty("Properties");
+        var properties = JsonElement.Parse(output).GetProperty("Properties");
         return properties.GetProperty("IsPackable").GetString() == "true" ? properties.GetProperty("PackageId").GetString() : null;
     }
 }
