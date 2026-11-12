@@ -37,6 +37,9 @@ internal sealed class StyledLine
 
     public StyledLine Add(StyledLine other) => new(Spans.AddRange(other.Spans), Width + other.Width);
 
+    /// <summary>The line with spaces added to make it <paramref name="width"/> cells wide, or the line itself when it is that wide already.</summary>
+    public StyledLine PadTo(int width) => Width >= width ? this : Add(new string(' ', width - Width));
+
     /// <summary>The line cut to <paramref name="width"/> cells, ending in <paramref name="ellipsis"/> where it was cut.</summary>
     public StyledLine Fit(int width, string ellipsis)
     {

@@ -50,7 +50,7 @@ internal static class Tally
 
     private static IEnumerable<Part> Parts(Snapshot snapshot, Glyphs glyphs)
     {
-        var waiting = snapshot.Nodes.Count(node => !node.IsGroup && node.WaitingSince is not null);
+        var waiting = snapshot.Nodes.Count(Running.IsWaiting);
         var counts = snapshot.Counts;
         var warnings = snapshot.WarningCount;
 

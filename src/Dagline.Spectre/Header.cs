@@ -49,7 +49,7 @@ internal static class Header
     {
         var counts = snapshot.Counts;
         var tasks = counts.Values.Sum();
-        var waiting = snapshot.Nodes.Count(node => !node.IsGroup && node.WaitingSince is not null);
+        var waiting = snapshot.Nodes.Count(Running.IsWaiting);
         (int Tasks, Style Style)[] shares =
         [
             (snapshot.EarlierSuccesses, Palette.EarlierSuccess),
@@ -67,11 +67,11 @@ internal static class Header
         {
             // Each share ends where its running total falls, so the cells always add up to the width.
             var cells = tasks == 0 ? 0 : (int)((long)(before + share) * width / tasks) - (int)((long)before * width / tasks);
-            bar = bar.Add(Repeat(glyphs.Bar, cells), style);
+            bar = bar.Add(DisplayText.Repeat(glyphs.Bar, cells), style);
             before += share;
         }
 
-        return bar.Add(Repeat(glyphs.BarRest, width - bar.Width), Palette.Dim);
+        return bar.Add(DisplayText.Repeat(glyphs.BarRest, width - bar.Width), Palette.Dim);
     }
 
     private static StyledLine Slots(Snapshot snapshot, Glyphs glyphs)
@@ -93,6 +93,4 @@ internal static class Header
 
         return slots;
     }
-
-    private static string Repeat(string glyph, int times) => times <= 0 ? "" : string.Concat(Enumerable.Repeat(glyph, times));
 }

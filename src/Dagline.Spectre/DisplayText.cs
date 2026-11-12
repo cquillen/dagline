@@ -10,6 +10,12 @@ internal static class DisplayText
     public static string Number(long number) => number.ToString("N0", CultureInfo.InvariantCulture);
 
     /// <summary>
+    /// Text a task gave, such as its status text or waiting text, on one line: each line break is written as a space, as the
+    /// plain-text reporter writes it.
+    /// </summary>
+    public static string OneLine(string text) => text.ReplaceLineEndings(" ");
+
+    /// <summary>
     /// Whole seconds under a minute, as in <c>45s</c>. Minutes and seconds under an hour, as in <c>20m 44s</c>. Hours and minutes
     /// from there, as in <c>1h 15m</c>. Always rounded down, and a duration below zero is written as zero.
     /// </summary>
@@ -29,4 +35,7 @@ internal static class DisplayText
             ? Invariant($"{duration.Minutes}m {duration.Seconds}s")
             : Invariant($"{(long)duration.TotalHours}h {duration.Minutes}m");
     }
+
+    /// <summary><paramref name="glyph"/> <paramref name="times"/> times over, or nothing when <paramref name="times"/> is not above zero.</summary>
+    public static string Repeat(string glyph, int times) => times <= 0 ? "" : string.Concat(Enumerable.Repeat(glyph, times));
 }

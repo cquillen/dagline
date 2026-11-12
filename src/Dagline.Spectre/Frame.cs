@@ -16,11 +16,15 @@ internal static class Frame
     public static IReadOnlyList<StyledLine> Build(Snapshot snapshot, Size size, DateTimeOffset now, Glyphs glyphs)
     {
         var width = Math.Max(0, size.Width);
+        var height = Math.Max(0, size.Height);
+        var header = Header.Lines(snapshot, width, now, glyphs);
+        var waiting = WaitingPane.Lines(snapshot, width, now, glyphs, height - header.Count);
+        var working = WorkingPane.Lines(snapshot, width, now, glyphs, height - header.Count - waiting.Count);
         return
         [
-            .. Header.Lines(snapshot, width, now, glyphs)
+            .. header.Concat(working).Concat(waiting)
                 .Select(line => line.Fit(width, glyphs.Ellipsis))
-                .Take(Math.Max(0, size.Height)),
+                .Take(height),
         ];
     }
 }
