@@ -54,8 +54,10 @@ public class RunTimeTests
     [Test]
     public async Task A_report_that_is_never_an_event_does_not_read_the_clock()
     {
-        var quiet = await EndOfARunOnAClockThatAdvancesWhenReadAsync(_ => { });
-        var reporting = await EndOfARunOnAClockThatAdvancesWhenReadAsync(context =>
+        // Every read moves this clock on by a second, so the time of an event shows how often the clock was read before it.
+        var clock = new FakeTimeProvider(_runStart) { AutoAdvanceAmount = TimeSpan.FromSeconds(1) };
+        var builder = new GraphBuilder();
+        builder.Task("load", context =>
         {
             for (var entity = 1; entity <= 60; entity++)
             {
@@ -66,32 +68,27 @@ public class RunTimeTests
             context.Message("loaded 60 entities");
             context.Detail("entity 3: no owner");
             _ = context.Fail("1 bad entity", "entity 3: no owner");
-        });
-
-        reporting.ShouldBe(quiet);
-    }
-
-    private static async Task<DateTimeOffset?> EndOfARunOnAClockThatAdvancesWhenReadAsync(Action<TaskContext> report)
-    {
-        var builder = new GraphBuilder();
-        builder.Task("load", context =>
-        {
-            report(context);
             return Task.CompletedTask;
         });
+        var reporter = new RecordingReporter();
 
         var result = await Runner.RunAsync(
             builder.Build(),
-            new RunOptions { Journal = Journal.None, TimeProvider = new ClockThatAdvancesWhenRead(_runStart) });
+            new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
 
-        return result.Snapshot.Ended;
-    }
+        var loadSettled = _runStart.AddSeconds(1);
+        reporter.Events.Select(runEvent => (EventLine.Describe(runEvent), runEvent.At)).ShouldBe(
+        [
+            ("run started", _runStart),
+            ("load: pending -> ready", _runStart),
+            ("load: ready -> running", _runStart),
+            ("load: running -> failed", loadSettled),
+            ("run ended: incomplete", loadSettled),
+        ]);
 
-    /// <summary>A clock on which every read of the time moves the time on by a second, so a later time shows each earlier read.</summary>
-    private sealed class ClockThatAdvancesWhenRead(DateTimeOffset start) : TimeProvider
-    {
-        private long _reads;
-
-        public override DateTimeOffset GetUtcNow() => start.AddSeconds(Interlocked.Increment(ref _reads) - 1);
+        result.Snapshot.Started.ShouldBe(_runStart);
+        result.Snapshot.Ended.ShouldBe(loadSettled);
+        result.Snapshot.Nodes[0].Started.ShouldBe(_runStart);
+        result.Snapshot.Nodes[0].Settled.ShouldBe(loadSettled);
     }
 }
