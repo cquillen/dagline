@@ -11,6 +11,9 @@ var fast = false;
 var plain = false;
 var ascii = false;
 var directory = "batch-data";
+var startNew = false;
+var faults = new HashSet<string>();
+string[] knownFaults = ["validate", "poll", "job"];
 
 var arguments = new Queue<string>(args);
 while (arguments.TryDequeue(out var option))
@@ -25,6 +28,12 @@ while (arguments.TryDequeue(out var option))
         case "--dir" when arguments.TryDequeue(out var path):
             directory = path;
             break;
+        case "--new":
+            startNew = true;
+            break;
+        case "--fault" when arguments.TryDequeue(out var fault) && knownFaults.Contains(fault):
+            faults.Add(fault);
+            break;
         case "--fast":
             fast = true;
             break;
@@ -35,14 +44,23 @@ while (arguments.TryDequeue(out var option))
             ascii = true;
             break;
         default:
-            return Refuse($"bad option: {option}. Options: --shard 1,3  --tenants <n>  --fast  --plain  --ascii  --dir <path>");
+            return Refuse($"bad option: {option}. Options: --shard 1,3  --tenants <n>  --new  --fault validate|poll|job  --fast  --plain  --ascii  --dir <path>");
     }
 }
 
-// --fast makes every fake delay and wait interval a thousand times shorter.
+// --fast makes every fake delay and wait interval a thousand times shorter. Each fault is set up in a fake:
+// validate gives the first tenant of the first shard bad entities, poll makes the first status call of the first job
+// throw, and job makes the last job end in error.
 var timeScale = fast ? 0.001 : 1;
-var store = new EntityStore(timeScale);
-var scheduler = new FakeScheduler(Path.Combine(directory, "jobs"), TimeProvider.System, timeScale);
+var store = new EntityStore(timeScale)
+{
+    TenantsWithBadEntities = faults.Contains("validate") ? new HashSet<string> { $"tenant-{shards[0]}-001" } : [],
+};
+var scheduler = new FakeScheduler(Path.Combine(directory, "jobs"), TimeProvider.System, timeScale)
+{
+    JobsWhoseFirstStatusCallThrows = faults.Contains("poll") ? new HashSet<string> { $"shard-{shards[0]}" } : [],
+    JobsThatEndInError = faults.Contains("job") ? new HashSet<string> { $"shard-{shards[^1]}" } : [],
+};
 var waitInterval = TimeSpan.FromSeconds(2 * timeScale);
 
 // The graph: a group per shard, each holding a group per tenant with a load and a validate task. The jobs group
@@ -87,12 +105,34 @@ catch (GraphException exception)
 var limits = Enumerable.Range(1, ShardCount).ToDictionary(shard => $"shard-{shard}-db", _ => 4);
 limits["scheduler"] = 3;
 
-// A new journal on every run, described by the shards it covers.
+// The journal policy: continue the newest unfinished journal for the same shards, or start a new one. A journal that
+// another run holds is not skipped, so that run refuses it below.
 var description = shards.Count == ShardCount ? "all shards" : $"shards {string.Join(',', shards)}";
-var journal = Journal.New(directory, description);
+IReadOnlyList<JournalSummary> journals;
+try
+{
+    journals = await Journals.ListAsync(directory);
+}
+catch (DaglineException exception) when (exception is JournalOpenException or JournalFormatException)
+{
+    return Refuse(exception.Message);
+}
 
-// A new journal starts the jobs of this graph's shards afresh, so the scheduler forgets them. Other shards' jobs stay.
-scheduler.Forget(shards.Select(shard => $"shard-{shard}"));
+var unfinished = startNew ? null : journals.LastOrDefault(summary => !summary.Finished && summary.Description == description);
+Journal journal;
+if (unfinished is null)
+{
+    journal = Journal.New(directory, description);
+    Console.WriteLine($"Starting a new journal for {description}.");
+
+    // A new journal starts the jobs of this graph's shards afresh, so the scheduler forgets them. Other shards' jobs stay.
+    scheduler.Forget(shards.Select(shard => $"shard-{shard}"));
+}
+else
+{
+    journal = Journal.Continue(directory, unfinished.Id);
+    Console.WriteLine($"Continuing journal {unfinished.Id} for {description} (runs so far: {unfinished.Runs}).");
+}
 
 // Ctrl+C: the first press stops the run, the second stops waiting for the running tasks to end, the third kills.
 using var stop = ConsoleStop.Hook();
@@ -112,7 +152,7 @@ try
         })],
     }, stop);
 }
-catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalOpenException or JournalFormatException)
+catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalOpenException or JournalFormatException)
 {
     return Refuse(exception.Message);
 }
