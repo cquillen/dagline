@@ -34,5 +34,8 @@ internal sealed record Step(
 /// </summary>
 internal readonly record struct StepEvent(RunEvent Event, SnapshotChange Change);
 
-/// <summary>How a run ends: its outcome, and how many stop requests it applied, so that the wait for reporters hears only later ones.</summary>
-internal readonly record struct RunEnd(RunOutcome Outcome, int RequestsApplied);
+/// <summary>
+/// How a run ends: exactly one of its outcome and the error it ends with, and how many stop requests it applied, so that the wait
+/// for reporters hears only later ones.
+/// </summary>
+internal readonly record struct RunEnd(RunOutcome? Outcome, JournalWriteException? Error, int RequestsApplied);

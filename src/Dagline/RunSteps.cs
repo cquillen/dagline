@@ -21,8 +21,9 @@ namespace Dagline;
 /// carried out: holding those snapshots made a large run slow.
 /// </para>
 /// <para>
-/// One input may cause several steps. A stop with a grace period of zero gives three: the stop, letting go of the running tasks,
-/// and the end of the run. The end of the run is always a step of its own.
+/// One input may cause several steps. A stop with a grace period of zero gives two: the stop, and letting go of the running tasks.
+/// The end of the run is decided by an input of its own, <see cref="EndIfDone"/>, which the run gives after each input that can
+/// settle a task or apply a stop, with the same time, so that a failed journal write reaches the steps before the run can end.
 /// </para>
 /// </remarks>
 internal sealed class RunSteps
@@ -49,6 +50,9 @@ internal sealed class RunSteps
     private StepUnderWay? _step;
     private RunMilestones _milestones = new(Started: default, Stop: null, Ended: null, Outcome: null);
     private int _requestsApplied;
+    private bool _recording;
+    private bool _stoppedByDagline;
+    private JournalWriteException? _failedWrite;
 
     /// <param name="graph">The graph the run runs.</param>
     /// <param name="settings">The settings of the run: the sizes of its slots and its grace period.</param>
@@ -61,6 +65,7 @@ internal sealed class RunSteps
         _graph = graph;
         _settings = settings;
         _journal = journal;
+        _recording = journal is not null;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
         _instances = new TaskInstance?[graph.Nodes.Length];
@@ -125,10 +130,10 @@ internal sealed class RunSteps
         if (stopRequests > 0)
         {
             Begin();
-            ApplyStop(now);
+            ApplyStop(StopRequester.App, now);
         }
 
-        StartWhatFitsOrEnd(now);
+        StartWhatFitsUnlessStopped(now);
         return Decided();
     }
 
@@ -197,7 +202,8 @@ internal sealed class RunSteps
 
     /// <summary>
     /// The run's signal has had <paramref name="requests"/> requests. The first is a stop: from its step on nothing starts,
-    /// and the run ends once nothing is running. The second also lets go of the running tasks.
+    /// and the run ends once nothing is running. The second also lets go of the running tasks, and so does any new request once
+    /// Dagline has stopped the run itself.
     /// Since it reads the count, requests are applied in order and once, however many calls it takes to hear them.
     /// A request already applied, or heard after the run has ended, gives no step: the wait for reporters hears it.
     /// </summary>
@@ -208,18 +214,65 @@ internal sealed class RunSteps
             return [];
         }
 
+        var heardNew = requests > _requestsApplied;
         _requestsApplied = requests;
+        if (_stoppedByDagline && heardNew)
+        {
+            LetGo(StoppedWaitingReason.SecondStop, now);
+            return Decided();
+        }
+
         if (!HasStopped)
         {
             Begin();
-            ApplyStop(now);
-            StartWhatFitsOrEnd(now);
+            ApplyStop(StopRequester.App, now);
             BoundTheGracePeriod(now);
         }
 
         if (requests >= 2)
         {
             LetGo(StoppedWaitingReason.SecondStop, now);
+        }
+
+        return Decided();
+    }
+
+    /// <summary>
+    /// A write to the journal failed. From here on no step records an entry. Unless a stop has been applied, Dagline applies one
+    /// itself, in a step of its own that signals the tasks, and the grace period is bounded as for any stop. The run then ends with
+    /// a <see cref="JournalWriteException"/> and no run outcome. Heard after the run has ended, it gives no step.
+    /// </summary>
+    /// <param name="cause">The file system's exception.</param>
+    /// <param name="now">When the write failed.</param>
+    public IReadOnlyList<Step> JournalWriteFailed(Exception cause, DateTimeOffset now)
+    {
+        _recording = false;
+        if (HasEnded)
+        {
+            return [];
+        }
+
+        _failedWrite = new JournalWriteException(cause);
+        if (!HasStopped)
+        {
+            _stoppedByDagline = true;
+            Begin();
+            ApplyStop(StopRequester.Dagline, now);
+            BoundTheGracePeriod(now);
+        }
+
+        return Decided();
+    }
+
+    /// <summary>
+    /// The end of each input that can settle a task or apply a stop: the run ends, in a step of its own, when no task is running and,
+    /// unless a stop has been applied, none is ready. Given after the run has ended, or while it has work left, it gives no step.
+    /// </summary>
+    public IReadOnlyList<Step> EndIfDone(DateTimeOffset now)
+    {
+        if (!HasEnded && NothingIsRunning && (HasStopped || _counts[NodeStatus.Ready] == 0))
+        {
+            End(now);
         }
 
         return Decided();
@@ -249,7 +302,7 @@ internal sealed class RunSteps
     /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
     public JournalEntry? ChangeCheckpoint(BuiltTask task, string text, DateTimeOffset now)
     {
-        if (!InstanceOf(task).ChangeCheckpoint(text) || _journal is null)
+        if (!InstanceOf(task).ChangeCheckpoint(text) || !_recording)
         {
             return null;
         }
@@ -280,7 +333,8 @@ internal sealed class RunSteps
 
     private bool HasStopped => _milestones.Stop is not null;
 
-    private bool HasEnded => _milestones.Outcome is not null;
+    // From the end time, not the outcome: a run that ends with an error has none.
+    private bool HasEnded => _milestones.Ended is not null;
 
     private bool NothingIsRunning => _counts[NodeStatus.Running] == 0;
 
@@ -288,11 +342,11 @@ internal sealed class RunSteps
     /// Applies the first request: from this step on nothing starts. The step signals the token every task sees,
     /// so it is signalled before the run can end and <see cref="Runner.RunAsync"/> return.
     /// </summary>
-    private void ApplyStop(DateTimeOffset now)
+    private void ApplyStop(StopRequester by, DateTimeOffset now)
     {
         _milestones = _milestones with { Stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod)) };
         _step!.SignalsTheTasks = true;
-        Publish(new StopRequested(now, _gracePeriod));
+        Publish(new StopRequested(now, by, _gracePeriod));
     }
 
     /// <summary>
@@ -301,7 +355,7 @@ internal sealed class RunSteps
     /// </summary>
     private void BoundTheGracePeriod(DateTimeOffset now)
     {
-        if (HasEnded || GracePeriodRules.IsUnlimited(_gracePeriod))
+        if (NothingIsRunning || GracePeriodRules.IsUnlimited(_gracePeriod))
         {
             return;
         }
@@ -318,7 +372,7 @@ internal sealed class RunSteps
     /// <summary>
     /// Ends the wait for the running tasks after a stop, if the run is still waiting for any. In a step of its own it publishes
     /// <see cref="StoppedWaiting"/>, then records each running task as cancelled in declaration order and lets go of it.
-    /// What follows is applied once for all of them, as after any task settles, and the run ends, since nothing is left running.
+    /// What follows is applied once for all of them, as after any task settles. Nothing is left running, so the end input that follows ends the run.
     /// </summary>
     private void LetGo(StoppedWaitingReason reason, DateTimeOffset now)
     {
@@ -419,29 +473,21 @@ internal sealed class RunSteps
     /// <summary>
     /// Applies what follows from one change, causes before effects: the tasks among <paramref name="candidates"/>
     /// whose dependencies are now met become ready, the groups that the step settled are announced,
-    /// the ready tasks that fit start, and the run ends when nothing is left to do.
+    /// and the ready tasks that fit start.
     /// </summary>
     private void Advance(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
     {
         MakeReady(candidates, now);
         AnnounceSettledGroups(now);
-        StartWhatFitsOrEnd(now);
+        StartWhatFitsUnlessStopped(now);
     }
 
-    /// <summary>
-    /// Starts the ready tasks that fit, unless a stop has been applied, and ends the run when nothing is left to do:
-    /// no task is running and, unless a stop has been applied, none is ready.
-    /// </summary>
-    private void StartWhatFitsOrEnd(DateTimeOffset now)
+    /// <summary>Starts the ready tasks that fit, unless a stop has been applied.</summary>
+    private void StartWhatFitsUnlessStopped(DateTimeOffset now)
     {
         if (!HasStopped)
         {
             StartWhatFits(now);
-        }
-
-        if (NothingIsRunning && (HasStopped || _counts[NodeStatus.Ready] == 0))
-        {
-            End(now);
         }
     }
 
@@ -507,16 +553,26 @@ internal sealed class RunSteps
         started.ForEach(position => _ready.Remove(position));
     }
 
-    /// <summary>Ends the run, in a step of its own whose one event is <see cref="RunEnded"/>.</summary>
+    /// <summary>
+    /// Ends the run, in a step of its own whose one event is <see cref="RunEnded"/>: with the error of a failed journal write if
+    /// there was one, and with its run outcome otherwise.
+    /// </summary>
     private void End(DateTimeOffset now)
     {
+        Begin();
+        if (_failedWrite is { } error)
+        {
+            _milestones = _milestones with { Ended = now };
+            _step!.Ends = new RunEnd(null, error, _requestsApplied);
+            Publish(new RunEnded(now, null, error));
+            return;
+        }
+
         var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete
             : HasStopped ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
-
-        Begin();
         _milestones = _milestones with { Ended = now, Outcome = outcome };
-        _step!.Ends = new RunEnd(outcome, _requestsApplied);
+        _step!.Ends = new RunEnd(outcome, null, _requestsApplied);
         Record(new RunEndedEntry(now, outcome));
         Publish(new RunEnded(now, outcome));
     }
@@ -617,10 +673,10 @@ internal sealed class RunSteps
         }
     }
 
-    /// <summary>Adds an entry to those the step under way records, when the run is on a journal.</summary>
+    /// <summary>Adds an entry to those the step under way records, when the run is on a journal and no write to it has failed.</summary>
     private void Record(JournalEntry entry)
     {
-        if (_journal is not null)
+        if (_recording)
         {
             _step!.Entries.Add(entry);
         }

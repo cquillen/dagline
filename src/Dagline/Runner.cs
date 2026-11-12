@@ -72,6 +72,14 @@ public static class Runner
     /// as soon as this task completes. The lock file stays behind, and holds nothing.
     /// </para>
     /// <para>
+    /// When a journal write fails during the run, for instance because the disk is full or the file is gone, Dagline stops the run
+    /// itself: <see cref="StopRequested"/> is published with <see cref="StopRequester.Dagline"/>, unless a stop was already in progress,
+    /// nothing new starts, the running tasks are signalled and the run waits the grace period, which any request on
+    /// <paramref name="stop"/> ends. A task that the failing step had already started still starts, and the stop signals it at once.
+    /// No further write is attempted, though events still describe what happens. <see cref="RunEnded"/> carries a
+    /// <see cref="JournalWriteException"/> and no run outcome, and this method throws it once reporters have handled every event.
+    /// </para>
+    /// <para>
     /// The journal exceptions are thrown at the call, after the options have been checked: no task has started, no event has been
     /// published and no reporter has been called. The checks run in this order: the options, the journal's lock, opening or creating
     /// the journal, reading it.
@@ -100,6 +108,11 @@ public static class Runner
     /// The journal to continue cannot be read as one: its first line is not a journal header, its format version is unknown, or a
     /// line other than the last is not an entry.
     /// </exception>
+    /// <exception cref="JournalWriteException">
+    /// The run's journal could no longer be written during the run. It is thrown by the returned task, once the run has ended and
+    /// reporters have handled every event, with the final snapshot in <see cref="JournalWriteException.Snapshot"/> and the cause as its
+    /// inner exception. <see cref="RunResult.ReporterErrors"/> is not available.
+    /// </exception>
     public static Task<RunResult> RunAsync(Graph graph, RunOptions options, StopSignal? stop = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -126,9 +139,11 @@ public static class Runner
         var run = new Run(graph, settings, delivery, stop, journal);
 
         run.Start();
-        var outcome = await run.Ended.ConfigureAwait(false);
+        await ((Task)run.Ended).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         var reporterErrors = await delivery.Delivered.ConfigureAwait(false);
 
+        // Only now, once reporters have handled every event, does a run that ended with a JournalWriteException throw it.
+        var outcome = await run.Ended.ConfigureAwait(false);
         return new RunResult(outcome, run.Current, reporterErrors);
     }
 }

@@ -23,6 +23,11 @@ namespace Dagline;
 /// reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
 /// So the token is signalled before the run can end, and the wait for reporters listens before the run's end is set.
 /// </para>
+/// <para>
+/// Each input that can settle a task or apply a stop is followed, under the same lock and with the same time, by the journal write
+/// failed input when a write failed while it was carried out, and then by the end input, which ends the run when nothing is left to do.
+/// After a write fails nothing more is written, and the run ends with a <see cref="JournalWriteException"/>.
+/// </para>
 /// </remarks>
 [SuppressMessage(
     "Reliability",
@@ -40,6 +45,8 @@ internal sealed class Run : ISnapshotSource
     private readonly CancellationTokenSource _stopping = new();
 
     private JournalFile? _journal;
+    private Exception? _writeFailure;
+    private bool _writeFailureGiven;
     private IDisposable? _hearsTheSignal;
     private ITimer? _gracePeriodTimer;
     private volatile Snapshot? _current;
@@ -65,7 +72,10 @@ internal sealed class Run : ISnapshotSource
 
     public Snapshot Current => _current ?? TakeCurrent();
 
-    /// <summary>Completes with the run outcome once no task is running and none is ready.</summary>
+    /// <summary>
+    /// Completes with the run outcome once no task is running and none is ready, or faults with the <see cref="JournalWriteException"/>
+    /// the run ended with.
+    /// </summary>
     public Task<RunOutcome> Ended => _ended.Task;
 
     /// <summary>
@@ -184,18 +194,33 @@ internal sealed class Run : ISnapshotSource
     /// The clock is read once for the entry, and not at all for a run with no journal.
     /// </summary>
     /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
+    /// <exception cref="JournalWriteException">
+    /// The run is on a journal that can no longer be written: this save failed, or an earlier write did. The run stops, as for any
+    /// failed write.
+    /// </exception>
     public void ChangeCheckpoint(BuiltTask task, string text)
     {
+        Exception? failed;
         lock (_gate)
         {
             var now = _journal is null ? default : _timeProvider.GetUtcNow();
             if (_steps.ChangeCheckpoint(task, text, now) is { } entry)
             {
-                _journal!.Append([entry], flush: true);
+                Write([entry], flush: true);
+            }
+
+            failed = _journal is null ? null : _writeFailure;
+            if (failed is not null)
+            {
+                EndTheInput(now);
             }
         }
-    }
 
+        if (failed is not null)
+        {
+            throw new JournalWriteException(failed, Current);
+        }
+    }
     /// <summary>
     /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
     /// </summary>
@@ -223,10 +248,48 @@ internal sealed class Run : ISnapshotSource
     {
         lock (_gate)
         {
-            CarryOut(input(_steps, _timeProvider.GetUtcNow()));
+            var now = _timeProvider.GetUtcNow();
+            CarryOut(input(_steps, now));
+            EndTheInput(now);
         }
     }
 
+    /// <summary>
+    /// Ends an input, under the lock and with its time: gives the steps the journal write failed input, once, if a write has failed,
+    /// then the end input, which ends the run when nothing is left to do.
+    /// </summary>
+    private void EndTheInput(DateTimeOffset now)
+    {
+        if (_writeFailure is { } cause && !_writeFailureGiven)
+        {
+            _writeFailureGiven = true;
+            CarryOut(_steps.JournalWriteFailed(cause, now));
+        }
+
+        CarryOut(_steps.EndIfDone(now));
+    }
+
+    /// <summary>
+    /// Writes entries to the journal, if the run has one and no write to it has failed. When the write fails, nothing more is
+    /// written, though the journal stays held until the run ends, and the failure waits for the input to end. Whatever else the
+    /// input decided is still carried out, since its events and starts are already facts of the run.
+    /// </summary>
+    private void Write(IReadOnlyList<JournalEntry> entries, bool flush)
+    {
+        if (_journal is null || _writeFailure is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            _journal.Append(entries, flush);
+        }
+        catch (IOException cause)
+        {
+            _writeFailure = cause;
+        }
+    }
     /// <summary>Carries out the steps one input caused, under the lock and in order.</summary>
     private void CarryOut(IReadOnlyList<Step> steps)
     {
@@ -242,7 +305,7 @@ internal sealed class Run : ISnapshotSource
     {
         if (step.Entries.Count > 0)
         {
-            _journal!.Append(step.Entries, step.Flushes);
+            Write(step.Entries, step.Flushes);
         }
 
         if (step.SignalsTheTasks)
@@ -280,7 +343,14 @@ internal sealed class Run : ISnapshotSource
             // but RunEnded is still to come would leave that reporter to be waited for.
             _delivery.ListenBeyond(end.RequestsApplied);
             _delivery.Complete();
-            _ended.SetResult(end.Outcome);
+            if (end.Error is { } error)
+            {
+                _ended.SetException(error);
+            }
+            else
+            {
+                _ended.SetResult(end.Outcome!.Value);
+            }
         }
     }
 
@@ -316,6 +386,11 @@ internal sealed class Run : ISnapshotSource
         {
             var snapshot = _steps.SnapshotAfter(events[i]);
             _current = snapshot;
+            if (events[i].Event is RunEnded { Error: JournalWriteException failed })
+            {
+                failed.Snapshot = snapshot;
+            }
+
             _delivery.Publish(events[i].Event, snapshot);
         }
     }

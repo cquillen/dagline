@@ -405,6 +405,10 @@ public sealed class TaskContext
     /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled before the save began. Nothing is saved.</exception>
     /// <exception cref="InvalidOperationException">The task has settled, or the run has let go of it. Nothing is saved.</exception>
+    /// <exception cref="JournalWriteException">
+    /// The journal could not be written, so the checkpoint may not be on disk. Dagline stops the run, as for any failed journal write, and
+    /// the exception carries the snapshot as of the failed save.
+    /// </exception>
     public Task SaveCheckpointAsync(string text, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -430,6 +434,7 @@ public sealed class TaskContext
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled before the clearing began.</exception>
     /// <exception cref="InvalidOperationException">The task has settled, or the run has let go of it. Nothing is cleared.</exception>
+    /// <exception cref="JournalWriteException">The journal could not be written. Dagline stops the run, as for any failed journal write.</exception>
     public Task ClearCheckpointAsync(CancellationToken cancellationToken = default) => ChangeCheckpoint("", cancellationToken);
 
     private Task ChangeCheckpoint(string text, CancellationToken cancellationToken)
@@ -444,9 +449,9 @@ public sealed class TaskContext
             _run.ChangeCheckpoint(_task, text);
             return Task.CompletedTask;
         }
-        catch (InvalidOperationException notRunning)
+        catch (Exception refused) when (refused is InvalidOperationException or JournalWriteException)
         {
-            return Task.FromException(notRunning);
+            return Task.FromException(refused);
         }
     }
 

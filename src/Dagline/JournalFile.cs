@@ -44,7 +44,8 @@ internal sealed class JournalFile : IDisposable
 
     /// <summary>
     /// Creates a new journal in <paramref name="directory"/>, creating the directory if it is missing, with an id from the time on
-    /// <paramref name="clock"/>, and holds it. The header is written and flushed before this returns. If a file with the id drawn
+    /// <paramref name="clock"/>, and holds it. The header is written and flushed before this returns, and on Unix systems the
+    /// directory's entries too, so that the new file's name survives a crash. If a file with the id drawn
     /// already exists, or another run holds that id, a new suffix is drawn.
     /// </summary>
     /// <exception cref="JournalOpenException">
@@ -91,6 +92,7 @@ internal sealed class JournalFile : IDisposable
                 try
                 {
                     file.Append([header], flush: true);
+                    DirectoryEntries.Flush(directory);
                 }
                 catch (IOException cannotWrite)
                 {

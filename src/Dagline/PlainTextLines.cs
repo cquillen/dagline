@@ -42,9 +42,9 @@ internal static class PlainTextLines
         [
             At(runEvent.At, $"group {settled.Path} {NameText.Of(settled.Status)}: {CountsText.PerStatus(settled.Counts)}"),
         ],
-        RunEnded ended =>
+        RunEnded { Outcome: { } outcome } ended =>
         [
-            At(runEvent.At, $"run ended: {NameText.Of(ended.Outcome)} in {DurationText.Of(ended.At - snapshot.Started)}"),
+            At(runEvent.At, $"run ended: {NameText.Of(outcome)} in {DurationText.Of(ended.At - snapshot.Started)}"),
             .. Summary(snapshot),
         ],
         _ => [],
