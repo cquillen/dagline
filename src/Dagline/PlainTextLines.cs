@@ -13,6 +13,7 @@ internal static class PlainTextLines
     private const string _detailIndent = "    ";
     private const string _summaryDetailIndent = "      ";
     private const string _summaryWarningIndent = "    ";
+    private const string _journalWriteFailed = "journal write failed";
 
     /// <summary>
     /// The lines about one event: none for an event that is not printed, and several for a failure with detail lines
@@ -109,7 +110,7 @@ internal static class PlainTextLines
         => ended.Outcome is { } outcome
             ? $"run ended: {NameText.Of(outcome)} in {DurationText.Of(duration)}"
             // The error is a JournalWriteException, whose own message only repeats what the line already says.
-            : $"run ended: journal write failed after {DurationText.Of(duration)}: {Cause(ended.Error!).Message}";
+            : $"run ended: {_journalWriteFailed} after {DurationText.Of(duration)}: {Cause(ended.Error!).Message}";
 
     private static Exception Cause(Exception error) => error.InnerException ?? error;
 
@@ -124,7 +125,7 @@ internal static class PlainTextLines
         var heading = requested.By switch
         {
             StopRequester.App => "stop requested",
-            StopRequester.Dagline => "stop requested by Dagline, journal write failed",
+            StopRequester.Dagline => $"stop requested by Dagline, {_journalWriteFailed}",
             _ => throw new ArgumentOutOfRangeException(nameof(requested), requested.By, null),
         };
 

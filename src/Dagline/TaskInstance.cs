@@ -291,7 +291,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         if (!IsRunning)
         {
             throw new InvalidOperationException(
-                $"The task '{task.Path}' cannot change its checkpoint: it is {Status.ToString().ToLowerInvariant()}, "
+                $"The task '{task.Path}' cannot change its checkpoint: it is {NameText.Of(Status)}, "
                 + "so the run no longer keeps anything it does. A task changes its checkpoint only while it is running.");
         }
 

@@ -240,4 +240,3 @@ public sealed record RunEnded(DateTimeOffset At, RunOutcome? Outcome, Exception?
         ? Error
         : throw new ArgumentException("A run ends with exactly one of a run outcome and an error.", nameof(Error));
 }
-
