@@ -119,7 +119,7 @@ A reporter is given two things:
 
 Events say what just happened and the snapshot says where things stand, so a reporter never has to piece that together from the events. Once a run has ended, a reporter shows a **summary** from the final snapshot, and your app gets that same snapshot back with the result of the run.
 
-Dagline ships a reporter that prints a run as timestamped lines of text, and you can write your own: see [Reporters](reporters.md). Definitions: [Reporters](../../GLOSSARY.md#reporters).
+Dagline ships a reporter that prints a run as timestamped lines of text, and you can write your own: see [Reporters](reporters.md). On a terminal, the `Dagline.Spectre` package gives the **display**, a reporter that draws the whole run on one screen and redraws it as the run changes, and leaves the summary behind when the run ends: see [The terminal display](terminal-ui.md). Definitions: [Reporters](../../GLOSSARY.md#reporters).
 
 ## Where to go next
 
@@ -129,5 +129,6 @@ Dagline ships a reporter that prints a run as timestamped lines of text, and you
 - [Running and stopping](running-and-stopping.md): starting a run, its options, its result and stopping it.
 - [Journals](journals.md): choosing a journal, what a continuing run keeps, and what is promised after a crash.
 - [Running part of the work](running-part-of-the-work.md): subsets, gates and one journal per subset.
+- [The terminal display](terminal-ui.md): what each pane shows, stopping with Ctrl+C, the summary, and when plain text is used instead.
 - [Reporters](reporters.md): the plain-text reporter, and writing a reporter of your own.
 - [Glossary](../../GLOSSARY.md): the exact definition of every term.

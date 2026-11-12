@@ -37,13 +37,16 @@ public static class SpectreReporter
     /// one bar for the whole run, split by status. The third counts the tasks per status, with the running tasks that are waiting
     /// apart from those that are working and the earlier successes in brackets after the succeeded, then the warnings, and at the
     /// right the cap in use over its size, how many limits are full out of how many, and how many ready tasks are held.
-    /// A count of zero is left out.
+    /// A count of zero is left out. Under the header come a stop banner once a stop has been applied, a row per group, the tasks
+    /// that are working, the tasks that are waiting on external systems, and the problems so far, sharing the lines left. Below
+    /// 60 columns or 15 rows the frame is the header alone. The terminal display article of the documentation describes every pane.
     /// </para>
     /// <para>
     /// When it handles <see cref="RunEnded"/> the display stops its timer, so nothing is drawn after it, puts the cursor below the
     /// last frame, leaves the alternate screen, shows the cursor, and prints the summary on the ordinary screen through the same
-    /// console: a rule, the run outcome with the duration and the journal's id and run number, and the count of tasks per status
-    /// with the earlier successes in brackets and the warnings. No exit code is printed: the app chooses its own.
+    /// console: a rule, the run outcome with the duration and the journal's id and run number, the count of tasks per status
+    /// with the earlier successes in brackets and the warnings, then every failure, cancelled task and warning of this run, and
+    /// what a later run that continues the journal has left. No exit code is printed: the app chooses its own.
     /// </para>
     /// <para>
     /// The display's drawing is serialised: a frame from the timer is never drawn while an event is being handled.

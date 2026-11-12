@@ -15,7 +15,7 @@ Think Apache Airflow, but purely local: no scheduler service, no database, no we
 
 ```shell
 dotnet add package Dagline
-dotnet add package Dagline.Spectre   # optional terminal UI
+dotnet add package Dagline.Spectre   # optional terminal display
 ```
 
 ## Next steps
@@ -23,5 +23,5 @@ dotnet add package Dagline.Spectre   # optional terminal UI
 - [Getting started](articles/getting-started.md)
 - [Concepts](articles/concepts.md)
 - [Running and stopping](articles/running-and-stopping.md)
-- [Terminal UI](articles/terminal-ui.md)
+- [The terminal display](articles/terminal-ui.md)
 - [API reference](api/index.md)
