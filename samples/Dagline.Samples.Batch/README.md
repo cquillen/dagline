@@ -54,23 +54,17 @@ dotnet run --project samples/Dagline.Samples.Batch -- --fast --fault validate
 dotnet run --project samples/Dagline.Samples.Batch -- --fast
 ```
 
-The first run starts a new journal. `shard-1/tenant-1-001/validate` fails with its bad entities as detail lines, all ten jobs are blocked by it, and `report` still runs and says `0 of 10 jobs succeeded`. It exits with 1.
+The first run starts a new journal. `shard-1/tenant-1-001/validate` fails with its bad entities as detail lines, all ten jobs are blocked by it, and `report` still runs and says `0 of 10 job tasks succeeded`. It exits with 1.
 
-The second run says `Continuing journal ...`. Every validation that passed is an earlier success, the failed one runs again and passes, the jobs run, and the earlier success of `report` is set aside, so it runs again and says `10 of 10 jobs succeeded`. It exits with 0.
+The second run says `Continuing journal ...`. Every validation that passed is an earlier success, the failed one runs again and passes, the jobs run, and the earlier success of `report` is set aside, so it runs again and says `10 of 10 job tasks succeeded`. It exits with 0.
 
 ### 3. Ctrl+C during the jobs, then again
 
 ```shell
-dotnet run --project samples/Dagline.Samples.Batch -- --new --tenants 10
+dotnet run --project samples/Dagline.Samples.Batch -- --tenants 10 --dir batch-data/ctrl-c
 ```
 
-Wait until jobs show in the waiting pane, then press Ctrl+C once. The display shows the stop, the waiting job tasks are cancelled, and the run exits with 2. The fake jobs keep running in the scheduler's files. Run the same command without `--new`:
-
-```shell
-dotnet run --project samples/Dagline.Samples.Batch -- --tenants 10
-```
-
-It continues the journal, the validations are earlier successes, and the cancelled job tasks wait on the same job ids as before instead of triggering new jobs; one that finished while the app was down succeeds at its first check. The scheduler refuses a second trigger of a job, so exit code 0 here means every job task re-attached.
+The directory of its own keeps the earlier walk-throughs' journals out of the way, so the run starts a new journal. Wait until jobs show in the waiting pane, then press Ctrl+C once. The display shows the stop, the waiting job tasks are cancelled, and the run exits with 2. The fake jobs keep running in the scheduler's files. Run the same command again. It continues the journal, the validations are earlier successes, and the cancelled job tasks wait on the same job ids as before instead of triggering new jobs; one that finished while the app was down succeeds at its first check. The scheduler refuses a second trigger of a job, so exit code 0 here means every job task re-attached.
 
 ### 4. Two operators on different shards
 

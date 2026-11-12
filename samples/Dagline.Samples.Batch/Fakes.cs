@@ -18,7 +18,12 @@ public sealed class EntityStore(double timeScale)
     public async Task<IReadOnlyList<Entity>> FetchAsync(string tenant, TimeProvider clock, CancellationToken cancellationToken)
     {
         await Task.Delay(TimeSpan.FromSeconds(0.2 * timeScale), clock, cancellationToken);
+        return EntitiesOf(tenant);
+    }
 
+    /// <summary>A tenant's entities, at once: what <see cref="FetchAsync"/> returns, without its delay.</summary>
+    public IReadOnlyList<Entity> EntitiesOf(string tenant)
+    {
         var count = Seeded(tenant).EntityCount;
         var hasBad = TenantsWithBadEntities.Contains(tenant);
         return [.. Enumerable.Range(1, count).Select(number => new Entity(number, hasBad && number % 997 == 0))];
@@ -94,7 +99,7 @@ public sealed class FakeScheduler(string directory, TimeProvider clock, double t
         var job = new JobFile(
             $"{name}-{Random.Shared.Next(0x1000000):x6}",
             now,
-            now + (Seeded(name) * timeScale),
+            now + (JobDuration(name) * timeScale),
             JobsThatEndInError.Contains(name));
 
         Directory.CreateDirectory(directory);
@@ -170,7 +175,7 @@ public sealed class FakeScheduler(string directory, TimeProvider clock, double t
 
     private string PathOf(string name) => Path.Combine(directory, $"{name}.json");
 
-    private static TimeSpan Seeded(string name) => TimeSpan.FromSeconds(new Random(Seed.Of(name)).Next(20, 41));
+    private static TimeSpan JobDuration(string name) => TimeSpan.FromSeconds(new Random(Seed.Of(name)).Next(20, 41));
 
     private sealed record JobFile(string Id, DateTimeOffset Triggered, DateTimeOffset Finishes, bool EndsInError);
 }

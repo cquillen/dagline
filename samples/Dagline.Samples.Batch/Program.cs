@@ -31,7 +31,12 @@ while (arguments.TryDequeue(out var option))
         case "--new":
             startNew = true;
             break;
-        case "--fault" when arguments.TryDequeue(out var fault) && knownFaults.Contains(fault):
+        case "--fault" when arguments.TryDequeue(out var fault):
+            if (!knownFaults.Contains(fault))
+            {
+                return await RefuseAsync($"bad fault: {fault}. Faults: {string.Join(", ", knownFaults)}");
+            }
+
             faults.Add(fault);
             break;
         case "--fast":
@@ -44,7 +49,7 @@ while (arguments.TryDequeue(out var option))
             ascii = true;
             break;
         default:
-            return Refuse($"bad option: {option}. Options: --shard 1,3  --tenants <n>  --new  --fault validate|poll|job  --fast  --plain  --ascii  --dir <path>");
+            return await RefuseAsync($"bad option: {option}. Options: --shard 1,3  --tenants <n>  --new  --fault validate|poll|job  --fast  --plain  --ascii  --dir <path>");
     }
 }
 
@@ -58,8 +63,8 @@ var store = new EntityStore(timeScale)
 };
 var scheduler = new FakeScheduler(Path.Combine(directory, "jobs"), TimeProvider.System, timeScale)
 {
-    JobsWhoseFirstStatusCallThrows = faults.Contains("poll") ? new HashSet<string> { $"shard-{shards[0]}" } : [],
-    JobsThatEndInError = faults.Contains("job") ? new HashSet<string> { $"shard-{shards[^1]}" } : [],
+    JobsWhoseFirstStatusCallThrows = faults.Contains("poll") ? new HashSet<string> { JobName(shards[0]) } : [],
+    JobsThatEndInError = faults.Contains("job") ? new HashSet<string> { JobName(shards[^1]) } : [],
 };
 var waitInterval = TimeSpan.FromSeconds(2 * timeScale);
 
@@ -85,7 +90,7 @@ var jobs = builder.Group("jobs").Requires(shardGroups);
 var jobTasks = new List<TaskNode>();
 foreach (var shard in shards)
 {
-    var name = $"shard-{shard}";
+    var name = JobName(shard);
     jobTasks.Add(jobs.Task(name, context => BatchTasks.Job(name, scheduler, waitInterval, context)).Limit("scheduler"));
 }
 
@@ -98,7 +103,7 @@ try
 }
 catch (GraphException exception)
 {
-    return Refuse(exception.Message);
+    return await RefuseAsync(exception.Message);
 }
 
 // The limits of all ten shards are sized whatever --shard chose: a size for a limit the graph does not name is ignored.
@@ -115,7 +120,7 @@ try
 }
 catch (DaglineException exception) when (exception is JournalOpenException or JournalFormatException)
 {
-    return Refuse(exception.Message);
+    return await RefuseAsync(exception.Message);
 }
 
 var unfinished = startNew ? null : journals.LastOrDefault(summary => !summary.Finished && summary.Description == description);
@@ -126,7 +131,7 @@ if (unfinished is null)
     Console.WriteLine($"Starting a new journal for {description}.");
 
     // A new journal starts the jobs of this graph's shards afresh, so the scheduler forgets them. Other shards' jobs stay.
-    scheduler.Forget(shards.Select(shard => $"shard-{shard}"));
+    scheduler.Forget(shards.Select(JobName));
 }
 else
 {
@@ -154,7 +159,7 @@ try
 }
 catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalOpenException or JournalFormatException)
 {
-    return Refuse(exception.Message);
+    return await RefuseAsync(exception.Message);
 }
 catch (JournalWriteException exception)
 {
@@ -165,9 +170,12 @@ catch (JournalWriteException exception)
 // 0 when every task succeeded, 1 when one did not, 2 when the run was stopped.
 return result.Outcome.ToExitCode();
 
-static int Refuse(string message)
+// Each shard's job and its job task share one name, which the faults and the scheduler's Forget use as well.
+static string JobName(int shard) => $"shard-{shard}";
+
+static async Task<int> RefuseAsync(string message)
 {
-    Console.Error.WriteLine(message);
+    await Console.Error.WriteLineAsync(message);
     return 64;
 }
 

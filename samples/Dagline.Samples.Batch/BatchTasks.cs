@@ -18,7 +18,7 @@ public static class BatchTasks
     public static async Task Validate(string tenant, EntityStore store, TaskContext context)
     {
         context.Status("validating entities");
-        var entities = await store.FetchAsync(tenant, context.TimeProvider, context.CancellationToken);
+        var entities = store.EntitiesOf(tenant);
 
         var validated = 0;
         foreach (var batch in entities.Chunk(500))
@@ -55,6 +55,8 @@ public static class BatchTasks
             // the next run. "The window between the start and the save" in the Waiting on external systems article
             // shows how to close it.
             job = await scheduler.TriggerAsync(name, context.CancellationToken);
+
+            // No token: a stop under way must not cancel the save, or the next run triggers a second job.
             await context.SaveCheckpointAsync(job);
         }
 
@@ -79,11 +81,11 @@ public static class BatchTasks
         context.Message($"job {job} done");
     }
 
-    /// <summary>Reads the status of each job and writes how many succeeded.</summary>
-    public static Task Report(IReadOnlyList<Node> jobs, TaskContext context)
+    /// <summary>Reads the status of each job task and writes how many succeeded.</summary>
+    public static Task Report(IReadOnlyList<Node> jobTasks, TaskContext context)
     {
-        var succeeded = jobs.Count(job => context.StatusOf(job) is NodeStatus.Succeeded);
-        context.Message($"{succeeded} of {jobs.Count} jobs succeeded");
+        var succeeded = jobTasks.Count(jobTask => context.StatusOf(jobTask) is NodeStatus.Succeeded);
+        context.Message($"{succeeded} of {jobTasks.Count} job tasks succeeded");
         return Task.CompletedTask;
     }
 }
