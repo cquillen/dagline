@@ -70,10 +70,17 @@ internal sealed class JournalFold
     /// </summary>
     public IReadOnlyDictionary<NodeStatus, int> LastStatusCounts()
     {
-        var counts = Enum.GetValues<NodeStatus>().ToDictionary(status => status, _ => 0);
+        var statuses = Enum.GetValues<NodeStatus>();
+        Span<int> tally = stackalloc int[statuses.Length];
         foreach (var status in _lastStatuses.Values)
         {
-            counts[status]++;
+            tally[(int)status]++;
+        }
+
+        var counts = new Dictionary<NodeStatus, int>(statuses.Length);
+        foreach (var status in statuses)
+        {
+            counts.Add(status, tally[(int)status]);
         }
 
         return counts.AsReadOnly();

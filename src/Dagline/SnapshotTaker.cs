@@ -46,9 +46,9 @@ internal sealed class SnapshotTaker(
     /// </summary>
     public SnapshotChange Close(RunMilestones milestones, StatusCounts counts)
     {
-        var tally = new int[StatusCounts.TallyLength + slots.TallyLength];
+        var tally = new int[TaskCounts.TallyLength + slots.TallyLength];
         counts.CopyTo(tally);
-        slots.CopyTo(tally.AsSpan(StatusCounts.TallyLength));
+        slots.CopyTo(tally.AsSpan(TaskCounts.TallyLength));
 
         foreach (var (position, node) in _sinceLastChange)
         {
@@ -70,7 +70,7 @@ internal sealed class SnapshotTaker(
         }
 
         var (started, stop, ended, outcome) = change.Milestones;
-        var slotsInUse = change.Tally.AsSpan(StatusCounts.TallyLength);
+        var slotsInUse = change.Tally.AsSpan(TaskCounts.TallyLength);
         return new Snapshot(
             started,
             ended,

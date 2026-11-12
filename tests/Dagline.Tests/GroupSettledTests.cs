@@ -86,8 +86,8 @@ public class GroupSettledTests
         settled.At.ShouldBe(lastTaskEvent.At);
         var handedWithIt = reporter.Snapshots[events.IndexOf(settled)];
         handedWithIt[shard.Path].Status.ShouldBe(NodeStatus.Succeeded);
-        handedWithIt[shard.Path].Counts.ShouldBe(settled.Counts);
-        result.Snapshot[shard.Path].Counts.ShouldBe(settled.Counts);
+        handedWithIt[shard.Path].Counts.ByStatus().ShouldBe(settled.Counts.ByStatus());
+        result.Snapshot[shard.Path].Counts.ByStatus().ShouldBe(settled.Counts.ByStatus());
     }
 
     [Test]

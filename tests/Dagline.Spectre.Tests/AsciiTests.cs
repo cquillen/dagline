@@ -45,6 +45,7 @@ public class AsciiTests
         await work.Started;
         await cancel.Started;
         await display.Handled("waiting wait: job → 17");
+        await display.Handled("warning ok: odd café");
         await display.Handled("after: pending -> blocked");
         var running = display.NextFrame();
         stop.Request();

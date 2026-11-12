@@ -93,7 +93,7 @@ The run, every group and every task count their tasks with one type, <xref:Dagli
 | <xref:Dagline.TaskCounts.Waiting> | The running tasks that are waiting on an external system. |
 | <xref:Dagline.TaskCounts.Working> | The running tasks that are not. With `Waiting` it makes up the running, and no task is in both. |
 
-Only Dagline makes a `TaskCounts`. It is not a dictionary and you cannot enumerate it: ask for the count of each status you show. Two are equal when every number in them is.
+Only Dagline makes a `TaskCounts`. It is not a dictionary and you cannot enumerate it: ask for the count of each status you show.
 
 ```csharp
 var counts = snapshot.Counts;
