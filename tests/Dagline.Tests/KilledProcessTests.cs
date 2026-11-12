@@ -47,6 +47,33 @@ public class KilledProcessTests
         summary.Finished.ShouldBeFalse();
     }
 
+    [Test]
+    public async Task A_new_journals_header_and_first_run_are_on_disk_before_any_task_starts()
+    {
+        using var temporary = new TemporaryDirectory();
+        using var copies = new TemporaryDirectory();
+        var firstRun = true;
+        var builder = new GraphBuilder();
+        builder.Task("load", _ =>
+        {
+            if (firstRun)
+            {
+                copies.CopyIn(Directory.GetFiles(temporary.Path, "*.journal").Single());
+            }
+
+            return Task.CompletedTask;
+        });
+        var graph = builder.Build();
+
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path, "all shards") });
+        firstRun = false;
+        var fromTheCopy = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id) });
+
+        fromTheCopy.Snapshot.Journal.ShouldBe(new JournalInfo(first.Snapshot.Journal.Id, "all shards", 2));
+    }
+
     private static async Task ContinuesAsExpected(JournalCut cut, IEnumerable<Line> wholeLines, Work work)
     {
         using var copy = new TemporaryDirectory();
