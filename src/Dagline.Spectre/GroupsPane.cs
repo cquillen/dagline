@@ -144,8 +144,8 @@ internal static class GroupsPane
 
         private void AddUpwards(NodeSnapshot task)
         {
-            var waiting = Running.IsWaiting(task) ? 1 : 0;
-            var warnings = TaskCounts.Warnings(task);
+            var waiting = task.IsWaiting ? 1 : 0;
+            var warnings = task.WarningCount;
             if (waiting == 0 && warnings == 0)
             {
                 return;

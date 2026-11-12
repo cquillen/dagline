@@ -28,7 +28,7 @@ A departure from the Microsoft guidelines is a judgement call.
 
 ## Types and surface
 
-- **Smallest surface.** A new type is `internal`, and a new concrete class or record is also `sealed`. A type becomes `public` when a consumer needs it, and unsealed when a derived type exists in the same change.
+- **Smallest surface.** A new type is `internal`, and a new concrete class or record is also `sealed`. A type becomes `public` when a consumer needs it, and unsealed when a derived type exists in the same change. A member goes onto the snapshot types only when it answers a question by a rule the core owns (an ADR or glossary rule, or a join over snapshot data) and a reporter in this repository asks it; wording, number and duration formats, and ordering stay with each reporter.
 - **Abstractions are earned.** An interface or abstract class has two implementations in the repository, or is a documented consumer extension point, or is a seam named in an ADR. A test double counts as the second implementation only when the real one reaches outside the process (clock, console, file system).
 - **Immutable by default.** Data is a `record` or has get-only and `init` members. Mutable state has one owning type, which is the only code that changes it.
 - **Tests use the public surface.** Tests reach internal types through the public API. `InternalsVisibleTo` is a breach: an internal that cannot be reached that way is a design problem to fix.

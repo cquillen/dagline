@@ -14,22 +14,18 @@ internal static class StopBanner
     /// The banner, or none before a stop has been applied. When it is wider than <paramref name="width"/>, what the run is
     /// waiting for gives way, so what Ctrl+C does is always kept.
     /// </summary>
-    /// <param name="snapshot">The run.</param>
-    /// <param name="stopBy">
-    /// Who asked for the stop, from the <see cref="StopRequested"/> the display has handled. A snapshot with a stop handed before
-    /// that event was handled is taken as the app's.
-    /// </param>
+    /// <param name="snapshot">The run, whose stop says who asked for it.</param>
     /// <param name="width">The width of the console.</param>
     /// <param name="now">The time on the display's clock, which the time left runs to.</param>
     /// <param name="glyphs">The glyphs to draw with.</param>
-    public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, StopRequester? stopBy, int width, DateTimeOffset now, Glyphs glyphs)
+    public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, DateTimeOffset now, Glyphs glyphs)
     {
         if (snapshot.Stop is not { } stop)
         {
             return [];
         }
 
-        var byDagline = stopBy is StopRequester.Dagline;
+        var byDagline = stop.By is StopRequester.Dagline;
         var running = snapshot.Counts[NodeStatus.Running];
         var line = StyledLine.Of(" STOPPING ", _badge).Add(" ");
         if (byDagline)

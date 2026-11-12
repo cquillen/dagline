@@ -73,6 +73,31 @@ public class ProblemsTests
     }
 
     [Test]
+    public async Task A_failure_with_an_empty_message_draws_no_blank_line()
+    {
+        var slow = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("broken", context => throw context.Fail(""));
+        builder.Task("starved", context => throw context.Fail("no input"));
+        builder.Task("slow", slow.Body);
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20);
+        await display.Handled("starved: running -> failed");
+        await display.Handled("broken: running -> failed");
+        var frame = display.NextFrame();
+        slow.Release();
+        await display.Run;
+
+        Problems(frame).ShouldBe(
+        [
+            Rule("Problems (2 failed)", 60),
+            Pinned("✗ broken", "04:12:00", 60),
+            Pinned("✗ starved", "04:12:00", 60),
+            "    no input",
+        ]);
+    }
+
+    [Test]
     public async Task Cancelled_tasks_follow_the_failures_newest_first()
     {
         var first = new PausedBody();

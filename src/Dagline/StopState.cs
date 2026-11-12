@@ -8,4 +8,9 @@ namespace Dagline;
 /// <param name="Deadline">
 /// When the wait for the running tasks ends at the latest, or <see langword="null"/> when the grace period is unlimited.
 /// </param>
-public sealed record StopState(DateTimeOffset RequestedAt, TimeSpan GracePeriod, DateTimeOffset? Deadline);
+/// <param name="By">
+/// Who asked for the stop: the app, through its <see cref="StopSignal"/>, or Dagline itself, because the run's journal could no
+/// longer be written. It is the same as <see cref="StopRequested.By"/>, and is set in the same step that applies the stop, so a
+/// reporter can read it from a snapshot before it has handled that event.
+/// </param>
+public sealed record StopState(DateTimeOffset RequestedAt, TimeSpan GracePeriod, DateTimeOffset? Deadline, StopRequester By = StopRequester.App);

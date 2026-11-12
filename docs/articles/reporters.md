@@ -85,7 +85,17 @@ A snapshot also answers the questions a summary asks, each in declaration order,
 - <xref:Dagline.Snapshot.Cancelled> lists the cancelled tasks: those that were running when the run was stopped and ended because of it, or were left behind when the run stopped waiting. Each keeps its message, detail lines, warnings and the progress it had reported.
 - <xref:Dagline.Snapshot.NeverReached> lists the tasks a stopped run never started, which stay pending or ready. It is empty until the run has ended.
 - <xref:Dagline.Snapshot.WarningCount> counts every warning added, and <xref:Dagline.Snapshot.WithWarnings> lists the tasks that have any. Each task keeps its first 100 warnings in <xref:Dagline.NodeSnapshot.Warnings> and counts the rest in <xref:Dagline.NodeSnapshot.WarningsOmitted>.
-- <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line.
+- <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line. <xref:Dagline.Snapshot.TryGetBlocked*> finds the entry for one failed task by its path, and gives `false` for a task that blocked nothing.
+- <xref:Dagline.Snapshot.Waiting> and <xref:Dagline.Snapshot.Working> list the running tasks that are waiting on an external system and those that are working. Together they are every running task, and no task is in both.
+
+Each node answers the same way for itself, so a reporter never writes Dagline's rules again:
+
+- <xref:Dagline.NodeSnapshot.WarningCount> is every warning a task was given, kept in `Warnings` or only counted in `WarningsOmitted`. For a group it is zero for now.
+- <xref:Dagline.NodeSnapshot.IsWaiting> is true for a running task with a waiting scope open, and <xref:Dagline.NodeSnapshot.IsWorking> for a running task with none. Both are false for a task that is not running, and for a group for now.
+- <xref:Dagline.NodeSnapshot.Ran> is how long a task ran: its settle time less its start time. It is null for a task that has not settled, a blocked task, an earlier success and a group, none of which has both times.
+- <xref:Dagline.NodeStatusExtensions.IsSettled*> says whether a status is settled: succeeded, failed, blocked or cancelled.
+
+A task's <xref:Dagline.NodeSnapshot.Message> and <xref:Dagline.NodeSnapshot.WaitingText> are each one line, and null when the task gave empty text, so a reporter tests each only for null. Status text is kept as the task gave it, line breaks included.
 
 ### A run on a journal
 
@@ -239,7 +249,7 @@ What to know about the source:
 - **Reading never waits for a task or a reporter**, and is safe from any thread.
 - **Progress is here and nowhere else.** A running task's <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total> are as the task last reported them. Once the task has settled they stay as it left them.
 - **So is how long a task has waited.** While a task waits, <xref:Dagline.NodeSnapshot.WaitingSince> is when the wait began and <xref:Dagline.NodeSnapshot.WaitingText> what it waits for. Both are null while the task is working and once it has settled: the marker is live only.
-- **So is the time left after a stop.** <xref:Dagline.Snapshot.Stop> is null until a stop is applied. From the snapshot handed with `StopRequested` on, it is a <xref:Dagline.StopState>: when the stop was applied, the grace period, and the `Deadline` by which the run stops waiting at the latest, or null when the grace period is unlimited. A display can count down to the deadline on its own timer, with no event for each second.
+- **So is the time left after a stop.** <xref:Dagline.Snapshot.Stop> is null until a stop is applied. From the snapshot handed with `StopRequested` on, it is a <xref:Dagline.StopState>: when the stop was applied, the grace period, the `Deadline` by which the run stops waiting at the latest, or null when the grace period is unlimited, and `By`, who asked for the stop. Since `Current` may be ahead of the events, a display reads `By` from the snapshot rather than waiting for `StopRequested`. A display can count down to the deadline on its own timer, with no event for each second.
 - **After the run has ended** `Current` is the final snapshot: the same one that is handed with `RunEnded` and returned on <xref:Dagline.RunResult.Snapshot>.
 
 A timer is the reporter's own concurrency. Dagline makes one call at a time into `OnEventAsync`, but it knows nothing of a loop the reporter started, so the reporter keeps the two apart itself. The example writes from `OnEventAsync` only after its loop has stopped. It also awaits the loop while handling `RunEnded`, so an exception from the loop leaves `OnEventAsync` and is reported like any other reporter error.

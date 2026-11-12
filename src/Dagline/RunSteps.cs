@@ -319,7 +319,7 @@ internal sealed class RunSteps
     /// </summary>
     private void ApplyStop(StopRequester by, DateTimeOffset now)
     {
-        _milestones = _milestones with { Stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod)) };
+        _milestones = _milestones with { Stop = new StopState(now, _gracePeriod, GracePeriodRules.DeadlineFrom(now, _gracePeriod), by) };
         _step!.SignalsTheTasks = true;
         Publish(new StopRequested(now, by, _gracePeriod));
     }

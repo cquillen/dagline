@@ -16,7 +16,10 @@ public sealed class Snapshot
     private IReadOnlyList<NodeSnapshot>? _failed;
     private IReadOnlyList<NodeSnapshot>? _cancelled;
     private IReadOnlyList<NodeSnapshot>? _neverReached;
+    private IReadOnlyList<NodeSnapshot>? _waiting;
+    private IReadOnlyList<NodeSnapshot>? _working;
     private IReadOnlyList<BlockedTasks>? _blocked;
+    private FrozenDictionary<NodePath, BlockedTasks>? _blockedByCause;
     private IReadOnlyList<NodeSnapshot>? _withWarnings;
 
     internal Snapshot(
@@ -137,14 +140,33 @@ public sealed class Snapshot
     /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read
     /// and kept, so reading it again costs nothing.
     /// </remarks>
-    public IReadOnlyList<NodeSnapshot> Failed => TasksWith(ref _failed, status => status is NodeStatus.Failed);
+    public IReadOnlyList<NodeSnapshot> Failed => TasksWith(ref _failed, task => task.Status is NodeStatus.Failed);
 
     /// <summary>Every cancelled task, in declaration order. Empty when no task has been cancelled.</summary>
     /// <remarks>
     /// A task is cancelled when its body ended with a cancellation exception after a stop. Each entry is the same object
     /// as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
     /// </remarks>
-    public IReadOnlyList<NodeSnapshot> Cancelled => TasksWith(ref _cancelled, status => status is NodeStatus.Cancelled);
+    public IReadOnlyList<NodeSnapshot> Cancelled => TasksWith(ref _cancelled, task => task.Status is NodeStatus.Cancelled);
+
+    /// <summary>
+    /// Every task that is waiting, as <see cref="NodeSnapshot.IsWaiting"/> says: running with a waiting scope open.
+    /// Tasks only, in declaration order. Empty when no task is waiting.
+    /// </summary>
+    /// <remarks>
+    /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
+    /// Together with <see cref="Working"/> it holds every running task, and no task is in both.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> Waiting => TasksWith(ref _waiting, task => task.IsWaiting);
+
+    /// <summary>
+    /// Every task that is working, as <see cref="NodeSnapshot.IsWorking"/> says: running with no waiting scope open.
+    /// Tasks only, in declaration order. Empty when no task is working.
+    /// </summary>
+    /// <remarks>
+    /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> Working => TasksWith(ref _working, task => task.IsWorking);
 
     /// <summary>
     /// Every task the run never reached: those still pending or ready once the run has ended, in declaration order.
@@ -157,7 +179,7 @@ public sealed class Snapshot
     /// The list is worked out on the first read and kept.
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> NeverReached
-        => Ended is null ? [] : TasksWith(ref _neverReached, status => status is NodeStatus.Pending or NodeStatus.Ready);
+        => Ended is null ? [] : TasksWith(ref _neverReached, task => task.Status is NodeStatus.Pending or NodeStatus.Ready);
 
     /// <summary>
     /// What each failure blocked: one entry for each failed task that blocked at least one task, in declaration order
@@ -174,7 +196,7 @@ public sealed class Snapshot
     /// How many warnings the tasks of the run have added so far, whatever the status of each task: those kept in
     /// <see cref="NodeSnapshot.Warnings"/> and those only counted in <see cref="NodeSnapshot.WarningsOmitted"/>.
     /// </summary>
-    public int WarningCount => WithWarnings.Sum(task => task.WarningsAdded);
+    public int WarningCount => WithWarnings.Sum(task => task.WarningCount);
 
     /// <summary>Every task that has added at least one warning, in declaration order. Empty when no task has.</summary>
     /// <remarks>
@@ -204,7 +226,22 @@ public sealed class Snapshot
         return found;
     }
 
-    /// <summary>The tasks, in declaration order, whose status passes <paramref name="matches"/>: worked out on the first read and kept.</summary>
-    private IReadOnlyList<NodeSnapshot> TasksWith(ref IReadOnlyList<NodeSnapshot>? kept, Func<NodeStatus, bool> matches)
-        => LazyInitializer.EnsureInitialized(ref kept, () => [.. Nodes.Where(node => !node.IsGroup && matches(node.Status))]);
+    /// <summary>Finds what the failed task at <paramref name="cause"/> blocked, if it blocked anything.</summary>
+    /// <param name="cause">The path of a failed task.</param>
+    /// <param name="blocked">
+    /// The entry of <see cref="Blocked"/> for that task, when the method returns <see langword="true"/>: every task it blocked,
+    /// and the roots that name them.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when the task at <paramref name="cause"/> has failed and blocked at least one task.
+    /// <see langword="false"/> for a failed task that blocked nothing, for any other node, and for a path the graph does not have.
+    /// </returns>
+    /// <remarks>The lookup is built from <see cref="Blocked"/> on the first call and kept, so later calls cost little.</remarks>
+    public bool TryGetBlocked(NodePath cause, [MaybeNullWhen(false)] out BlockedTasks blocked)
+        => LazyInitializer.EnsureInitialized(ref _blockedByCause, () => Blocked.ToFrozenDictionary(entry => entry.Cause))
+            .TryGetValue(cause, out blocked);
+
+    /// <summary>The tasks, in declaration order, that pass <paramref name="matches"/>: worked out on the first read and kept.</summary>
+    private IReadOnlyList<NodeSnapshot> TasksWith(ref IReadOnlyList<NodeSnapshot>? kept, Func<NodeSnapshot, bool> matches)
+        => LazyInitializer.EnsureInitialized(ref kept, () => [.. Nodes.Where(node => !node.IsGroup && matches(node))]);
 }

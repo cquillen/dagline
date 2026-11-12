@@ -155,7 +155,10 @@ public sealed class TaskContext
     }
 
     /// <summary>Sets the one-line message of the task's outcome: what the task did, or what it found.</summary>
-    /// <param name="message">The new message, which replaces the last one. Each line break in it is replaced by a space.</param>
+    /// <param name="message">
+    /// The new message, which replaces the last one. Each line break in it is replaced by a space. An empty message clears the
+    /// message, so the task has none.
+    /// </param>
     /// <remarks>
     /// The message shows as <see cref="NodeSnapshot.Message"/> and stays when the task succeeds, so a succeeded task can say
     /// what it did. <see cref="Fail"/> replaces it, and so does an exception that escapes the body when no failure was reported.
@@ -193,7 +196,8 @@ public sealed class TaskContext
     /// <c>throw context.Fail("2 bad entities", "entity 3: missing owner");</c>.
     /// </summary>
     /// <param name="message">
-    /// The message of the failure, which replaces the task's message. Each line break in it is replaced by a space.
+    /// The message of the failure, which replaces the task's message. Each line break in it is replaced by a space. An empty message
+    /// leaves the task with no message, though it still fails.
     /// </param>
     /// <param name="detail">
     /// Detail lines to add after those the task already has, as <see cref="Detail"/> adds them: text that holds line breaks
@@ -237,7 +241,8 @@ public sealed class TaskContext
     /// <c>using (context.Waiting("job 17 to finish")) { ... }</c>.
     /// </summary>
     /// <param name="text">
-    /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. It is kept as given.
+    /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. Each line break in it is
+    /// replaced by a space, and empty text is none, the same as <see langword="null"/>.
     /// </param>
     /// <returns>The scope. Dispose it when the wait is over. Disposing it again does nothing.</returns>
     /// <remarks>
@@ -276,7 +281,7 @@ public sealed class TaskContext
     /// </param>
     /// <param name="text">
     /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. It is the text of the
-    /// waiting scope the helper opens, as <see cref="Waiting"/> takes it.
+    /// waiting scope the helper opens, as <see cref="Waiting"/> takes it: a line break becomes a space, and empty text is none.
     /// </param>
     /// <returns>A task that completes once a check has returned <see langword="true"/>.</returns>
     /// <remarks>

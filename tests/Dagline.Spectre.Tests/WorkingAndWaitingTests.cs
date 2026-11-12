@@ -175,7 +175,8 @@ public class WorkingAndWaitingTests
         {
             (waits[2], "waiting load/w3: job 3"),
             (waits[0], "waiting load/w1: job 1"),
-            (waits[1], "waiting load/w2: job 2\nqueued"),
+            // The event carries the waiting text as one line.
+            (waits[1], "waiting load/w2: job 2 queued"),
             (waits[3], "waiting load/w4: job 4"),
             (waits[4], "waiting load/w5: job 5"),
             (waits[5], "waiting load/w6: job 6"),

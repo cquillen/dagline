@@ -22,7 +22,7 @@ internal static class WaitingPane
     public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, DateTimeOffset now, Glyphs glyphs, int rows)
     {
         // OrderBy is stable, so tasks that began waiting at the same instant stay in declaration order.
-        var waiting = snapshot.Nodes.Where(Running.IsWaiting).OrderBy(node => node.WaitingSince).ToList();
+        var waiting = snapshot.Waiting.OrderBy(node => node.WaitingSince).ToList();
         if (waiting.Count == 0 || rows < PaneRows.Least)
         {
             return [];
@@ -47,9 +47,13 @@ internal static class WaitingPane
     private static StyledLine Line(NodeSnapshot node, int column, int width, DateTimeOffset now, Glyphs glyphs)
     {
         var line = TaskLine.Start(StatusMark.Waiting(glyphs), node, column, glyphs);
-        if ((node.StatusText ?? node.WaitingText) is { } text)
+        if (node.StatusText is { } status)
         {
-            line = line.Add(glyphs.Text(DisplayText.OneLine(text)));
+            line = line.Add(glyphs.Text(DisplayText.OneLine(status)));
+        }
+        else if (node.WaitingText is { } waitingText)
+        {
+            line = line.Add(glyphs.Text(waitingText));
         }
 
         return TaskLine.Finish(line, Waited(node, now), width, glyphs);
