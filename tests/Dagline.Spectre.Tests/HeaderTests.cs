@@ -55,7 +55,7 @@ public class HeaderTests
         c.Release();
         await display.Run;
 
-        frame.ShouldBe(
+        frame.Take(3).ShouldBe(
         [
             "Dagline  no journal                                              66%  elapsed 0s",
             new string('━', 80),

@@ -15,6 +15,7 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
     private ISnapshotSource? _source;
     private ITimer? _timer;
     private ExceptionDispatchInfo? _timerFailure;
+    private HeardEvents _heard = HeardEvents.None;
 
     public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
     {
@@ -24,6 +25,7 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
         lock (_gate)
         {
             _timerFailure?.Throw();
+            _heard = _heard.After(runEvent);
             switch (runEvent)
             {
                 case RunStarted started:
@@ -78,7 +80,7 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
         }
     }
 
-    private void DrawFrame(Snapshot snapshot) => terminal.Draw(Frame.Build(snapshot, terminal.Size, clock.GetUtcNow(), glyphs));
+    private void DrawFrame(Snapshot snapshot) => terminal.Draw(Frame.Build(snapshot, terminal.Size, clock.GetUtcNow(), glyphs, _heard));
 
     private void StopTimer()
     {

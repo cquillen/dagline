@@ -13,12 +13,15 @@ internal static class Frame
     /// <param name="size">The size of the console: no line is wider and there are no more lines than its height.</param>
     /// <param name="now">The time on the display's clock.</param>
     /// <param name="glyphs">The glyphs to draw with.</param>
-    public static IReadOnlyList<StyledLine> Build(Snapshot snapshot, Size size, DateTimeOffset now, Glyphs glyphs)
+    /// <param name="heard">What the display has kept from the events it has handled, which a snapshot does not say.</param>
+    public static IReadOnlyList<StyledLine> Build(Snapshot snapshot, Size size, DateTimeOffset now, Glyphs glyphs, HeardEvents heard)
     {
         var width = Math.Max(0, size.Width);
         return
         [
             .. Header.Lines(snapshot, width, now, glyphs)
+                .Concat(StopBanner.Lines(snapshot, heard.StopBy, now, glyphs))
+                .Concat(ProblemsPane.Lines(snapshot, heard.LatestWarnings, width, glyphs))
                 .Select(line => line.Fit(width, glyphs.Ellipsis))
                 .Take(Math.Max(0, size.Height)),
         ];
