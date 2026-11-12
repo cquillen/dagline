@@ -68,25 +68,10 @@ internal sealed class RunSteps
         _recording = journal is not null;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
-        _instances = new TaskInstance?[graph.Nodes.Length];
         _continuation = Continuation.Of(graph, journal?.Earlier);
-        var earlierSuccesses = new int[graph.Nodes.Length];
-        foreach (var task in graph.Tasks)
-        {
-            var instance = _continuation.EarlierSuccessOf(task) is { } recorded
-                ? TaskInstance.EarlierSuccess(task, recorded)
-                : new TaskInstance(task, journal?.Earlier.CheckpointAt(task.Path) ?? "");
-            _instances[task.Position] = instance;
-            if (instance.Status is NodeStatus.Succeeded)
-            {
-                earlierSuccesses[task.Position] = 1;
-                foreach (var group in task.Groups)
-                {
-                    earlierSuccesses[group]++;
-                }
-            }
-        }
+        _instances = InstancesAtTheStart();
 
+        var earlierSuccesses = EarlierSuccessesByPosition();
         var earlierInRun = graph.Tasks.Sum(task => earlierSuccesses[task.Position]);
         _counts = new StatusCounts(pending: graph.Tasks.Length - earlierInRun, earlierSuccesses: earlierInRun);
         var groups = graph.Nodes.OfType<BuiltGroup>().ToList();
@@ -96,17 +81,7 @@ internal sealed class RunSteps
             group => new StatusCounts(
                 pending: group.TaskCount - earlierSuccesses[group.Position],
                 earlierSuccesses: earlierSuccesses[group.Position]));
-
-        _snapshots = new SnapshotTaker(
-            graph.Nodes.Select(AtTheStart),
-            graph.Positions,
-            _slots,
-            new SnapshotJournal(journal?.Info, earlierInRun)
-            {
-                SetAside = [.. _continuation.SetAside.Select(task => task.Path)],
-                JournalPathsNotInGraph = _continuation.PathsNotInGraph,
-                JournalPathsNotInGraphUnsucceeded = _continuation.PathsNotInGraphUnsucceeded,
-            });
+        _snapshots = SnapshotsAtTheStart(earlierInRun);
     }
 
     /// <summary>
@@ -617,6 +592,55 @@ internal sealed class RunSteps
             _settledInThisStep.Add(group);
         }
     }
+
+    /// <summary>
+    /// Every task's instance at the start of the run, indexed by position among the nodes: an earlier success for a task the journal
+    /// holds as one, and otherwise a pending task with the checkpoint the journal holds for its path, if any.
+    /// </summary>
+    private TaskInstance?[] InstancesAtTheStart()
+    {
+        var instances = new TaskInstance?[_graph.Nodes.Length];
+        foreach (var task in _graph.Tasks)
+        {
+            instances[task.Position] = _continuation.EarlierSuccessOf(task) is { } recorded
+                ? TaskInstance.EarlierSuccess(task, recorded)
+                : new TaskInstance(task, _journal?.Earlier.CheckpointAt(task.Path) ?? "");
+        }
+
+        return instances;
+    }
+
+    /// <summary>
+    /// The earlier successes at each node's position, at the start of the run: one for a task that is an earlier success, and for a
+    /// group the count of those beneath it.
+    /// </summary>
+    private int[] EarlierSuccessesByPosition()
+    {
+        var earlierSuccesses = new int[_graph.Nodes.Length];
+        foreach (var task in _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Succeeded))
+        {
+            earlierSuccesses[task.Position] = 1;
+            foreach (var group in task.Groups)
+            {
+                earlierSuccesses[group]++;
+            }
+        }
+
+        return earlierSuccesses;
+    }
+
+    /// <summary>The run's snapshots, starting from every node as it is at the start and the journal as the run continues it.</summary>
+    private SnapshotTaker SnapshotsAtTheStart(int earlierInRun)
+        => new(
+            _graph.Nodes.Select(AtTheStart),
+            _graph.Positions,
+            _slots,
+            new SnapshotJournal(_journal?.Info, earlierInRun)
+            {
+                SetAside = [.. _continuation.SetAside.Select(task => task.Path)],
+                JournalPathsNotInGraph = _continuation.PathsNotInGraph,
+                JournalPathsNotInGraphUnsucceeded = _continuation.PathsNotInGraphUnsucceeded,
+            });
 
     private NodeSnapshot AtTheStart(BuiltNode node)
         => node is BuiltGroup group ? NodeSnapshotOf(group) : InstanceOf((BuiltTask)node).ToNodeSnapshot();
