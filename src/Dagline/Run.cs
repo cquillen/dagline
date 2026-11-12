@@ -221,6 +221,7 @@ internal sealed class Run : ISnapshotSource
             throw new JournalWriteException(failed, Current);
         }
     }
+
     /// <summary>
     /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
     /// </summary>
@@ -290,6 +291,7 @@ internal sealed class Run : ISnapshotSource
             _writeFailure = cause;
         }
     }
+
     /// <summary>Carries out the steps one input caused, under the lock and in order.</summary>
     private void CarryOut(IReadOnlyList<Step> steps)
     {
