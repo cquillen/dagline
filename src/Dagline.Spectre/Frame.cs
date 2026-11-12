@@ -17,13 +17,19 @@ internal static class Frame
     public static IReadOnlyList<StyledLine> Build(Snapshot snapshot, Size size, DateTimeOffset now, Glyphs glyphs, HeardEvents heard)
     {
         var width = Math.Max(0, size.Width);
+        var height = Math.Max(0, size.Height);
+        IReadOnlyList<StyledLine> top =
+        [
+            .. Header.Lines(snapshot, width, now, glyphs),
+            .. StopBanner.Lines(snapshot, heard.StopBy, now, glyphs),
+        ];
         return
         [
-            .. Header.Lines(snapshot, width, now, glyphs)
-                .Concat(StopBanner.Lines(snapshot, heard.StopBy, now, glyphs))
+            .. top
+                .Concat(GroupsPane.Lines(snapshot, width, height - top.Count, glyphs))
                 .Concat(ProblemsPane.Lines(snapshot, heard.LatestWarnings, width, glyphs))
                 .Select(line => line.Fit(width, glyphs.Ellipsis))
-                .Take(Math.Max(0, size.Height)),
+                .Take(height),
         ];
     }
 }

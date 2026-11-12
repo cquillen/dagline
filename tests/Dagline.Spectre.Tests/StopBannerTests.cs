@@ -29,13 +29,17 @@ public class StopBannerTests
         b.Release();
         await display.Run;
 
-        before.Count.ShouldBe(3);
+        before.ShouldNotContain(line => line.Contains("STOPPING", StringComparison.Ordinal));
         stopped.ShouldBe(
         [
             Pinned("Dagline  no journal", "33%  elapsed 0s", 100),
             new string('━', 100),
             Pinned("✓ 1  ● 2", "cap 2/16", 100),
             " STOPPING  waiting for 2 running tasks to end · 29s left · Ctrl+C again to stop waiting",
+            "── Groups " + new string('─', 90),
+            "● a 0/1",
+            "● b 0/1",
+            "✓ c 1/1",
         ]);
         later[3].ShouldBe(" STOPPING  waiting for 2 running tasks to end · 26s left · Ctrl+C again to stop waiting");
     }

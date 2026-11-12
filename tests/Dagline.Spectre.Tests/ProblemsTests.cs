@@ -33,6 +33,13 @@ public class ProblemsTests
             Pinned("Dagline  no journal", "83%  elapsed 30s", 80),
             new string('━', 80),
             Pinned("● 1  ✗ 2  ⊘ 3", "cap 1/16", 80),
+            Rule("Groups", 80),
+            "✗ early 0/1 ✗1",
+            "⊘ x     0/1",
+            "✗ late  0/1 ✗1",
+            "⊘ y     0/1",
+            "⊘ z     0/1",
+            "● slow  0/1",
             Rule("Problems (2 failed) 3 tasks blocked behind 2 failures", 80),
             Pinned("✗ late", "⊘ blocks 2  04:12:30", 80),
             "    Sequence contains no elements",
@@ -55,7 +62,7 @@ public class ProblemsTests
         slow.Release();
         await display.Run;
 
-        frame.Skip(3).ShouldBe(
+        Problems(frame).ShouldBe(
         [
             Rule("Problems (1 failed)", 60),
             Pinned("✗ broken", "04:12:00", 60),
@@ -95,7 +102,7 @@ public class ProblemsTests
         keep.Release();
         await display.Run;
 
-        frame.Skip(4).ShouldBe(
+        Problems(frame).ShouldBe(
         [
             Rule("Problems (1 failed, 2 cancelled) 1 task blocked behind 1 failure", 100),
             Pinned("✗ broken", "⊘ blocks 1  04:12:00", 100),
@@ -135,6 +142,9 @@ public class ProblemsTests
             Pinned("Dagline  no journal", "0%  elapsed 0s", 80),
             new string('━', 80),
             Pinned("● 2  ▲ 4", "cap 2/16", 80),
+            Rule("Groups", 80),
+            "● a 0/1 ▲2",
+            "● b 0/1 ▲2",
             Rule("Problems (4 warnings)", 80),
             "▲ b  four",
             "▲ a  three",
@@ -164,7 +174,7 @@ public class ProblemsTests
         a.Release();
         await display.Run;
 
-        frame.Skip(3).ShouldBe(
+        Problems(frame).ShouldBe(
         [
             Rule("Problems (101 warnings)", 80),
             "▲ a  w100",
@@ -187,8 +197,12 @@ public class ProblemsTests
         a.Release();
         await display.Run;
 
-        frame.Count.ShouldBe(3);
+        frame.ShouldNotContain(line => line.StartsWith("── Problems", StringComparison.Ordinal));
     }
+
+    /// <summary>The problems pane: the lines of the frame from its title on.</summary>
+    private static IEnumerable<string> Problems(IReadOnlyList<string> frame)
+        => frame.SkipWhile(line => !line.StartsWith("── Problems", StringComparison.Ordinal));
 
     /// <summary><paramref name="left"/> at the start of a line <paramref name="width"/> cells wide and <paramref name="right"/> at its end.</summary>
     private static string Pinned(string left, string right, int width) => left + new string(' ', width - left.Length - right.Length) + right;
