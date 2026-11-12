@@ -22,12 +22,6 @@ internal static class DisplayText
     public static string Time(DateTimeOffset at) => at.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Status text on one line: each line break is printed as a space, as the plain-text reporter prints it. A message and
-    /// waiting text already arrive as one line.
-    /// </summary>
-    public static string OneLine(string text) => text.ReplaceLineEndings(" ");
-
-    /// <summary>
     /// Whole seconds under a minute, as in <c>45s</c>. Minutes and seconds under an hour, as in <c>20m 44s</c>. Hours and minutes
     /// from there, as in <c>1h 15m</c>. Always rounded down, and a duration below zero is written as zero.
     /// </summary>

@@ -112,7 +112,7 @@ public class GroupTests
         prepareRunning[holdsOnlyAnEmptyGroup.Path].Status.ShouldBe(NodeStatus.Succeeded);
         result.Snapshot[empty.Path].Status.ShouldBe(NodeStatus.Succeeded);
         result.Snapshot[holdsOnlyAnEmptyGroup.Path].Status.ShouldBe(NodeStatus.Succeeded);
-        result.Snapshot[empty.Path].Counts.Values.ShouldAllBe(count => count == 0);
+        result.Snapshot[empty.Path].Counts.Total.ShouldBe(0);
         result.Snapshot.Counts[NodeStatus.Succeeded].ShouldBe(1);
     }
 
@@ -136,15 +136,15 @@ public class GroupTests
         prepare.Release();
         var result = await run;
 
-        prepareRunning[shard.Path].Counts.ShouldBe(Counts(pending: 2, running: 1));
-        prepareRunning[tenant.Path].Counts.ShouldBe(Counts(pending: 1, running: 1));
-        prepareRunning[NodePath.Parse("shard-1/tenant-a/batch-1")].Counts.ShouldBe(Counts(running: 1));
-        prepareRunning[prepareTask.Path].Counts.ShouldBe(Counts(running: 1));
-        prepareRunning[NodePath.Parse("publish")].Counts.ShouldBe(Counts(pending: 1));
-        result.Snapshot[shard.Path].Counts.ShouldBe(Counts(succeeded: 3));
-        result.Snapshot[tenant.Path].Counts.ShouldBe(Counts(succeeded: 2));
-        result.Snapshot[prepareTask.Path].Counts.ShouldBe(Counts(succeeded: 1));
-        result.Snapshot.Counts.ShouldBe(Counts(succeeded: 4));
+        prepareRunning[shard.Path].Counts.ByStatus().ShouldBe(Counts(pending: 2, running: 1));
+        prepareRunning[tenant.Path].Counts.ByStatus().ShouldBe(Counts(pending: 1, running: 1));
+        prepareRunning[NodePath.Parse("shard-1/tenant-a/batch-1")].Counts.ByStatus().ShouldBe(Counts(running: 1));
+        prepareRunning[prepareTask.Path].Counts.ByStatus().ShouldBe(Counts(running: 1));
+        prepareRunning[NodePath.Parse("publish")].Counts.ByStatus().ShouldBe(Counts(pending: 1));
+        result.Snapshot[shard.Path].Counts.ByStatus().ShouldBe(Counts(succeeded: 3));
+        result.Snapshot[tenant.Path].Counts.ByStatus().ShouldBe(Counts(succeeded: 2));
+        result.Snapshot[prepareTask.Path].Counts.ByStatus().ShouldBe(Counts(succeeded: 1));
+        result.Snapshot.Counts.ByStatus().ShouldBe(Counts(succeeded: 4));
     }
 
     [Test]

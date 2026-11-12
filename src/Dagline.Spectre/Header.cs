@@ -35,8 +35,8 @@ internal static class Header
 
     private static StyledLine Progress(Snapshot snapshot, DateTimeOffset now)
     {
-        var tasks = TaskCounts.Total(snapshot.Counts);
-        var percent = tasks == 0 ? 100 : TaskCounts.Settled(snapshot.Counts) * 100 / tasks;
+        var tasks = snapshot.Counts.Total;
+        var percent = tasks == 0 ? 100 : snapshot.Counts.Settled * 100 / tasks;
         var elapsed = (snapshot.Ended ?? now) - snapshot.Started;
         return StyledLine.Of($"{percent}%", Palette.Bold)
             .Add(DisplayText.Between + "elapsed ", Palette.Dim)
@@ -45,7 +45,7 @@ internal static class Header
 
     /// <summary>One bar for the whole run: the settled and running tasks by status, then the rest of the tasks empty.</summary>
     private static StyledLine Bar(Snapshot snapshot, int width, Glyphs glyphs)
-        => StatusBar.Of(snapshot.Counts, snapshot.EarlierSuccesses, snapshot.Waiting.Count, width, glyphs);
+        => StatusBar.Of(snapshot.Counts, width, glyphs);
 
     private static StyledLine Slots(Snapshot snapshot, Glyphs glyphs)
     {

@@ -1,15 +1,12 @@
-using System.Collections.ObjectModel;
-
 namespace Dagline;
 
 /// <summary>
-/// How many tasks have each status, kept up to date as tasks change status.
-/// One of these counts the tasks of a whole run, and one counts the tasks beneath each group.
+/// How many tasks have each status, how many of them are earlier successes and how many are waiting, kept up to date as tasks
+/// change. One of these counts the tasks of a whole run, and one counts the tasks beneath each group.
 /// </summary>
+/// <remarks>It is the mutable tally of the step core. A snapshot shows it as <see cref="TaskCounts"/>, which copies it.</remarks>
 internal sealed class StatusCounts
 {
-    private static readonly NodeStatus[] _statuses = Enum.GetValues<NodeStatus>();
-
     // A group that has not settled shows the furthest any of its tasks has got, and a settled one the worst that happened.
     private static readonly NodeStatus[] _groupStatusPrecedence =
     [
@@ -21,23 +18,28 @@ internal sealed class StatusCounts
         NodeStatus.Blocked,
     ];
 
-    private static readonly ReadOnlyDictionary<NodeStatus, int>[] _ofOneTask =
-    [
-        .. _statuses.Select(only => new ReadOnlyDictionary<NodeStatus, int>(
-            _statuses.ToDictionary(status => status, status => status == only ? 1 : 0))),
-    ];
-
-    private readonly int[] _counts = new int[_statuses.Length];
+    // Laid out as TaskCounts reads a tally: the count of each status, then the earlier successes, then the waiting.
+    private readonly int[] _tally = new int[TallyLength];
 
     /// <param name="pending">How many tasks are pending at the start.</param>
     /// <param name="earlierSuccesses">How many tasks are earlier successes, and so succeeded from the start.</param>
     public StatusCounts(int pending, int earlierSuccesses)
     {
-        _counts[(int)NodeStatus.Pending] = pending;
-        _counts[(int)NodeStatus.Succeeded] = earlierSuccesses;
+        _tally[(int)NodeStatus.Pending] = pending;
+        _tally[(int)NodeStatus.Succeeded] = earlierSuccesses;
+        _tally[TaskCounts.EarlierSuccessesAt] = earlierSuccesses;
     }
 
-    public int this[NodeStatus status] => _counts[(int)status];
+    /// <summary>How many numbers a tally of the counts takes.</summary>
+    public static int TallyLength => TaskCounts.TallyLength;
+
+    public int this[NodeStatus status] => _tally[(int)status];
+
+    /// <summary>How many of the tasks are earlier successes. It is fixed when the run starts.</summary>
+    public int EarlierSuccesses => _tally[TaskCounts.EarlierSuccessesAt];
+
+    /// <summary>How many of the running tasks are waiting.</summary>
+    public int Waiting => _tally[TaskCounts.WaitingAt];
 
     /// <summary>
     /// The status of a group whose tasks, at any depth, these are.
@@ -61,36 +63,18 @@ internal sealed class StatusCounts
         }
     }
 
-    /// <summary>The counts of one task taken alone: one for its status and zero for every other.</summary>
-    public static ReadOnlyDictionary<NodeStatus, int> OfOneTask(NodeStatus status) => _ofOneTask[(int)status];
-
     public void Move(NodeStatus from, NodeStatus to)
     {
-        _counts[(int)from]--;
-        _counts[(int)to]++;
+        _tally[(int)from]--;
+        _tally[(int)to]++;
     }
 
-    /// <summary>How many numbers a tally of the counts takes: one for each status.</summary>
-    public static int TallyLength => _statuses.Length;
+    /// <summary>Counts a task's wait as it begins or ends: one more waiting task, or one fewer.</summary>
+    public void Count(WaitingChanged waited) => _tally[TaskCounts.WaitingAt] += waited.Waiting ? 1 : -1;
 
-    /// <summary>Writes the counts as they are now to the start of <paramref name="tally"/>, one number for each status.</summary>
-    public void CopyTo(Span<int> tally) => _counts.CopyTo(tally);
+    /// <summary>Writes the counts as they are now to the start of <paramref name="tally"/>, as <see cref="TaskCounts"/> reads them.</summary>
+    public void CopyTo(Span<int> tally) => _tally.CopyTo(tally);
 
-    /// <summary>The counts as they are now, with every status present, in lifecycle order.</summary>
-    public ReadOnlyDictionary<NodeStatus, int> ToDictionary() => ToDictionary(_counts);
-
-    /// <summary>
-    /// The counts that <see cref="CopyTo"/> wrote to the start of <paramref name="tally"/>, as <see cref="ToDictionary()"/> gives them.
-    /// </summary>
-    public static ReadOnlyDictionary<NodeStatus, int> ToDictionary(ReadOnlySpan<int> tally)
-    {
-        // A loop, not LINQ: a run takes one of these for every event, and LINQ's delegate and iterator cost more than the dictionary.
-        var counts = new Dictionary<NodeStatus, int>(_statuses.Length);
-        foreach (var status in _statuses)
-        {
-            counts.Add(status, tally[(int)status]);
-        }
-
-        return new(counts);
-    }
+    /// <summary>The counts as they are now, copied.</summary>
+    public TaskCounts ToTaskCounts() => TaskCounts.From(_tally);
 }

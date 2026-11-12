@@ -3,7 +3,7 @@ namespace Dagline;
 /// <summary>One node of a run at one instant. Immutable.</summary>
 public sealed record NodeSnapshot
 {
-    internal NodeSnapshot(BuiltNode node, NodeStatus status, IReadOnlyDictionary<NodeStatus, int> counts)
+    internal NodeSnapshot(BuiltNode node, NodeStatus status, TaskCounts counts)
     {
         Path = node.Path;
         Title = node.Title;
@@ -58,11 +58,16 @@ public sealed record NodeSnapshot
     public NodeStatus Status { get; internal init; }
 
     /// <summary>
-    /// How many tasks have each status: for a group, the tasks beneath it at any depth, and for a task, the task itself.
-    /// Every status is present, with zero for a status no task has, and the entries are in lifecycle order:
-    /// pending, ready, running, succeeded, failed, blocked, cancelled.
+    /// How many tasks have each status, with their sums and sub-counts: for a group, the tasks beneath it at any depth,
+    /// and for a task, the task itself.
     /// </summary>
-    public IReadOnlyDictionary<NodeStatus, int> Counts { get; internal init; }
+    /// <remarks>
+    /// A task's counts are those of one task: one for its status and zero for every other, with <see cref="TaskCounts.Waiting"/>
+    /// one while it <see cref="IsWaiting"/> and <see cref="TaskCounts.EarlierSuccesses"/> one for an earlier success.
+    /// A group's are kept up to date as each task beneath it changes status and begins or ends waiting, so a snapshot shows
+    /// them as of its own instant.
+    /// </remarks>
+    public TaskCounts Counts { get; internal init; }
 
     /// <summary>
     /// <see langword="true"/> for an earlier success: a task that an earlier run of the journal recorded as succeeded, which this run
@@ -72,16 +77,10 @@ public sealed record NodeSnapshot
     /// An earlier success is succeeded from the start of the run, with the message, detail lines and warnings it succeeded with and
     /// the time it succeeded in <see cref="Settled"/>, and no <see cref="Started"/>. It never changes status in this run, and no event
     /// is published for it. A group made only of earlier successes is settled from the start and gets no <see cref="GroupSettled"/>.
-    /// It is the same in every snapshot of the run.
+    /// It is the same in every snapshot of the run. <see cref="TaskCounts.EarlierSuccesses"/> of <see cref="Counts"/> says how many
+    /// earlier successes a group holds when only some of the tasks beneath it are.
     /// </remarks>
-    public bool IsEarlierSuccess { get; internal init; }
-
-    /// <summary>
-    /// How many earlier successes the node counts: for a group, the tasks beneath it at any depth that are earlier successes,
-    /// and for a task, 1 when it is one and 0 when it is not. They are among the succeeded in <see cref="Counts"/>.
-    /// </summary>
-    /// <remarks>It is fixed when the run starts and is the same in every snapshot of the run.</remarks>
-    public int EarlierSuccesses { get; internal init; }
+    public bool IsEarlierSuccess => Counts.EarlierSuccesses > 0 && Counts.EarlierSuccesses == Counts.Total;
 
     /// <summary>
     /// Why the task failed, or <see langword="null"/> for a task that has not failed and for a group.
@@ -151,14 +150,19 @@ public sealed record NodeSnapshot
     public int WarningsOmitted { get; internal init; }
 
     /// <summary>
-    /// How many warnings the task was given: those kept in <see cref="Warnings"/> and those only counted in
-    /// <see cref="WarningsOmitted"/>. Zero for a group for now.
+    /// How many warnings the node holds. For a task, every warning it was given: those kept in <see cref="Warnings"/> and those
+    /// only counted in <see cref="WarningsOmitted"/>. For a group, the sum of that number for the tasks beneath it at any depth.
     /// </summary>
     /// <remarks>
-    /// It counts every call of <see cref="TaskContext.Warn"/> the task made while it ran, and for an earlier success the warnings
-    /// it succeeded with. A group does not yet add up the warnings of the tasks beneath it.
+    /// It counts every call of <see cref="TaskContext.Warn"/> a task made while it ran, and for an earlier success the warnings
+    /// it succeeded with. A group's number is kept up to date as each task beneath it is given a warning, one beyond the number
+    /// kept included, so a snapshot shows it as of its own instant. A group lists no warnings of its own: read them from the tasks
+    /// beneath it. <see cref="GroupSettled"/> does not carry this number.
     /// </remarks>
-    public int WarningCount => Warnings.Count + WarningsOmitted;
+    public int WarningCount => IsGroup ? WarningsBeneath : Warnings.Count + WarningsOmitted;
+
+    /// <summary>For a group, how many warnings the tasks beneath it hold, as <see cref="WarningCount"/> gives it.</summary>
+    internal int WarningsBeneath { get; init; }
 
     /// <summary>
     /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
@@ -208,20 +212,21 @@ public sealed record NodeSnapshot
 
     /// <summary>
     /// <see langword="true"/> for a task that is running and waiting: one with a <see cref="TaskContext.Waiting"/> scope open.
-    /// <see langword="false"/> for a task that is not running, and for a group for now.
+    /// For a group, <see langword="true"/> when it has running tasks beneath it and every one of them is waiting.
     /// </summary>
     /// <remarks>
     /// A running task is either waiting or working, never both: <see cref="IsWorking"/> is the other half. Waiting is a marker
-    /// on a running task, never a status. A group does not yet say whether the tasks beneath it are waiting.
+    /// on a running task, never a status. A group with no running task beneath it is neither waiting nor working.
+    /// Both answers come from <see cref="Counts"/>: <see cref="TaskCounts.Waiting"/> and <see cref="TaskCounts.Working"/> say how many.
     /// </remarks>
-    public bool IsWaiting => !IsGroup && Status is NodeStatus.Running && WaitingSince is not null;
+    public bool IsWaiting => Counts.Waiting > 0 && Counts.Working == 0;
 
     /// <summary>
-    /// <see langword="true"/> for a task that is running and not waiting. <see langword="false"/> for a task that is not running,
-    /// and for a group for now.
+    /// <see langword="true"/> for a node whose status is running and that is not waiting, as <see cref="IsWaiting"/> says:
+    /// a task with no waiting scope open, or a group with at least one working task beneath it.
     /// </summary>
-    /// <remarks>A group does not yet say whether the tasks beneath it are working.</remarks>
-    public bool IsWorking => !IsGroup && Status is NodeStatus.Running && WaitingSince is null;
+    /// <remarks><see cref="IsWaiting"/> and <see cref="IsWorking"/> never both hold.</remarks>
+    public bool IsWorking => Status is NodeStatus.Running && !IsWaiting;
 
     /// <summary>
     /// When the task started running, read from the run's <see cref="RunOptions.TimeProvider"/>,

@@ -116,7 +116,7 @@ internal static class Summary
             return [];
         }
 
-        var left = TaskCounts.Total(snapshot.Counts) - snapshot.Counts[NodeStatus.Succeeded];
+        var left = snapshot.Counts.Unsucceeded;
         var setAside = DisplayText.Count(snapshot.SetAside.Count, "earlier success", "earlier successes");
         var notInGraph = DisplayText.Count(snapshot.JournalPathsNotInGraph, "journal path", "journal paths");
         return
@@ -195,18 +195,18 @@ internal static class Summary
 
     /// <summary>A root of what a failure blocked: its path, and for a group the number of tasks beneath it.</summary>
     private static string Root(NodeSnapshot root)
-        => root.IsGroup ? $"{root.Path} ({DisplayText.Number(TaskCounts.Total(root.Counts))})" : root.Path.ToString();
+        => root.IsGroup ? $"{root.Path} ({DisplayText.Number(root.Counts.Total)})" : root.Path.ToString();
 
     /// <summary>How far a task got: its status text, its count, or both. <see langword="null"/> when it reported neither.</summary>
     private static string? Progress(NodeSnapshot task, Glyphs glyphs)
     {
         var count = DisplayText.Progress(task);
-        if (task.StatusText is not { Length: > 0 } given)
+        if (task.StatusText is not { } given)
         {
             return count;
         }
 
-        var text = glyphs.Text(DisplayText.OneLine(given));
+        var text = glyphs.Text(given);
         return count is null ? text : $"{text}, {count}";
     }
 

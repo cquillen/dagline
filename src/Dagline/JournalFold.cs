@@ -70,13 +70,13 @@ internal sealed class JournalFold
     /// </summary>
     public IReadOnlyDictionary<NodeStatus, int> LastStatusCounts()
     {
-        Span<int> tally = stackalloc int[StatusCounts.TallyLength];
+        var counts = Enum.GetValues<NodeStatus>().ToDictionary(status => status, _ => 0);
         foreach (var status in _lastStatuses.Values)
         {
-            tally[(int)status]++;
+            counts[status]++;
         }
 
-        return StatusCounts.ToDictionary(tally);
+        return counts.AsReadOnly();
     }
 
     /// <summary>Folds the entries of one journal, in the order of the file, under its header.</summary>

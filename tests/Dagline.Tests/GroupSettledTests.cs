@@ -71,7 +71,7 @@ public class GroupSettledTests
         var events = reporter.Events.ToList();
         var settled = events.OfType<GroupSettled>().Single(groupSettled => groupSettled.Path == shard.Path);
         settled.Status.ShouldBe(NodeStatus.Succeeded);
-        settled.Counts.ShouldBe(new Dictionary<NodeStatus, int>
+        settled.Counts.ByStatus().ShouldBe(new Dictionary<NodeStatus, int>
         {
             [NodeStatus.Pending] = 0,
             [NodeStatus.Ready] = 0,

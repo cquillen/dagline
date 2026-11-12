@@ -118,7 +118,7 @@ public class JournalTests
         fromTheCopy.Outcome.ShouldBe(RunOutcome.Complete);
         fromTheCopy.Snapshot[load.Path].IsEarlierSuccess.ShouldBeTrue();
         fromTheCopy.Snapshot[publish.Path].IsEarlierSuccess.ShouldBeFalse();
-        fromTheCopy.Snapshot.EarlierSuccesses.ShouldBe(1);
+        fromTheCopy.Snapshot.Counts.EarlierSuccesses.ShouldBe(1);
         reporter.Events.OfType<TaskStatusChanged>().Where(changed => changed.To == NodeStatus.Succeeded)
             .Select(changed => changed.Node.Path).ShouldBe([publish.Path]);
     }

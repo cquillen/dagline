@@ -47,7 +47,7 @@ internal static class PlainTextLines
         [
             At(
                 runEvent.At,
-                $"group {settled.Path} {NameText.Of(settled.Status)}: {CountsText.PerStatus(settled.Counts, settled.EarlierSuccesses)}"),
+                $"group {settled.Path} {NameText.Of(settled.Status)}: {CountsText.PerStatus(settled.Counts)}"),
         ],
         RunEnded ended => [At(runEvent.At, Ended(ended, ended.At - snapshot.Started)), .. Summary(snapshot)],
         _ => [],
@@ -69,20 +69,18 @@ internal static class PlainTextLines
 
     private static string Timestamp(DateTimeOffset at) => at.UtcDateTime.ToString(_timestampFormat, CultureInfo.InvariantCulture);
 
-    private static string Counts(Snapshot snapshot) => $"tasks: {CountsText.PerStatus(snapshot.Counts, snapshot.EarlierSuccesses)}";
+    private static string Counts(Snapshot snapshot) => $"tasks: {CountsText.PerStatus(snapshot.Counts)}";
 
-    private static int Running(Snapshot snapshot) => snapshot.Counts.GetValueOrDefault(NodeStatus.Running);
-
-    private static int AllTasks(Snapshot snapshot) => snapshot.Counts.Values.Sum();
+    private static int Running(Snapshot snapshot) => snapshot.Counts[NodeStatus.Running];
 
     /// <summary>The parts of the <c>run started</c> line: the number of tasks, then each count of what the journal gave that is not zero.</summary>
     private static IEnumerable<string> Starting(Snapshot snapshot)
     {
-        yield return CountsText.Tasks(AllTasks(snapshot));
+        yield return CountsText.Tasks(snapshot.Counts.Total);
 
-        if (snapshot.EarlierSuccesses > 0)
+        if (snapshot.Counts.EarlierSuccesses > 0)
         {
-            yield return CountsText.Of(snapshot.EarlierSuccesses, "earlier success", "earlier successes");
+            yield return CountsText.Of(snapshot.Counts.EarlierSuccesses, "earlier success", "earlier successes");
         }
 
         if (snapshot.SetAside.Count > 0)
@@ -177,7 +175,7 @@ internal static class PlainTextLines
     /// </summary>
     private static IEnumerable<string> LeftForALaterRun(Snapshot snapshot)
     {
-        var left = AllTasks(snapshot) - snapshot.Counts.GetValueOrDefault(NodeStatus.Succeeded);
+        var left = snapshot.Counts.Unsucceeded;
         return snapshot.Journal is null || left == 0 ? [] : [$"left for a later run: {CountsText.Tasks(left)}"];
     }
 
@@ -227,13 +225,11 @@ internal static class PlainTextLines
             _ => null,
         };
 
-        if (task.StatusText is not { Length: > 0 } given)
+        if (task.StatusText is not { } text)
         {
             return count;
         }
 
-        // Status text is kept as the task gave it, line breaks included, and here it has one line to fit on.
-        var text = LineBreaks.OneLine(given);
         return count is null ? text : $"{text}, {count}";
     }
 
