@@ -20,9 +20,10 @@ public sealed record SpectreOptions
     /// <remarks>
     /// With it set, succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell are
     /// drawn as <c>+ x * o ~ . / # ! =</c> in place of <c>✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━</c>; rules and empty bar cells are <c>-</c>, text
-    /// that was cut ends in <c>...</c>, and facts on one line are separated by <c>|</c>. Neither a frame nor the summary then
-    /// writes a character outside ASCII of its own. Text that comes from the graph and the tasks, such as titles, status text,
-    /// messages and warnings, is drawn as it was given.
+    /// that was cut ends in <c>...</c>, and facts on one line are separated by <c>|</c>. Text that comes from the graph and the
+    /// tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the
+    /// error a run ended with, is drawn with each character outside ASCII as <c>?</c>. Neither a frame nor the summary then
+    /// writes any character outside ASCII.
     /// </remarks>
     public bool Ascii { get; init; }
 

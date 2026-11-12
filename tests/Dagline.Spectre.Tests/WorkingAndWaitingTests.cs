@@ -197,8 +197,7 @@ public class WorkingAndWaitingTests
 
         frame.SkipWhile(line => !line.StartsWith("── Working", StringComparison.Ordinal)).ShouldBe(
         [
-            "── Working (0) " + new string('─', 65),
-            "  all 7 running tasks are waiting",
+            "── Working (0) all 7 running tasks are waiting " + new string('─', 33),
             "── Waiting on external systems (7) longest 1m 0s " + new string('─', 31),
             Row("◌ load/w3  job 3", "1m 0s"),
             Row("◌ load/w1  job 48067 running", "50s"),

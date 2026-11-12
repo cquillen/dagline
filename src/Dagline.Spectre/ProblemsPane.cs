@@ -8,8 +8,6 @@ namespace Dagline.Spectre;
 /// </summary>
 internal static class ProblemsPane
 {
-    private const string _indent = "    ";
-    private const string _between = "  ";
     private static readonly Kind _failure = new("more failure", "more failures");
     private static readonly Kind _cancelled = new("more cancelled task", "more cancelled tasks");
     private static readonly Kind _warning = new("more warning", "more warnings");
@@ -33,7 +31,7 @@ internal static class ProblemsPane
         Glyphs glyphs,
         int rows)
     {
-        if ((snapshot.Failed.Count == 0 && snapshot.Cancelled.Count == 0 && snapshot.WarningCount == 0) || rows < 2)
+        if ((snapshot.Failed.Count == 0 && snapshot.Cancelled.Count == 0 && snapshot.WarningCount == 0) || rows < PaneRows.Least)
         {
             return [];
         }
@@ -93,12 +91,12 @@ internal static class ProblemsPane
             var when = StyledLine.Empty;
             if (blocks.TryGetValue(task.Path, out var blocked))
             {
-                when = when.Add($"{glyphs.Blocked} blocks {DisplayText.Number(blocked)}", Palette.Blocked).Add(_between);
+                when = when.Add($"{glyphs.Blocked} blocks {DisplayText.Number(blocked)}", Palette.Blocked).Add(DisplayText.Between);
             }
 
             when = when.Add(SettledAt(task), Palette.Dim);
-            var named = StyledLine.Spread(Named(task, glyphs.Failed, Palette.Failed), when, width, glyphs.Ellipsis);
-            yield return new Entry(_failure, task.Message is { } message ? [named, StyledLine.Of(_indent + message)] : [named]);
+            var named = StyledLine.PinRight(Named(task, glyphs.Failed, Palette.Failed), when, width, glyphs.Ellipsis);
+            yield return new Entry(_failure, task.Message is { } message ? [named, StyledLine.Of(DisplayText.Indent + glyphs.Text(message))] : [named]);
         }
     }
 
@@ -107,14 +105,14 @@ internal static class ProblemsPane
         var named = Named(task, glyphs.Cancelled, Palette.Cancelled);
         if (task.Message is { } message)
         {
-            named = named.Add(_between + message, Palette.Dim);
+            named = named.Add(DisplayText.Between + glyphs.Text(message), Palette.Dim);
         }
 
-        return StyledLine.Spread(named, StyledLine.Of(SettledAt(task), Palette.Dim), width, glyphs.Ellipsis);
+        return StyledLine.PinRight(named, StyledLine.Of(SettledAt(task), Palette.Dim), width, glyphs.Ellipsis);
     }
 
     private static StyledLine Warning(WarningAdded warning, Glyphs glyphs)
-        => StyledLine.Of(glyphs.Warning, Palette.Warning).Add($" {warning.Path}").Add(_between + warning.Warning, Palette.Dim);
+        => StyledLine.Of(glyphs.Warning, Palette.Warning).Add($" {warning.Path}").Add(DisplayText.Between + glyphs.Text(warning.Warning), Palette.Dim);
 
     private static StyledLine Named(NodeSnapshot task, string glyph, Style style)
         => StyledLine.Of(glyph, style).Add($" {task.Path}");

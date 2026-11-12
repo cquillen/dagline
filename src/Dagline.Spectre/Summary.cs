@@ -6,8 +6,6 @@ namespace Dagline.Spectre;
 /// </summary>
 internal static class Summary
 {
-    private const string _indent = "    ";
-
     /// <summary>
     /// The summary of a run that has ended: the rule, the outcome and the counts, then each part that has something to show,
     /// each after a blank line.
@@ -21,7 +19,7 @@ internal static class Summary
         StyledLine.Of(DisplayText.Repeat(glyphs.Rule, Math.Max(1, width)), Palette.Dim),
         Outcome(ended, snapshot, glyphs),
         // A run ends with an error only when its journal can no longer be written, and the exception's message says why.
-        .. ended.Error is { } error ? [StyledLine.Of(_indent + error.Message, Palette.Failed)] : Array.Empty<StyledLine>(),
+        .. ended.Error is { } error ? [StyledLine.Of(DisplayText.Indent + glyphs.Text(error.Message), Palette.Failed)] : Array.Empty<StyledLine>(),
         Tally.Long(snapshot, glyphs),
         .. NotReached(snapshot),
         .. Part(Failures(snapshot, glyphs)),
@@ -40,7 +38,7 @@ internal static class Summary
             _ => StyledLine.Of("Run ended with an error", Palette.Failed),
         };
 
-        line = line.Add("  " + DisplayText.Duration((snapshot.Ended ?? ended.At) - snapshot.Started), Palette.Bold);
+        line = line.Add(DisplayText.Between + DisplayText.Duration((snapshot.Ended ?? ended.At) - snapshot.Started), Palette.Bold);
         return snapshot.Journal is { } journal
             ? line.Add($" {glyphs.Separator} journal {journal.Id} {glyphs.Separator} run {DisplayText.Number(journal.Run)}", Palette.Dim)
             : line;
@@ -68,7 +66,7 @@ internal static class Summary
                 Heading("Cancelled", snapshot.Cancelled.Count),
                 .. snapshot.Cancelled.Select(task => StyledLine.Of(glyphs.Cancelled + " ", Palette.Cancelled)
                     .Add(task.Path.ToString())
-                    .Add(task.Message is { Length: > 0 } message ? "  " + message : "", Palette.Dim)),
+                    .Add(task.Message is { Length: > 0 } message ? DisplayText.Between + glyphs.Text(message) : "", Palette.Dim)),
             ];
 
     /// <summary>
@@ -92,23 +90,20 @@ internal static class Summary
             [
                 StyledLine.Of(glyphs.Warning + " ", Palette.Warning)
                     .Add(task.Path.ToString())
-                    .Add("  " + DisplayText.Number(WarningsAdded(task)), Palette.Warning),
-                .. Kept(task.Warnings, task.WarningsOmitted, "warning", "warnings"),
+                    .Add(DisplayText.Between + DisplayText.Number(TaskCounts.Warnings(task)), Palette.Warning),
+                .. Kept(task.Warnings, task.WarningsOmitted, "warning", "warnings", glyphs),
             ]),
             .. earlier.Count == 0
                 ? Array.Empty<StyledLine>()
                 :
                 [
                     StyledLine.Of(glyphs.Warning + " ", Palette.Warning).Add(
-                        $"{DisplayText.Count(earlier.Sum(WarningsAdded), "warning", "warnings")} on "
+                        $"{DisplayText.Count(earlier.Sum(TaskCounts.Warnings), "warning", "warnings")} on "
                         + $"{DisplayText.Count(earlier.Count, "task", "tasks")} from earlier runs, not listed again",
                         Palette.Dim),
                 ],
         ];
     }
-
-    /// <summary>Every warning the task was given, kept or not.</summary>
-    private static int WarningsAdded(NodeSnapshot task) => task.Warnings.Count + task.WarningsOmitted;
 
     /// <summary>
     /// For a run with a journal: how many tasks a run that continues it has left, the earlier successes set aside, and the
@@ -121,7 +116,7 @@ internal static class Summary
             return [];
         }
 
-        var left = snapshot.Counts.Values.Sum() - snapshot.Counts[NodeStatus.Succeeded];
+        var left = TaskCounts.Total(snapshot.Counts) - snapshot.Counts[NodeStatus.Succeeded];
         var setAside = DisplayText.Count(snapshot.SetAside.Count, "earlier success", "earlier successes");
         var notInGraph = DisplayText.Count(snapshot.JournalPathsNotInGraph, "journal path", "journal paths");
         return
@@ -134,7 +129,7 @@ internal static class Summary
                 :
                 [
                     StyledLine.Of($"{setAside} set aside to run again:"),
-                    .. snapshot.SetAside.Select(path => StyledLine.Of(_indent + path, Palette.Dim)),
+                    .. snapshot.SetAside.Select(path => StyledLine.Of(DisplayText.Indent + path, Palette.Dim)),
                 ],
             .. snapshot.JournalPathsNotInGraph == 0
                 ? Array.Empty<StyledLine>()
@@ -173,19 +168,19 @@ internal static class Summary
             task.Failure is FailureKind.Unexpected ? "unexpected failure" : "reported failure",
             .. task.Settled is { } at ? [DisplayText.Time(at)] : Array.Empty<string>(),
             $"ran {DisplayText.Duration((task.Settled - task.Started) ?? TimeSpan.Zero)}",
-            .. Progress(task) is { } progress ? [$"got to {progress}"] : Array.Empty<string>(),
+            .. Progress(task, glyphs) is { } progress ? [$"got to {progress}"] : Array.Empty<string>(),
         ];
 
         yield return StyledLine.Of(glyphs.Failed + " ", Palette.Failed)
             .Add(task.Path.ToString())
-            .Add("  " + string.Join($" {glyphs.Separator} ", facts), Palette.Dim);
+            .Add(DisplayText.Between + string.Join($" {glyphs.Separator} ", facts), Palette.Dim);
 
         if (task.Message is { Length: > 0 } message)
         {
-            yield return StyledLine.Of(_indent + message);
+            yield return StyledLine.Of(DisplayText.Indent + glyphs.Text(message));
         }
 
-        foreach (var line in Kept(task.Detail, task.DetailOmitted, "line", "lines"))
+        foreach (var line in Kept(task.Detail, task.DetailOmitted, "line", "lines", glyphs))
         {
             yield return line;
         }
@@ -193,46 +188,40 @@ internal static class Summary
         if (blocked is not null)
         {
             var roots = string.Join(", ", blocked.Roots.Select(Root));
-            yield return StyledLine.Of($"{_indent}{glyphs.Blocked} ", Palette.Blocked)
+            yield return StyledLine.Of($"{DisplayText.Indent}{glyphs.Blocked} ", Palette.Blocked)
                 .Add($"blocked {DisplayText.Count(blocked.Tasks.Count, "task", "tasks")}: {roots}");
         }
     }
 
     /// <summary>A root of what a failure blocked: its path, and for a group the number of tasks beneath it.</summary>
     private static string Root(NodeSnapshot root)
-        => root.IsGroup ? $"{root.Path} ({DisplayText.Number(root.Counts.Values.Sum())})" : root.Path.ToString();
+        => root.IsGroup ? $"{root.Path} ({DisplayText.Number(TaskCounts.Total(root.Counts))})" : root.Path.ToString();
 
     /// <summary>How far a task got: its status text, its count, or both. <see langword="null"/> when it reported neither.</summary>
-    private static string? Progress(NodeSnapshot task)
+    private static string? Progress(NodeSnapshot task, Glyphs glyphs)
     {
-        var count = task switch
-        {
-            { Count: { } current, Total: { } total } => $"{DisplayText.Number(current)} of {DisplayText.Number(total)}",
-            { Count: { } current } => DisplayText.Number(current),
-            _ => null,
-        };
-
+        var count = DisplayText.Progress(task);
         if (task.StatusText is not { Length: > 0 } given)
         {
             return count;
         }
 
-        var text = DisplayText.OneLine(given);
+        var text = glyphs.Text(DisplayText.OneLine(given));
         return count is null ? text : $"{text}, {count}";
     }
 
     /// <summary>The lines a task kept, indented, then how many more it gave that were not kept.</summary>
-    private static IEnumerable<StyledLine> Kept(IReadOnlyList<string> lines, int omitted, string one, string many)
+    private static IEnumerable<StyledLine> Kept(IReadOnlyList<string> lines, int omitted, string one, string many, Glyphs glyphs)
     {
         foreach (var line in lines)
         {
-            yield return StyledLine.Of(_indent + line, Palette.Dim);
+            yield return StyledLine.Of(DisplayText.Indent + glyphs.Text(line), Palette.Dim);
         }
 
         if (omitted > 0)
         {
             var more = DisplayText.Count(omitted, $"more {one} that was", $"more {many} that were");
-            yield return StyledLine.Of($"{_indent}and {more} counted but not kept", Palette.Dim);
+            yield return StyledLine.Of($"{DisplayText.Indent}and {more} counted but not kept", Palette.Dim);
         }
     }
 }

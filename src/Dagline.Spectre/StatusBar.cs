@@ -17,7 +17,7 @@ internal static class StatusBar
     /// <param name="glyphs">The glyphs to draw with.</param>
     public static StyledLine Of(IReadOnlyDictionary<NodeStatus, int> counts, int earlierSuccesses, int waiting, int width, Glyphs glyphs)
     {
-        var tasks = counts.Values.Sum();
+        var tasks = TaskCounts.Total(counts);
         (int Tasks, Style Style)[] shares =
         [
             (earlierSuccesses, Palette.EarlierSuccess),

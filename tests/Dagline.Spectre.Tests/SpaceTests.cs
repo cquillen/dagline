@@ -6,12 +6,12 @@ public class SpaceTests
 {
     // After the header (3 lines) and the groups (4 lines), a run with 12 working tasks, 8 waiting and 6 failures leaves
     // height - 7 lines. Problems take up to a third of them, waiting up to five tasks, working the rest, and lines no pane
-    // can use go to problems. Every pane gets its title and one more line before any pane grows.
+    // can use stay blank. Every pane gets its title and one more line before any pane grows.
     [Test]
     [Arguments(15, 2, 4, 2)]
     [Arguments(20, 2, 7, 4)]
     [Arguments(30, 9, 7, 6)]
-    [Arguments(40, 13, 7, 13)]
+    [Arguments(40, 13, 7, 10)]
     public async Task The_panes_share_the_lines_left_by_one_rule_and_each_says_how_many_it_left_out(
         int height,
         int workingLines,
@@ -74,20 +74,22 @@ public class SpaceTests
     }
 
     [Test]
-    public async Task A_pane_with_nothing_to_show_takes_no_lines_and_problems_take_what_the_others_leave()
+    public async Task A_pane_with_nothing_to_show_takes_no_lines_and_problems_take_no_more_than_a_third()
     {
-        // Two groups leave 20 - 6 = 14 lines: working needs 2, so problems take the other 12, past a third.
+        // Two groups leave 20 - 6 = 14 lines: working needs 2 and problems get a third, 4, so the other 8 stay blank.
         await using var run = await CrowdedRun.StartAsync(20, waiting: 0, working: 1);
         var frame = run.Display.NextFrame();
         await run.EndAsync();
 
         frame.ShouldNotContain(line => line.StartsWith("── Waiting", StringComparison.Ordinal));
+        frame.Count.ShouldBe(12);
         Pane(frame, "Working").Count.ShouldBe(2);
         Pane(frame, "Problems").ShouldBe(
         [
             Rule("Problems (6 failed)"),
-            .. Enumerable.Range(1, 5).SelectMany(i => new[] { Pinned($"✗ bad/f{i}", "04:12:00"), "    broken" }),
-            "  and 1 more failure",
+            Pinned("✗ bad/f1", "04:12:00"),
+            "    broken",
+            "  and 5 more failures",
         ]);
     }
 

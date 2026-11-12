@@ -228,13 +228,18 @@ public class KilledProcessTests
         }
 
         private TaskBody Body(Phase phase, string path, TaskBody body)
-            => phase is Phase.Continuing
-                ? context =>
-                {
-                    CheckpointsSeen[path] = context.Checkpoint;
-                    return Task.CompletedTask;
-                }
-                : body;
+        {
+            if (phase is not Phase.Continuing)
+            {
+                return body;
+            }
+
+            return context =>
+            {
+                CheckpointsSeen[path] = context.Checkpoint;
+                return Task.CompletedTask;
+            };
+        }
 
         private async Task Save(Phase phase, TaskContext context, string text)
         {

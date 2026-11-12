@@ -17,7 +17,7 @@ public class ProblemsTests
         builder.Task("z", _ => Task.CompletedTask).Requires(lateTask);
         builder.Task("slow", slow.Body);
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 24);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 40);
         await late.Started;
         await slow.Started;
         await display.Handled("x: pending -> blocked");
@@ -87,7 +87,7 @@ public class ProblemsTests
         builder.Task("keep", keep.Body);
         var options = new RunOptions { Journal = Journal.None, GracePeriod = Timeout.InfiniteTimeSpan };
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, options, stop);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 40, options, stop);
         await first.Started;
         await second.Started;
         await keep.Started;

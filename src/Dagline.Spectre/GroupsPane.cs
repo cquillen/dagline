@@ -22,23 +22,23 @@ internal static class GroupsPane
             return [];
         }
 
-        var tree = new Tree(snapshot);
-        var rows = snapshot.Nodes.Where(tree.IsTwoLevelRow).ToList();
+        var family = new Family(snapshot);
+        var rows = snapshot.Nodes.Where(family.HasRowAtTwoLevels).ToList();
         if (rows.Count + 1 > height)
         {
             rows = [.. snapshot.Nodes.Where(node => node.Path.Parent is null)];
         }
 
-        var nameWidth = rows.Max(node => Name(node).Width);
-        return [PaneTitle.Line(StyledLine.Of("Groups", Palette.Bold), width, glyphs), .. rows.Select(node => Row(node, tree, nameWidth, width, glyphs))];
+        var nameWidth = rows.Max(node => Name(node, glyphs).Width);
+        return [PaneTitle.Line(StyledLine.Of("Groups", Palette.Bold), width, glyphs), .. rows.Select(node => Row(node, family, nameWidth, width, glyphs))];
     }
 
-    private static StyledLine Row(NodeSnapshot node, Tree tree, int nameWidth, int width, Glyphs glyphs)
+    private static StyledLine Row(NodeSnapshot node, Family family, int nameWidth, int width, Glyphs glyphs)
     {
-        var name = Name(node);
-        var start = Mark(node, tree, glyphs).Add(" ").Add(name).Add(new string(' ', nameWidth - name.Width + 1));
-        var end = Totals(node, tree, glyphs);
-        var children = tree.ChildrenOf(node);
+        var name = Name(node, glyphs);
+        var start = Mark(node, family, glyphs).Add(" ").Add(name).Add(new string(' ', nameWidth - name.Width + 1));
+        var end = Totals(node, family, glyphs);
+        var children = family.ChildrenOf(node);
         if (children.Count == 0)
         {
             return start.Add(end);
@@ -46,15 +46,15 @@ internal static class GroupsPane
 
         var room = width - start.Width - 1 - end.Width;
         var cells = children.Count <= room
-            ? children.Aggregate(StyledLine.Empty, (line, child) => line.Add(Mark(child, tree, glyphs)))
-            : StatusBar.Of(node.Counts, node.EarlierSuccesses, tree.WaitingBeneath(node), Math.Max(0, room), glyphs);
+            ? children.Aggregate(StyledLine.Empty, (line, child) => line.Add(Mark(child, family, glyphs)))
+            : StatusBar.Of(node.Counts, node.EarlierSuccesses, family.WaitingBeneath(node), Math.Max(0, room), glyphs);
         return start.Add(cells).Add(" ").Add(end);
     }
 
-    private static StyledLine Name(NodeSnapshot node) => StyledLine.Of(node.Title ?? node.Path.Segments[^1]);
+    private static StyledLine Name(NodeSnapshot node, Glyphs glyphs) => StyledLine.Of(node.Title is { } title ? glyphs.Text(title) : node.Path.Segments[^1]);
 
     /// <summary>The glyph and colour of a node's status: dimmer for an earlier success, and waiting when all its running tasks are.</summary>
-    private static StyledLine Mark(NodeSnapshot node, Tree tree, Glyphs glyphs)
+    private static StyledLine Mark(NodeSnapshot node, Family family, Glyphs glyphs)
     {
         if (node.IsEarlierSuccess)
         {
@@ -62,23 +62,23 @@ internal static class GroupsPane
         }
 
         var running = node.Counts[NodeStatus.Running];
-        return node.Status is NodeStatus.Running && running > 0 && tree.WaitingBeneath(node) == running
+        return node.Status is NodeStatus.Running && running > 0 && family.WaitingBeneath(node) == running
             ? StyledLine.Of(glyphs.Waiting, Palette.Waiting)
             : StyledLine.Of(glyphs.For(node.Status), Palette.For(node.Status));
     }
 
     /// <summary>Succeeded over total, then the failures and the warnings when there are any, as in <c>1,087/1,104 ✗2 ▲3,173</c>.</summary>
-    private static StyledLine Totals(NodeSnapshot node, Tree tree, Glyphs glyphs)
+    private static StyledLine Totals(NodeSnapshot node, Family family, Glyphs glyphs)
     {
         var totals = StyledLine.Of(
-            $"{DisplayText.Number(node.Counts[NodeStatus.Succeeded])}/{DisplayText.Number(node.Counts.Values.Sum())}");
+            $"{DisplayText.Number(node.Counts[NodeStatus.Succeeded])}/{DisplayText.Number(TaskCounts.Total(node.Counts))}");
         var failed = node.Counts[NodeStatus.Failed];
         if (failed > 0)
         {
             totals = totals.Add($" {glyphs.Failed}{DisplayText.Number(failed)}", Palette.Failed);
         }
 
-        var warnings = tree.WarningsBeneath(node);
+        var warnings = family.WarningsBeneath(node);
         if (warnings > 0)
         {
             totals = totals.Add($" {glyphs.Warning}{DisplayText.Number(warnings)}", Palette.Warning);
@@ -87,13 +87,16 @@ internal static class GroupsPane
         return totals;
     }
 
-    /// <summary>The children of every node, and the waiting tasks and warnings beneath it, read once from a snapshot.</summary>
-    private sealed class Tree
+    /// <summary>
+    /// What the rows need to know of each node's family, read once from a snapshot: its children, and how many waiting tasks
+    /// and warnings are beneath it.
+    /// </summary>
+    private sealed class Family
     {
         private readonly Dictionary<NodePath, List<NodeSnapshot>> _children = [];
         private readonly Dictionary<NodePath, (int Waiting, int Warnings)> _beneath = [];
 
-        public Tree(Snapshot snapshot)
+        public Family(Snapshot snapshot)
         {
             foreach (var node in snapshot.Nodes)
             {
@@ -116,17 +119,18 @@ internal static class GroupsPane
 
         public int WarningsBeneath(NodeSnapshot node) => _beneath.GetValueOrDefault(node.Path).Warnings;
 
-        /// <summary>A group two levels down, or a top-level node with no group beneath it.</summary>
-        public bool IsTwoLevelRow(NodeSnapshot node) => node.Path.Parent switch
-        {
-            null => !ChildrenOf(node).Any(child => child.IsGroup),
-            { } parent => node.IsGroup && parent.Parent is null,
-        };
+        /// <summary>Whether the node has a row when the pane shows the graph two levels deep.</summary>
+        public bool HasRowAtTwoLevels(NodeSnapshot node) => IsGroupTwoLevelsDown(node) || IsTopLevelWithNoGroupBeneath(node);
+
+        private static bool IsGroupTwoLevelsDown(NodeSnapshot node) => node.IsGroup && node.Path.Parent is { Parent: null };
+
+        private bool IsTopLevelWithNoGroupBeneath(NodeSnapshot node)
+            => node.Path.Parent is null && !ChildrenOf(node).Any(child => child.IsGroup);
 
         private void AddUpwards(NodeSnapshot task)
         {
             var waiting = Running.IsWaiting(task) ? 1 : 0;
-            var warnings = task.Warnings.Count + task.WarningsOmitted;
+            var warnings = TaskCounts.Warnings(task);
             if (waiting == 0 && warnings == 0)
             {
                 return;

@@ -23,7 +23,7 @@ internal static class WaitingPane
     {
         // OrderBy is stable, so tasks that began waiting at the same instant stay in declaration order.
         var waiting = snapshot.Nodes.Where(Running.IsWaiting).OrderBy(node => node.WaitingSince).ToList();
-        if (waiting.Count == 0 || rows < 2)
+        if (waiting.Count == 0 || rows < PaneRows.Least)
         {
             return [];
         }
@@ -49,7 +49,7 @@ internal static class WaitingPane
         var line = TaskLine.Start(glyphs.Waiting, Palette.Waiting, node, column, glyphs);
         if ((node.StatusText ?? node.WaitingText) is { } text)
         {
-            line = line.Add(DisplayText.OneLine(text));
+            line = line.Add(glyphs.Text(DisplayText.OneLine(text)));
         }
 
         return TaskLine.Finish(line, Waited(node, now), width, glyphs);

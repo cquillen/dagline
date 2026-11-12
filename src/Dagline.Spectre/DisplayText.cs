@@ -3,9 +3,15 @@ using static System.FormattableString;
 
 namespace Dagline.Spectre;
 
-/// <summary>The one home of how the display and the summary write numbers and durations.</summary>
+/// <summary>The one home of how the display and the summary write numbers, durations and progress, and space out a line.</summary>
 internal static class DisplayText
 {
+    /// <summary>The space between two parts of a line, and before the line that says what a pane left out.</summary>
+    public const string Between = "  ";
+
+    /// <summary>The space before a line that belongs to the line above it, such as a failure's message.</summary>
+    public const string Indent = "    ";
+
     /// <summary>A whole number with its thousands grouped, as in <c>3,173</c>, in the invariant culture.</summary>
     public static string Number(long number) => number.ToString("N0", CultureInfo.InvariantCulture);
 
@@ -41,6 +47,17 @@ internal static class DisplayText
             ? Invariant($"{duration.Minutes}m {duration.Seconds}s")
             : Invariant($"{(long)duration.TotalHours}h {duration.Minutes}m");
     }
+
+    /// <summary>
+    /// How far a task's count has got, as in <c>1,928 of 4,087</c>, or the count alone when it came with no total.
+    /// <see langword="null"/> when the task has given no count.
+    /// </summary>
+    public static string? Progress(NodeSnapshot task) => task switch
+    {
+        { Count: { } count, Total: { } total } => $"{Number(count)} of {Number(total)}",
+        { Count: { } count } => Number(count),
+        _ => null,
+    };
 
     /// <summary><paramref name="glyph"/> <paramref name="times"/> times over, or nothing when <paramref name="times"/> is not above zero.</summary>
     public static string Repeat(string glyph, int times) => times <= 0 ? "" : string.Concat(Enumerable.Repeat(glyph, times));

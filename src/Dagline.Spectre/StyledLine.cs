@@ -83,6 +83,23 @@ internal sealed class StyledLine
         return fitted.Add(new string(' ', width - fitted.Width - right.Width)).Add(right);
     }
 
+    /// <summary>
+    /// <paramref name="left"/> at the start of a line of <paramref name="width"/> cells and <paramref name="right"/> at its end,
+    /// with spaces between. Only the left gives way, down to nothing, so the right is always kept, as a time at the end of a line
+    /// must be. Only when the right alone is wider than the line is the right cut too.
+    /// </summary>
+    public static StyledLine PinRight(StyledLine left, StyledLine right, int width, string ellipsis)
+    {
+        var room = width - right.Width - 1;
+        if (right.Width == 0 || room < 0)
+        {
+            return (right.Width == 0 ? left : right).Fit(width, ellipsis);
+        }
+
+        var fitted = left.Fit(room, ellipsis);
+        return fitted.Add(new string(' ', width - fitted.Width - right.Width)).Add(right);
+    }
+
     /// <summary>The start of <paramref name="text"/> that takes no more than <paramref name="cells"/> cells.</summary>
     private static string Cut(string text, int cells)
     {

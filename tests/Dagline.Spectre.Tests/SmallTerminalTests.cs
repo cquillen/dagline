@@ -28,6 +28,27 @@ public class SmallTerminalTests
     }
 
     [Test]
+    [Arguments(30, "Dagline  no jo… 0%  elapsed 0s")]
+    [Arguments(20, "Dagl… 0%  elapsed 0s")]
+    [Arguments(16, "… 0%  elapsed 0s")]
+    public async Task In_a_narrow_terminal_the_header_cuts_its_title_and_keeps_the_percentage_and_the_time(int width, string first)
+    {
+        var work = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("work", work.Body);
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), width, 24);
+        await work.Started;
+        var frame = display.NextFrame();
+        var screen = display.Screen;
+        work.Release();
+        await display.Run;
+
+        frame[0].ShouldBe(first);
+        screen.Overflowed.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task At_60_by_15_the_panes_are_drawn()
     {
         var work = new PausedBody();

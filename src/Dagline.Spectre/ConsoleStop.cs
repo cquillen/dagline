@@ -30,7 +30,7 @@ namespace Dagline.Spectre;
 /// </example>
 public sealed class ConsoleStop : StopSignal, IDisposable
 {
-    private const int SwallowedPresses = 2;
+    private const int _swallowedPresses = 2;
 
     private int _presses;
     private int _disposed;
@@ -69,7 +69,7 @@ public sealed class ConsoleStop : StopSignal, IDisposable
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs pressed)
     {
-        if (Interlocked.Increment(ref _presses) > SwallowedPresses)
+        if (Interlocked.Increment(ref _presses) > _swallowedPresses)
         {
             return;
         }

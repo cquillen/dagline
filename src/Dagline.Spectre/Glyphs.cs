@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Dagline.Spectre;
 
 /// <summary>The one home of the characters the display and the summary draw with: one per status, and the marks between.</summary>
@@ -34,8 +36,35 @@ internal sealed record Glyphs(
     /// <summary>The default set.</summary>
     public static Glyphs Unicode { get; } = new("✓", "✗", "●", "○", "◌", "·", "⊘", "■", "▲", "━", "─", "─", "…", "·");
 
-    /// <summary>The set for a terminal or font without the Unicode glyphs: every character is ASCII.</summary>
-    public static Glyphs Ascii { get; } = new("+", "x", "*", "o", "~", ".", "/", "#", "!", "=", "-", "-", "...", "|");
+    /// <summary>
+    /// The set for a terminal or font without the Unicode glyphs: every character is ASCII, and so is the text from the graph and
+    /// the tasks, as <see cref="Text"/> draws it.
+    /// </summary>
+    public static Glyphs Ascii { get; } = new("+", "x", "*", "o", "~", ".", "/", "#", "!", "=", "-", "-", "...", "|") { OnlyAscii = true };
+
+    /// <summary>Whether <see cref="Text"/> draws every character outside ASCII as <c>?</c>.</summary>
+    private bool OnlyAscii { get; init; }
+
+    /// <summary>
+    /// The one home of how text from the graph and the tasks is drawn, such as a title, a journal's description, status text,
+    /// waiting text, a message, a warning, a detail line or the error a run ended with: as it was given, or, in the
+    /// <see cref="Ascii"/> set, with each character outside ASCII drawn as <c>?</c>.
+    /// </summary>
+    public string Text(string given)
+    {
+        if (!OnlyAscii || System.Text.Ascii.IsValid(given))
+        {
+            return given;
+        }
+
+        var text = new StringBuilder(given.Length);
+        foreach (var character in given.EnumerateRunes())
+        {
+            text.Append(character.IsAscii ? (char)character.Value : '?');
+        }
+
+        return text.ToString();
+    }
 
     /// <summary>The glyph of a status. A running task that is waiting is drawn with <see cref="Waiting"/> instead.</summary>
     public string For(NodeStatus status) => status switch

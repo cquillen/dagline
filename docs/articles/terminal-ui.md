@@ -93,7 +93,7 @@ A row is the node's status glyph, its title or else the last segment of its path
 
 ### Working
 
-The tasks that are running and not waiting, in declaration order, with their number in the title. Each line has the task's path, a progress bar and its count (`1,928 of 4,087`, or the count alone when it has no total, and neither when it has reported no count), its status text, and at the right how long it has been running. When they do not all fit, the last line says `and 12 more working`. When tasks are running and all of them are waiting, the pane is one line, such as `all 7 running tasks are waiting`.
+The tasks that are running and not waiting, in declaration order, with their number in the title. Each line has the task's path, a progress bar and its count (`1,928 of 4,087`, or the count alone when it has no total, and neither when it has reported no count), its status text, and at the right how long it has been running. When they do not all fit, the last line says `and 12 more working`. When tasks are running and all of them are waiting, the pane is its title line alone, which says so, as in `Working (0) all 7 running tasks are waiting`.
 
 ### Waiting on external systems
 
@@ -116,16 +116,15 @@ When the pane is cut, it shows whole entries, never a failure without its messag
 The header, the stop banner and the groups come first. The lines left are shared between the three panes below:
 
 1. Each pane that has something to show gets two lines first, its title and one more, working first, then waiting, then problems.
-2. Problems then grow to a third of the lines left.
+2. Problems then grow to a third of the lines left, and never past it.
 3. Waiting grows to all it wants, which is at most five tasks.
 4. Working grows to all it wants.
-5. Any lines still unused go to problems, so when working and waiting have little to show, problems can take more than a third.
 
-A pane given fewer than two lines draws nothing. A pane given two lines and more than it can show draws its title and the line that says how many it left out.
+Lines that no pane can use stay blank, so problems never take more than a third, or two lines when a third is fewer. A pane given fewer than two lines draws nothing, except the working pane when every running task is waiting, which needs only its title. A pane given two lines and more than it can show draws its title and the line that says how many it left out.
 
 ### Width
 
-Text that does not fit is cut with an ellipsis, `…`. A path keeps its start, and the time at the end of a line is always kept. Status text and the text of a wait are drawn as the task gave them, except that a line break is drawn as a space, in the frame and in the summary, as the plain-text reporter does.
+Text that does not fit is cut with an ellipsis, `…`. A path keeps its start, and the time at the end of a line is always kept. In the header's first line the title gives way, so the percentage and the elapsed time stay even in a terminal too narrow for the title. Status text and the text of a wait are drawn as the task gave them, except that a line break is drawn as a space, in the frame and in the summary, as the plain-text reporter does.
 
 ### Small terminals
 
@@ -218,7 +217,7 @@ For a terminal or font that lacks the Unicode glyphs, set `Ascii`:
 var reporter = SpectreReporter.Auto(options: new SpectreOptions { Ascii = true });
 ```
 
-The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Neither a frame nor the summary then writes a character outside ASCII of its own. Text from your graph and tasks, such as titles, status text, messages and warnings, is drawn as you gave it.
+The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Text from your graph and tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the error a run ended with, is drawn with each character outside ASCII as `?`, so `café` becomes `caf?`. Neither a frame nor the summary then writes any character outside ASCII.
 
 ### In your own tests
 

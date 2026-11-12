@@ -12,7 +12,7 @@ internal static class Header
     /// <param name="glyphs">The glyphs to draw with.</param>
     public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, DateTimeOffset now, Glyphs glyphs) =>
     [
-        StyledLine.Spread(Title(snapshot, glyphs), Progress(snapshot, now), width, glyphs.Ellipsis),
+        StyledLine.PinRight(Title(snapshot, glyphs), Progress(snapshot, now), width, glyphs.Ellipsis),
         Bar(snapshot, width, glyphs),
         StyledLine.Spread(Tally.Short(snapshot, glyphs), Slots(snapshot, glyphs), width, glyphs.Ellipsis),
     ];
@@ -22,25 +22,24 @@ internal static class Header
         var title = StyledLine.Of("Dagline", Palette.Bold);
         if (snapshot.Journal is not { } journal)
         {
-            return title.Add("  no journal", Palette.Dim);
+            return title.Add(DisplayText.Between + "no journal", Palette.Dim);
         }
 
         if (journal.Description is { } description)
         {
-            title = title.Add("  " + description);
+            title = title.Add(DisplayText.Between + glyphs.Text(description));
         }
 
-        return title.Add($"  journal {journal.Id} {glyphs.Separator} run {DisplayText.Number(journal.Run)}", Palette.Dim);
+        return title.Add($"{DisplayText.Between}journal {journal.Id} {glyphs.Separator} run {DisplayText.Number(journal.Run)}", Palette.Dim);
     }
 
     private static StyledLine Progress(Snapshot snapshot, DateTimeOffset now)
     {
-        var tasks = snapshot.Counts.Values.Sum();
-        var unsettled = snapshot.Counts[NodeStatus.Pending] + snapshot.Counts[NodeStatus.Ready] + snapshot.Counts[NodeStatus.Running];
-        var percent = tasks == 0 ? 100 : (tasks - unsettled) * 100 / tasks;
+        var tasks = TaskCounts.Total(snapshot.Counts);
+        var percent = tasks == 0 ? 100 : TaskCounts.Settled(snapshot.Counts) * 100 / tasks;
         var elapsed = (snapshot.Ended ?? now) - snapshot.Started;
         return StyledLine.Of($"{percent}%", Palette.Bold)
-            .Add("  elapsed ", Palette.Dim)
+            .Add(DisplayText.Between + "elapsed ", Palette.Dim)
             .Add(DisplayText.Duration(elapsed), Palette.Bold);
     }
 

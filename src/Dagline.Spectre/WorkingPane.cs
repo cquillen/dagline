@@ -10,7 +10,8 @@ internal static class WorkingPane
 
     /// <summary>
     /// The pane's lines, at most <paramref name="rows"/> of them with its title, or none when no task is running or fewer than
-    /// two rows are given. When tasks are running and every one is waiting, the pane says so in one line.
+    /// two rows are given. When tasks are running and every one is waiting, the pane is its title alone, saying so, and one row
+    /// is enough for it.
     /// </summary>
     /// <param name="snapshot">The run.</param>
     /// <param name="width">The width of the console.</param>
@@ -20,23 +21,28 @@ internal static class WorkingPane
     public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, DateTimeOffset now, Glyphs glyphs, int rows)
     {
         var running = snapshot.Counts[NodeStatus.Running];
-        if (running == 0 || rows < 2)
+        var working = snapshot.Nodes.Where(Running.IsWorking).ToList();
+        var title = StyledLine.Of($"Working ({DisplayText.Number(working.Count)})", Palette.Bold);
+        if (running > 0 && working.Count == 0 && rows >= 1)
         {
-            return [];
+            var allWaiting = running == 1 ? "the running task is waiting" : $"all {DisplayText.Number(running)} running tasks are waiting";
+            return [PaneTitle.Line(title.Add(" " + allWaiting, Palette.Dim), width, glyphs)];
         }
 
-        var working = snapshot.Nodes.Where(Running.IsWorking).ToList();
-        var title = PaneTitle.Line(StyledLine.Of($"Working ({DisplayText.Number(working.Count)})", Palette.Bold), width, glyphs);
-        if (working.Count == 0)
+        if (working.Count == 0 || rows < PaneRows.Least)
         {
-            return [title, TaskLine.More(running == 1 ? "the running task is waiting" : $"all {DisplayText.Number(running)} running tasks are waiting")];
+            return [];
         }
 
         var fits = working.Count <= rows - 1;
         var shown = fits ? working : working.Take(rows - 2).ToList();
         var column = TaskLine.PathColumn(snapshot, width);
         var countCells = shown.Select(node => CountText(node).Length).DefaultIfEmpty(0).Max();
-        List<StyledLine> lines = [title, .. shown.Select(node => Line(node, column, countCells, width, now, glyphs))];
+        List<StyledLine> lines =
+        [
+            PaneTitle.Line(title, width, glyphs),
+            .. shown.Select(node => Line(node, column, countCells, width, now, glyphs)),
+        ];
         if (!fits)
         {
             lines.Add(TaskLine.More($"and {DisplayText.Number(working.Count - shown.Count)} more working"));
@@ -55,7 +61,7 @@ internal static class WorkingPane
 
         if (node.StatusText is { } status)
         {
-            line = line.Add((countCells > 0 ? "  " : "") + DisplayText.OneLine(status));
+            line = line.Add((countCells > 0 ? DisplayText.Between : "") + glyphs.Text(DisplayText.OneLine(status)));
         }
 
         return TaskLine.Finish(line, now - (node.Started ?? now), width, glyphs);
@@ -74,10 +80,5 @@ internal static class WorkingPane
         return StyledLine.Of(DisplayText.Repeat(glyphs.Bar, filled), Palette.Working).Add(DisplayText.Repeat(glyphs.BarRest, _barCells - filled), Palette.Dim);
     }
 
-    private static string CountText(NodeSnapshot node) => node switch
-    {
-        { Count: { } count, Total: { } total } => $"{DisplayText.Number(count)} of {DisplayText.Number(total)}",
-        { Count: { } count } => DisplayText.Number(count),
-        _ => "",
-    };
+    private static string CountText(NodeSnapshot node) => DisplayText.Progress(node) ?? "";
 }

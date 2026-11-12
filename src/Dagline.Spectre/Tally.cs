@@ -8,8 +8,6 @@ namespace Dagline.Spectre;
 /// </summary>
 internal static class Tally
 {
-    private const string _between = "  ";
-
     /// <summary>The counts as the header writes them, as in <c>✓ 1,560 (1,543 earlier)  ◌ 11  · 91</c>.</summary>
     public static StyledLine Short(Snapshot snapshot, Glyphs glyphs) => Join(Parts(snapshot, glyphs), word: false);
 
@@ -30,7 +28,7 @@ internal static class Tally
         {
             if (line.Width > 0)
             {
-                line = line.Add(_between);
+                line = line.Add(DisplayText.Between);
             }
 
             line = line.Add($"{part.Glyph} {DisplayText.Number(part.Count)}", part.Style);
