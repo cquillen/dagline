@@ -45,6 +45,10 @@ public class GroupsTests
             "· Wrap up · 0/1",
             "── Working (1) " + new string('─', 45),
             "● validate/shard-1/a" + new string(' ', 38) + "0s",
+            "── Problems (1 failed, 1 warning) " + new string('─', 26),
+            "✗ validate/shard-2/d" + new string(' ', 32) + "04:12:00",
+            "    broken",
+            "▲ validate/shard-2/c  odd",
         ]);
     }
 

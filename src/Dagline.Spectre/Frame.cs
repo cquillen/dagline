@@ -13,18 +13,27 @@ internal static class Frame
     /// <param name="size">The size of the console: no line is wider and there are no more lines than its height.</param>
     /// <param name="now">The time on the display's clock.</param>
     /// <param name="glyphs">The glyphs to draw with.</param>
-    public static IReadOnlyList<StyledLine> Build(Snapshot snapshot, Size size, DateTimeOffset now, Glyphs glyphs)
+    /// <param name="heard">What the display has kept from the events it has handled, which a snapshot does not say.</param>
+    public static IReadOnlyList<StyledLine> Build(Snapshot snapshot, Size size, DateTimeOffset now, Glyphs glyphs, HeardEvents heard)
     {
         var width = Math.Max(0, size.Width);
         var height = Math.Max(0, size.Height);
-        var header = Header.Lines(snapshot, width, now, glyphs);
-        var groups = GroupsPane.Lines(snapshot, width, height - header.Count, glyphs);
-        var left = height - header.Count - groups.Count;
+        IReadOnlyList<StyledLine> top =
+        [
+            .. Header.Lines(snapshot, width, now, glyphs),
+            .. StopBanner.Lines(snapshot, heard.StopBy, now, glyphs),
+        ];
+        var groups = GroupsPane.Lines(snapshot, width, height - top.Count, glyphs);
+        var left = height - top.Count - groups.Count;
         var waiting = WaitingPane.Lines(snapshot, width, now, glyphs, left);
         var working = WorkingPane.Lines(snapshot, width, now, glyphs, left - waiting.Count);
         return
         [
-            .. header.Concat(groups).Concat(working).Concat(waiting)
+            .. top
+                .Concat(groups)
+                .Concat(working)
+                .Concat(waiting)
+                .Concat(ProblemsPane.Lines(snapshot, heard.LatestWarnings, width, glyphs))
                 .Select(line => line.Fit(width, glyphs.Ellipsis))
                 .Take(height),
         ];
