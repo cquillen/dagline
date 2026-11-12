@@ -28,7 +28,8 @@ public sealed class Snapshot
         FrozenDictionary<NodePath, int> positions,
         IReadOnlyDictionary<NodeStatus, int> counts,
         LimitUse cap,
-        IReadOnlyDictionary<string, LimitUse> limits)
+        IReadOnlyDictionary<string, LimitUse> limits,
+        SnapshotJournal journal)
     {
         Started = started;
         Ended = ended;
@@ -39,6 +40,8 @@ public sealed class Snapshot
         Counts = counts;
         Cap = cap;
         Limits = limits;
+        Journal = journal.Info;
+        EarlierSuccesses = journal.EarlierSuccesses;
     }
 
     /// <summary>When the run started, read from the run's <see cref="RunOptions.TimeProvider"/>.</summary>
@@ -81,6 +84,22 @@ public sealed class Snapshot
     /// A size the options give for a limit the graph does not name is not listed.
     /// </remarks>
     public IReadOnlyDictionary<string, LimitUse> Limits { get; }
+
+    /// <summary>
+    /// The journal the run is on, or <see langword="null"/> for a run with <see cref="Dagline.Journal.None"/>.
+    /// It is the same in every snapshot of the run, from the one handed with <see cref="RunStarted"/> on.
+    /// </summary>
+    /// <remarks>A run on a new journal is run 1, and its id is known only from here.</remarks>
+    public JournalInfo? Journal { get; }
+
+    /// <summary>
+    /// How many tasks of the graph are earlier successes: tasks that an earlier run of the journal recorded as succeeded, which
+    /// this run kept and does not run. Zero for a run with no journal and for a new journal.
+    /// </summary>
+    /// <remarks>
+    /// Earlier successes are counted as succeeded in <see cref="Counts"/>, from the first snapshot on. The number is fixed for the run.
+    /// </remarks>
+    public int EarlierSuccesses { get; }
 
     /// <summary>Every failed task, in declaration order. Empty when no task has failed.</summary>
     /// <remarks>

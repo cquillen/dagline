@@ -13,13 +13,20 @@ namespace Dagline;
 /// When the step starts the grace-period timer, how long until it fires; <see langword="null"/> when it starts none.
 /// </param>
 /// <param name="Ends">How the run ends, when the step ends it; <see langword="null"/> otherwise.</param>
+/// <param name="Entries">
+/// The journal entries the step records, in order, which go out in one write before anything else the step does.
+/// Empty for a run with no journal.
+/// </param>
+/// <param name="Flushes">Whether the write of <paramref name="Entries"/> is flushed to the disk.</param>
 /// <remarks>A step with no events is a report that changed only the snapshot, such as progress.</remarks>
 internal sealed record Step(
     IReadOnlyList<StepEvent> Events,
     IReadOnlyList<BuiltTask> Starts,
     bool SignalsTheTasks,
     TimeSpan? GracePeriodTimer,
-    RunEnd? Ends);
+    RunEnd? Ends,
+    IReadOnlyList<JournalEntry> Entries,
+    bool Flushes);
 
 /// <summary>
 /// One event of a step, with what it changed in the run's snapshot. <see cref="RunSteps.SnapshotAfter"/> takes the snapshot

@@ -15,8 +15,9 @@ namespace Dagline;
 /// and reporters are called by <see cref="ReporterDelivery"/>.
 /// </para>
 /// <para>
-/// Each step is carried out under the lock, in this order: the tasks' token is signalled, if the step asks; if the step ends the run,
-/// the registration on the signal and the timer are released; the events are published in order, each with its snapshot, which is
+/// Each step is carried out under the lock, in this order: the step's journal entries are written in one write, flushed to the disk
+/// if the step asks; the tasks' token is signalled, if the step asks; if the step ends the run, the registration on the signal,
+/// the timer and the journal are released; the events are published in order, each with its snapshot, which is
 /// taken then and made the current snapshot before the event is handed to reporters; the bodies of the
 /// tasks the step starts are started; the grace-period timer is started, if the step asks; and if the step ends the run, the wait for
 /// reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
@@ -38,17 +39,27 @@ internal sealed class Run : ISnapshotSource
     private readonly StopSignal? _signal;
     private readonly CancellationTokenSource _stopping = new();
 
+    private JournalFile? _journal;
     private IDisposable? _hearsTheSignal;
     private ITimer? _gracePeriodTimer;
     private volatile Snapshot? _current;
 
-    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, StopSignal? signal)
+    /// <param name="graph">The graph to run.</param>
+    /// <param name="settings">The settings of the run.</param>
+    /// <param name="delivery">Delivery of the run's events to its reporters.</param>
+    /// <param name="signal">The signal through which the app stops the run, if it can.</param>
+    /// <param name="journal">
+    /// The journal the run is on, already opened and read, or <see langword="null"/> for none. The run owns it from here,
+    /// and closes it in the step that ends the run, so that a later run can continue it as soon as this one has ended.
+    /// </param>
+    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, StopSignal? signal, JournalFile? journal)
     {
         _signal = signal;
         _graph = graph;
         _timeProvider = settings.TimeProvider;
         _delivery = delivery;
-        _steps = new RunSteps(graph, settings);
+        _journal = journal;
+        _steps = new RunSteps(graph, settings, journal is null ? null : RunJournal.Of(journal));
     }
 
     public Snapshot Current => _current ?? TakeCurrent();
@@ -201,6 +212,11 @@ internal sealed class Run : ISnapshotSource
     /// <summary>Carries out one step, under the lock, in the order the remarks of this type give.</summary>
     private void CarryOut(Step step)
     {
+        if (step.Entries.Count > 0)
+        {
+            _journal!.Append(step.Entries, step.Flushes);
+        }
+
         if (step.SignalsTheTasks)
         {
             SignalTheTasks();
@@ -211,6 +227,8 @@ internal sealed class Run : ISnapshotSource
             // Neither Dispose waits for a callback that is running, which may be waiting for this lock.
             _hearsTheSignal?.Dispose();
             _gracePeriodTimer?.Dispose();
+            _journal?.Dispose();
+            _journal = null;
         }
 
         Publish(step.Events);

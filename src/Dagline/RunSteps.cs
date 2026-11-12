@@ -36,10 +36,13 @@ internal sealed class RunSteps
     private readonly Slots _slots;
     // Nothing changes a step once it is decided, so every report that produced no event answers with this one.
     private static readonly IReadOnlyList<Step> _changedOnlyTheSnapshot =
-        [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null)];
+        [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null, Entries: [], Flushes: false)];
 
     private readonly List<Step> _decided = [];
     private readonly SnapshotTaker _snapshots;
+    private readonly RunSettings _settings;
+    private readonly RunJournal? _journal;
+    private readonly FrozenDictionary<int, int> _groupEarlierSuccesses;
 
     private StepUnderWay? _step;
     private RunMilestones _milestones = new(Started: default, Stop: null, Ended: null, Outcome: null);
@@ -47,22 +50,50 @@ internal sealed class RunSteps
 
     /// <param name="graph">The graph the run runs.</param>
     /// <param name="settings">The settings of the run: the sizes of its slots and its grace period.</param>
-    public RunSteps(Graph graph, RunSettings settings)
+    /// <param name="journal">
+    /// The journal the run is on, as it was when opened, or <see langword="null"/> for a run with no journal, whose steps record nothing.
+    /// A task the journal holds as an earlier success begins succeeded and is never made ready.
+    /// </param>
+    public RunSteps(Graph graph, RunSettings settings, RunJournal? journal)
     {
         _graph = graph;
+        _settings = settings;
+        _journal = journal;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
-        _counts = new StatusCounts(pending: graph.Tasks.Length);
-        _groupCounts = graph.Nodes.OfType<BuiltGroup>().ToFrozenDictionary(
-            group => group.Position,
-            group => new StatusCounts(pending: group.TaskCount));
         _instances = new TaskInstance?[graph.Nodes.Length];
+        var earlierSuccesses = new int[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
         {
-            _instances[task.Position] = new TaskInstance(task);
+            var instance = journal?.Earlier.EarlierSuccessAt(task.Path) is { } recorded
+                ? TaskInstance.EarlierSuccess(task, recorded)
+                : new TaskInstance(task);
+            _instances[task.Position] = instance;
+            if (instance.Status is NodeStatus.Succeeded)
+            {
+                earlierSuccesses[task.Position] = 1;
+                foreach (var group in task.Groups)
+                {
+                    earlierSuccesses[group]++;
+                }
+            }
         }
 
-        _snapshots = new SnapshotTaker(graph.Nodes.Select(AtTheStart), graph.Positions, _slots);
+        var earlierInRun = graph.Tasks.Sum(task => earlierSuccesses[task.Position]);
+        _counts = new StatusCounts(pending: graph.Tasks.Length - earlierInRun, earlierSuccesses: earlierInRun);
+        var groups = graph.Nodes.OfType<BuiltGroup>().ToList();
+        _groupEarlierSuccesses = groups.ToFrozenDictionary(group => group.Position, group => earlierSuccesses[group.Position]);
+        _groupCounts = groups.ToFrozenDictionary(
+            group => group.Position,
+            group => new StatusCounts(
+                pending: group.TaskCount - earlierSuccesses[group.Position],
+                earlierSuccesses: earlierSuccesses[group.Position]));
+
+        _snapshots = new SnapshotTaker(
+            graph.Nodes.Select(AtTheStart),
+            graph.Positions,
+            _slots,
+            new SnapshotJournal(journal?.Info, earlierInRun));
     }
 
     /// <summary>
@@ -76,6 +107,7 @@ internal sealed class RunSteps
     {
         _milestones = _milestones with { Started = now };
         Begin();
+        RecordRunStarted(now);
         Publish(new RunStarted(now, source));
         MakeReady(_graph.Tasks, now);
         AnnounceSettledGroups(now);
@@ -379,9 +411,13 @@ internal sealed class RunSteps
         }
     }
 
+    /// <summary>
+    /// Makes ready each pending task among <paramref name="candidates"/> whose dependencies are all met. Only a pending task is
+    /// considered: a dependent may be an earlier success, since nothing checks the graph against the journal.
+    /// </summary>
     private void MakeReady(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
     {
-        List<BuiltTask> ready = [.. candidates.Where(DependenciesAreMet)];
+        List<BuiltTask> ready = [.. candidates.Where(task => IsPending(task) && DependenciesAreMet(task))];
         foreach (var task in ready)
         {
             Apply(task, InstanceOf(task).MakeReady(now));
@@ -398,7 +434,10 @@ internal sealed class RunSteps
         foreach (var group in _settledInThisStep.OrderByDescending(group => group.Depth).ThenBy(group => group.Position))
         {
             var counts = _groupCounts[group.Position];
-            Publish(new GroupSettled(now, group.Path, counts.GroupStatus, counts.ToDictionary()));
+            Publish(new GroupSettled(now, group.Path, counts.GroupStatus, counts.ToDictionary())
+            {
+                EarlierSuccesses = _groupEarlierSuccesses[group.Position],
+            });
         }
 
         _settledInThisStep.Clear();
@@ -444,6 +483,7 @@ internal sealed class RunSteps
         Begin();
         _milestones = _milestones with { Ended = now, Outcome = outcome };
         _step!.Ends = new RunEnd(outcome, _requestsApplied);
+        Record(new RunEndedEntry(now, outcome));
         Publish(new RunEnded(now, outcome));
     }
 
@@ -456,6 +496,7 @@ internal sealed class RunSteps
         _snapshots.Record(task.Position, change.Task);
         if (change.Event is TaskStatusChanged moved)
         {
+            RecordStatusChange(moved);
             _counts.Move(moved.From, moved.To);
             foreach (var group in task.Groups.Select(_graph.GroupAt))
             {
@@ -492,8 +533,49 @@ internal sealed class RunSteps
     private NodeSnapshot NodeSnapshotOf(BuiltGroup group)
     {
         var counts = _groupCounts[group.Position];
+        var earlierSuccesses = _groupEarlierSuccesses[group.Position];
 
-        return new NodeSnapshot(group, counts.GroupStatus, counts.ToDictionary());
+        return new NodeSnapshot(group, counts.GroupStatus, counts.ToDictionary())
+        {
+            IsEarlierSuccess = earlierSuccesses > 0 && earlierSuccesses == group.TaskCount,
+            EarlierSuccesses = earlierSuccesses,
+        };
+    }
+
+    /// <summary>Records the run-started entry in the step under way, with the cap and the size of each limit the graph names.</summary>
+    private void RecordRunStarted(DateTimeOffset now)
+    {
+        if (_journal is null)
+        {
+            return;
+        }
+
+        var limits = _graph.LimitNames
+            .Zip(_settings.Sizes.Limits)
+            .ToDictionary(limit => limit.First.Text, limit => limit.Second, LimitName.TextComparer);
+        Record(new RunStartedEntry(now, _journal.User, _journal.Machine, _settings.Sizes.Cap, limits));
+    }
+
+    /// <summary>Records a task's start or settle in the step under way. Becoming ready and being pending are never recorded.</summary>
+    private void RecordStatusChange(TaskStatusChanged moved)
+    {
+        if (moved.To is NodeStatus.Running)
+        {
+            Record(new TaskStartedEntry(moved.Node.Path.ToString(), moved.At));
+        }
+        else if (moved.To.IsSettled())
+        {
+            Record(TaskSettledEntry.Of(moved.Node, moved.At));
+        }
+    }
+
+    /// <summary>Adds an entry to those the step under way records, when the run is on a journal.</summary>
+    private void Record(JournalEntry entry)
+    {
+        if (_journal is not null)
+        {
+            _step!.Entries.Add(entry);
+        }
     }
 
     // Indexed by position among the nodes, so a group's place is empty.
@@ -542,6 +624,10 @@ internal sealed class RunSteps
 
         public RunEnd? Ends { get; set; }
 
-        public Step Decided() => new(Events, Starts, SignalsTheTasks, GracePeriodTimer, Ends);
+        public List<JournalEntry> Entries { get; } = [];
+
+        // Every entry but a start is flushed, and entries written together share one flush, so one is enough for the whole step.
+        public Step Decided()
+            => new(Events, Starts, SignalsTheTasks, GracePeriodTimer, Ends, Entries, Flushes: Entries.Exists(entry => entry is not TaskStartedEntry));
     }
 }

@@ -80,18 +80,22 @@ public static class Runner
         IReporter[] reporters = [.. options.Reporters];
         Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));
 
-        return RunToEndAsync(graph, RunSettings.From(graph, options), reporters, stop);
+        var settings = RunSettings.From(graph, options);
+        var journal = options.Journal.Open(settings.TimeProvider);
+
+        return RunToEndAsync(graph, settings, journal, reporters, stop);
     }
 
     // No token, by design: a run is stopped through its StopSignal, not a CancellationToken, so there is none to pass on.
     private static async Task<RunResult> RunToEndAsync(
         Graph graph,
         RunSettings settings,
+        JournalFile? journal,
         IReporter[] reporters,
         StopSignal? stop)
     {
         var delivery = new ReporterDelivery(reporters, stop);
-        var run = new Run(graph, settings, delivery, stop);
+        var run = new Run(graph, settings, delivery, stop, journal);
 
         run.Start();
         var outcome = await run.Ended.ConfigureAwait(false);

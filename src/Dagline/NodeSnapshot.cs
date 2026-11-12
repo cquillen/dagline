@@ -65,6 +65,25 @@ public sealed record NodeSnapshot
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; internal init; }
 
     /// <summary>
+    /// <see langword="true"/> for an earlier success: a task that an earlier run of the journal recorded as succeeded, which this run
+    /// kept and does not run, and a group with at least one task beneath it, all of them earlier successes.
+    /// </summary>
+    /// <remarks>
+    /// An earlier success is succeeded from the start of the run, with the message, detail lines and warnings it succeeded with and
+    /// the time it succeeded in <see cref="Settled"/>, and no <see cref="Started"/>. It never changes status in this run, and no event
+    /// is published for it. A group made only of earlier successes is settled from the start and gets no <see cref="GroupSettled"/>.
+    /// It is the same in every snapshot of the run.
+    /// </remarks>
+    public bool IsEarlierSuccess { get; internal init; }
+
+    /// <summary>
+    /// How many earlier successes the node counts: for a group, the tasks beneath it at any depth that are earlier successes,
+    /// and for a task, 1 when it is one and 0 when it is not. They are among the succeeded in <see cref="Counts"/>.
+    /// </summary>
+    /// <remarks>It is fixed when the run starts and is the same in every snapshot of the run.</remarks>
+    public int EarlierSuccesses { get; internal init; }
+
+    /// <summary>
     /// Why the task failed, or <see langword="null"/> for a task that has not failed and for a group.
     /// </summary>
     /// <remarks>

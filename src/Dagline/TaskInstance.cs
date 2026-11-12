@@ -43,8 +43,25 @@ internal sealed class TaskInstance(BuiltTask task)
     private string? _waitingText;
     private DateTimeOffset? _started;
     private DateTimeOffset? _settled;
+    private bool _isEarlierSuccess;
 
     public NodeStatus Status { get; private set; } = NodeStatus.Pending;
+
+    /// <summary>
+    /// The instance of a task that begins the run as an earlier success: succeeded, with the outcome and settle time an earlier run
+    /// recorded, and no start time. Its status never changes, so it makes no change and no event in this run.
+    /// </summary>
+    public static TaskInstance EarlierSuccess(BuiltTask task, TaskSettledEntry recorded) => new(task)
+    {
+        Status = NodeStatus.Succeeded,
+        _isEarlierSuccess = true,
+        _message = recorded.Message,
+        _detail = recorded.Detail,
+        _detailOmitted = recorded.DetailOmitted,
+        _warnings = recorded.Warnings,
+        _warningsOmitted = recorded.WarningsOmitted,
+        _settled = recorded.Time,
+    };
 
     // Each report checks this itself: a helper that took the report as a lambda cost every report a closure.
     private bool IsRunning => Status is NodeStatus.Running;
@@ -66,6 +83,8 @@ internal sealed class TaskInstance(BuiltTask task)
         WaitingText = _waitingText,
         Started = _started,
         Settled = _settled,
+        IsEarlierSuccess = _isEarlierSuccess,
+        EarlierSuccesses = _isEarlierSuccess ? 1 : 0,
     };
 
     /// <summary>Moves the task from pending to ready: every dependency is met.</summary>

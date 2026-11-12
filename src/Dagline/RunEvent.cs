@@ -121,7 +121,8 @@ public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiti
 /// of the groups beneath it. One failure can settle many groups in one step, since every task it blocks settles with it.
 /// </para>
 /// <para>
-/// A group that is settled from the start of the run, because no task is beneath it, gets no event.
+/// A group that is settled from the start of the run, because no task is beneath it or every task beneath it is an earlier success,
+/// gets no event.
 /// A group's status before it settles is never an event: read it from a snapshot.
 /// </para>
 /// </remarks>
@@ -142,6 +143,17 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
     /// </summary>
     /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
+
+    /// <summary>
+    /// How many of the tasks beneath the group, at any depth, are earlier successes: kept from an earlier run of the journal
+    /// and not run in this one. They are among the succeeded in <see cref="Counts"/>, counted apart here so that a reporter can show
+    /// how much this run did. Zero for a run with no journal.
+    /// </summary>
+    /// <remarks>
+    /// A group made only of earlier successes is settled from the start of the run and gets no event, so a group that settles in a
+    /// run always has at least one task beneath it that settled in that run.
+    /// </remarks>
+    public int EarlierSuccesses { get; init; }
 }
 
 /// <summary>

@@ -29,11 +29,13 @@ internal sealed class StatusCounts
 
     private readonly int[] _counts = new int[_statuses.Length];
 
-    public StatusCounts(int pending)
+    /// <param name="pending">How many tasks are pending at the start.</param>
+    /// <param name="earlierSuccesses">How many tasks are earlier successes, and so succeeded from the start.</param>
+    public StatusCounts(int pending, int earlierSuccesses)
     {
         _counts[(int)NodeStatus.Pending] = pending;
+        _counts[(int)NodeStatus.Succeeded] = earlierSuccesses;
     }
-
 
     public int this[NodeStatus status] => _counts[(int)status];
 
