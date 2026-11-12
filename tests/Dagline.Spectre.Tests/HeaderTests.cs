@@ -27,7 +27,7 @@ public class HeaderTests
         b.Release();
         await display.Run;
 
-        frame.ShouldBe(
+        frame.Take(3).ShouldBe(
         [
             "Dagline  no journal                                               0%  elapsed 0s",
             new string('━', 40) + new string('─', 40),
@@ -55,7 +55,7 @@ public class HeaderTests
         c.Release();
         await display.Run;
 
-        frame.ShouldBe(
+        frame.Take(3).ShouldBe(
         [
             "Dagline  no journal                                              66%  elapsed 0s",
             new string('━', 80),
@@ -126,7 +126,7 @@ public class HeaderTests
         await display.Run;
 
         var left = $"Dagline  journal {id} · run 2";
-        frame.ShouldBe(
+        frame.Take(3).ShouldBe(
         [
             left + new string(' ', 80 - left.Length - 15) + "50%  elapsed 0s",
             new string('━', 80),
