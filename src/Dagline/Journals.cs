@@ -41,6 +41,7 @@ public static class Journals
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
 
+        cancellationToken.ThrowIfCancellationRequested();
         var summaries = new List<JournalSummary>();
         foreach (var location in JournalsIn(directory))
         {
@@ -131,11 +132,7 @@ public static class Journals
 
     private static List<JournalLocation> JournalsIn(string directory)
     {
-        if (!Directory.Exists(directory))
-        {
-            return [];
-        }
-
+        // Not Directory.Exists, which also says false for a directory the process may not inspect.
         try
         {
             return Directory.GetFiles(directory, "*" + JournalId.Extension)
@@ -144,6 +141,10 @@ public static class Journals
                 .Where(JournalId.IsValid)
                 .Select(id => JournalLocation.Of(directory, id))
                 .ToList();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return [];
         }
         catch (Exception cannotList) when (FileSystemFailure.Is(cannotList))
         {
