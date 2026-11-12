@@ -46,12 +46,12 @@ internal static class Tally
 
     private static IEnumerable<Part> Parts(Snapshot snapshot, Glyphs glyphs)
     {
-        var waiting = snapshot.Waiting.Count;
         var counts = snapshot.Counts;
+        var waiting = counts.Waiting;
         var warnings = snapshot.WarningCount;
 
-        yield return new(counts[NodeStatus.Succeeded], StatusMark.For(NodeStatus.Succeeded, glyphs), "succeeded", "succeeded", snapshot.EarlierSuccesses);
-        yield return new(snapshot.Working.Count, StatusMark.For(NodeStatus.Running, glyphs), "working", "working");
+        yield return new(counts[NodeStatus.Succeeded], StatusMark.For(NodeStatus.Succeeded, glyphs), "succeeded", "succeeded", counts.EarlierSuccesses);
+        yield return new(counts.Working, StatusMark.For(NodeStatus.Running, glyphs), "working", "working");
         yield return new(waiting, StatusMark.Waiting(glyphs), "waiting", "waiting");
         yield return new(counts[NodeStatus.Ready], StatusMark.For(NodeStatus.Ready, glyphs), "ready", "ready");
         yield return new(counts[NodeStatus.Pending], StatusMark.For(NodeStatus.Pending, glyphs), "pending", "pending");

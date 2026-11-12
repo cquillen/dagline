@@ -21,16 +21,15 @@ internal static class CountsText
     /// When no status has a task it reads <c>no tasks</c>. Earlier successes, which are among the succeeded, follow that count in
     /// brackets, as in <c>3 succeeded (1 earlier)</c>, when there are any.
     /// </summary>
-    /// <param name="counts">How many tasks have each status. A status that is absent counts as zero.</param>
-    /// <param name="earlierSuccesses">How many of the succeeded are earlier successes.</param>
-    public static string PerStatus(IReadOnlyDictionary<NodeStatus, int> counts, int earlierSuccesses)
+    /// <param name="counts">How many tasks have each status, and how many of the succeeded are earlier successes.</param>
+    public static string PerStatus(TaskCounts counts)
     {
         string[] present =
         [
             .. _lifecycleOrder
-                .Select(status => (Status: status, Count: counts.GetValueOrDefault(status)))
+                .Select(status => (Status: status, Count: counts[status]))
                 .Where(entry => entry.Count > 0)
-                .Select(entry => Invariant($"{entry.Count} {NameText.Of(entry.Status)}{Earlier(entry.Status, earlierSuccesses)}")),
+                .Select(entry => Invariant($"{entry.Count} {NameText.Of(entry.Status)}{Earlier(entry.Status, counts.EarlierSuccesses)}")),
         ];
 
         return present.Length == 0 ? "no tasks" : string.Join(", ", present);

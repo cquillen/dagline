@@ -29,7 +29,7 @@ public sealed class Snapshot
         StopState? stop,
         ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
-        IReadOnlyDictionary<NodeStatus, int> counts,
+        TaskCounts counts,
         LimitUse cap,
         IReadOnlyDictionary<string, LimitUse> limits,
         SnapshotJournal journal)
@@ -44,7 +44,6 @@ public sealed class Snapshot
         Cap = cap;
         Limits = limits;
         Journal = journal.Info;
-        EarlierSuccesses = journal.EarlierSuccesses;
         SetAside = journal.SetAside;
         JournalPathsNotInGraph = journal.JournalPathsNotInGraph;
         JournalPathsNotInGraphUnsucceeded = journal.JournalPathsNotInGraphUnsucceeded;
@@ -69,10 +68,14 @@ public sealed class Snapshot
     public IReadOnlyList<NodeSnapshot> Nodes { get; }
 
     /// <summary>
-    /// How many tasks have each status. Every status is present, with zero for a status no task has,
-    /// and the entries are in lifecycle order: pending, ready, running, succeeded, failed, blocked, cancelled.
+    /// How many tasks of the run have each status, with their sums and sub-counts: the total, the settled, those that have not
+    /// succeeded, the earlier successes among the succeeded, and the waiting and working among the running.
     /// </summary>
-    public IReadOnlyDictionary<NodeStatus, int> Counts { get; }
+    /// <remarks>
+    /// Earlier successes are counted as succeeded from the first snapshot on, and <see cref="TaskCounts.EarlierSuccesses"/> counts
+    /// them apart. That number is fixed for the run: zero for a run with no journal and for a new journal.
+    /// </remarks>
+    public TaskCounts Counts { get; }
 
     /// <summary>
     /// The cap of the run: its size, from <see cref="RunOptions.Cap"/>, and how many of its slots are in use,
@@ -97,15 +100,6 @@ public sealed class Snapshot
     /// </summary>
     /// <remarks>A run on a new journal is run 1, and its id is known only from here.</remarks>
     public JournalInfo? Journal { get; }
-
-    /// <summary>
-    /// How many tasks of the graph are earlier successes: tasks that an earlier run of the journal recorded as succeeded, which
-    /// this run kept and does not run. Zero for a run with no journal and for a new journal.
-    /// </summary>
-    /// <remarks>
-    /// Earlier successes are counted as succeeded in <see cref="Counts"/>, from the first snapshot on. The number is fixed for the run.
-    /// </remarks>
-    public int EarlierSuccesses { get; }
 
     /// <summary>
     /// The paths of the tasks whose earlier success this run set aside, in declaration order. Empty for a run with no journal,

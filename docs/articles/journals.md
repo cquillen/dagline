@@ -80,9 +80,9 @@ A task whose latest settle in the journal is a success is an **earlier success**
 
 Every other task starts pending and runs: one that failed, was blocked or was cancelled, one the earlier run never reached, and one that is new to the graph. It gets nothing from earlier runs except its [checkpoint](writing-tasks.md#checkpoints), if it saved one and has not succeeded since.
 
-Groups follow from their tasks. A group made only of earlier successes is settled from the start and gets no event. A group that mixes earlier successes with tasks that settle in this run gets one <xref:Dagline.GroupSettled> when its last task settles, and <xref:Dagline.GroupSettled.EarlierSuccesses> says how many of its tasks were earlier successes.
+Groups follow from their tasks. A group made only of earlier successes is settled from the start and gets no event. A group that mixes earlier successes with tasks that settle in this run gets one <xref:Dagline.GroupSettled> when its last task settles, and `EarlierSuccesses` on its <xref:Dagline.GroupSettled.Counts> says how many of its tasks were earlier successes.
 
-Earlier successes count as succeeded everywhere a count is given, and in the run outcome. <xref:Dagline.Snapshot.EarlierSuccesses> and <xref:Dagline.NodeSnapshot.EarlierSuccesses> count them apart, so a reporter can show how much this run did. A continuing run with nothing left to do publishes only `RunStarted` and `RunEnded` and is complete.
+Earlier successes count as succeeded everywhere a count is given, and in the run outcome. <xref:Dagline.TaskCounts.EarlierSuccesses>, on the run's <xref:Dagline.Snapshot.Counts> and on each node's <xref:Dagline.NodeSnapshot.Counts>, counts them apart, so a reporter can show how much this run did. A continuing run with nothing left to do publishes only `RunStarted` and `RunEnded` and is complete.
 
 A journal whose latest run was complete can be continued like any other. With an unchanged graph the run is complete at once, and if the graph gained a path, that task runs.
 

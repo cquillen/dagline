@@ -49,8 +49,8 @@ internal static class GroupsPane
     private static StyledLine Row(NodeSnapshot node, Family family, int nameWidth, int width, Glyphs glyphs)
     {
         var name = Name(node, glyphs);
-        var start = Mark(node, family, glyphs).Add(" ").Add(name).Add(new string(' ', nameWidth - name.Width + 1));
-        var end = Totals(node, family, glyphs);
+        var start = Mark(node, glyphs).Add(" ").Add(name).Add(new string(' ', nameWidth - name.Width + 1));
+        var end = Totals(node, glyphs);
         var children = family.ChildrenOf(node);
         if (children.Count == 0)
         {
@@ -59,32 +59,24 @@ internal static class GroupsPane
 
         var room = width - start.Width - 1 - end.Width;
         var cells = children.Count <= room
-            ? children.Aggregate(StyledLine.Empty, (line, child) => line.Add(Mark(child, family, glyphs)))
-            : StatusBar.Of(node.Counts, node.EarlierSuccesses, family.WaitingBeneath(node), Math.Max(0, room), glyphs);
+            ? children.Aggregate(StyledLine.Empty, (line, child) => line.Add(Mark(child, glyphs)))
+            : StatusBar.Of(node.Counts, Math.Max(0, room), glyphs);
         return start.Add(cells).Add(" ").Add(end);
     }
 
     private static StyledLine Name(NodeSnapshot node, Glyphs glyphs) => StyledLine.Of(node.Title is { } title ? glyphs.Text(title) : node.Path.Segments[^1]);
 
     /// <summary>The glyph and colour of a node's status: dimmer for an earlier success, and waiting when all its running tasks are.</summary>
-    private static StyledLine Mark(NodeSnapshot node, Family family, Glyphs glyphs)
-    {
-        if (node.IsEarlierSuccess)
-        {
-            return StatusMark.EarlierSuccess(glyphs).Line();
-        }
-
-        var running = node.Counts[NodeStatus.Running];
-        return node.Status is NodeStatus.Running && running > 0 && family.WaitingBeneath(node) == running
-            ? StatusMark.Waiting(glyphs).Line()
+    private static StyledLine Mark(NodeSnapshot node, Glyphs glyphs)
+        => node.IsEarlierSuccess ? StatusMark.EarlierSuccess(glyphs).Line()
+            : node.IsWaiting ? StatusMark.Waiting(glyphs).Line()
             : StatusMark.For(node.Status, glyphs).Line();
-    }
 
     /// <summary>Succeeded over total, then the failures and the warnings when there are any, as in <c>1,087/1,104 ✗2 ▲3,173</c>.</summary>
-    private static StyledLine Totals(NodeSnapshot node, Family family, Glyphs glyphs)
+    private static StyledLine Totals(NodeSnapshot node, Glyphs glyphs)
     {
         var totals = StyledLine.Of(
-            $"{DisplayText.Number(node.Counts[NodeStatus.Succeeded])}/{DisplayText.Number(TaskCounts.Total(node.Counts))}");
+            $"{DisplayText.Number(node.Counts[NodeStatus.Succeeded])}/{DisplayText.Number(node.Counts.Total)}");
         var failed = node.Counts[NodeStatus.Failed];
         if (failed > 0)
         {
@@ -92,7 +84,7 @@ internal static class GroupsPane
             totals = totals.Add($" {mark.Glyph}{DisplayText.Number(failed)}", mark.Style);
         }
 
-        var warnings = family.WarningsBeneath(node);
+        var warnings = node.WarningCount;
         if (warnings > 0)
         {
             var mark = StatusMark.Warning(glyphs);
@@ -102,14 +94,10 @@ internal static class GroupsPane
         return totals;
     }
 
-    /// <summary>
-    /// What the rows need to know of each node's family, read once from a snapshot: its children, and how many waiting tasks
-    /// and warnings are beneath it.
-    /// </summary>
+    /// <summary>What the rows need to know of each node's family, read once from a snapshot: its children.</summary>
     private sealed class Family
     {
         private readonly Dictionary<NodePath, List<NodeSnapshot>> _children = [];
-        private readonly Dictionary<NodePath, (int Waiting, int Warnings)> _beneath = [];
 
         public Family(Snapshot snapshot)
         {
@@ -120,19 +108,10 @@ internal static class GroupsPane
                 {
                     _children[parent].Add(node);
                 }
-
-                if (!node.IsGroup)
-                {
-                    AddUpwards(node);
-                }
             }
         }
 
         public List<NodeSnapshot> ChildrenOf(NodeSnapshot node) => _children[node.Path];
-
-        public int WaitingBeneath(NodeSnapshot node) => _beneath.GetValueOrDefault(node.Path).Waiting;
-
-        public int WarningsBeneath(NodeSnapshot node) => _beneath.GetValueOrDefault(node.Path).Warnings;
 
         /// <summary>Whether the node has a row when the pane shows the graph two levels deep.</summary>
         public bool HasRowAtTwoLevels(NodeSnapshot node) => IsGroupTwoLevelsDown(node) || IsTopLevelWithNoGroupBeneath(node);
@@ -141,21 +120,5 @@ internal static class GroupsPane
 
         private bool IsTopLevelWithNoGroupBeneath(NodeSnapshot node)
             => node.Path.Parent is null && !ChildrenOf(node).Any(child => child.IsGroup);
-
-        private void AddUpwards(NodeSnapshot task)
-        {
-            var waiting = task.IsWaiting ? 1 : 0;
-            var warnings = task.WarningCount;
-            if (waiting == 0 && warnings == 0)
-            {
-                return;
-            }
-
-            for (NodePath? path = task.Path; path is { } at; path = at.Parent)
-            {
-                var (beneathWaiting, beneathWarnings) = _beneath.GetValueOrDefault(at);
-                _beneath[at] = (beneathWaiting + waiting, beneathWarnings + warnings);
-            }
-        }
     }
 }

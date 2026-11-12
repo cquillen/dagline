@@ -10,23 +10,21 @@ namespace Dagline.Spectre;
 internal static class StatusBar
 {
     /// <summary>A bar <paramref name="width"/> cells wide over the tasks that <paramref name="counts"/> counts.</summary>
-    /// <param name="counts">How many tasks have each status.</param>
-    /// <param name="earlierSuccesses">How many of the succeeded tasks are earlier successes.</param>
-    /// <param name="waiting">How many of the running tasks are waiting on an external system.</param>
+    /// <param name="counts">How many tasks have each status, and the earlier successes and waiting among them.</param>
     /// <param name="width">How many cells the bar takes.</param>
     /// <param name="glyphs">The glyphs to draw with.</param>
-    public static StyledLine Of(IReadOnlyDictionary<NodeStatus, int> counts, int earlierSuccesses, int waiting, int width, Glyphs glyphs)
+    public static StyledLine Of(TaskCounts counts, int width, Glyphs glyphs)
     {
-        var tasks = TaskCounts.Total(counts);
+        var tasks = counts.Total;
         (int Tasks, Style Style)[] shares =
         [
-            (earlierSuccesses, Palette.EarlierSuccess),
-            (counts[NodeStatus.Succeeded] - earlierSuccesses, Palette.Succeeded),
+            (counts.EarlierSuccesses, Palette.EarlierSuccess),
+            (counts[NodeStatus.Succeeded] - counts.EarlierSuccesses, Palette.Succeeded),
             (counts[NodeStatus.Failed], Palette.Failed),
             (counts[NodeStatus.Blocked], Palette.Blocked),
             (counts[NodeStatus.Cancelled], Palette.Cancelled),
-            (counts[NodeStatus.Running] - waiting, Palette.Working),
-            (waiting, Palette.Waiting),
+            (counts.Working, Palette.Working),
+            (counts.Waiting, Palette.Waiting),
         ];
 
         var bar = StyledLine.Empty;

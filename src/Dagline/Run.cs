@@ -126,7 +126,13 @@ internal sealed class Run : ISnapshotSource
     public void SetCount(BuiltTask task, long current, long? total) => Report(task, instance => instance.SetCount(current, total));
 
     /// <summary>Adds a warning to a task. A warning that is kept is published.</summary>
-    public void Warn(BuiltTask task, string warning) => Report(task, (instance, now) => instance.Warn(warning, now));
+    public void Warn(BuiltTask task, string warning)
+    {
+        lock (_gate)
+        {
+            CarryOut(_steps.Warn(task, warning, _timeProvider.GetUtcNow()));
+        }
+    }
 
     /// <summary>Sets the message of a task's outcome.</summary>
     public void SetMessage(BuiltTask task, string message) => Report(task, instance => instance.SetMessage(message));

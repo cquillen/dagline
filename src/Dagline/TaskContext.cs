@@ -99,10 +99,11 @@ public sealed class TaskContext
     public CancellationToken CancellationToken { get; }
 
     /// <summary>Sets the status text of the task's progress: a line that says what the task is doing now.</summary>
-    /// <param name="text">The new status text, which replaces the last one. <see langword="null"/> clears it.</param>
+    /// <param name="text">The new status text, which replaces the last one. <see langword="null"/> or empty text clears it.</param>
     /// <remarks>
     /// The text shows as <see cref="NodeSnapshot.StatusText"/>. It is independent of the count: setting one leaves the other as it was.
-    /// Progress is never an event, so calling this often costs a reporter nothing. The text is kept as given, line breaks included.
+    /// Progress is never an event and changes no group, so calling this often costs a reporter nothing. Text that is not empty is
+    /// kept as given, line breaks included, since making it one line on every call would slow a task that reports in a tight loop.
     /// A reporter decides how to show them: <see cref="PlainTextReporter"/> prints each as a space.
     /// </remarks>
     public void Status(string? text) => _run.SetStatusText(_task, text);
