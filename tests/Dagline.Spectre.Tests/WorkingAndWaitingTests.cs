@@ -55,6 +55,10 @@ public class WorkingAndWaitingTests
             "Dagline  no journal" + new string(' ', 65) + "20%  elapsed 50s",
             new string('━', 100),
             "✓ 1  ● 3  ◌ 1                                                                               cap 4/16",
+            "── Groups " + new string('─', 90),
+            "✓ gate    1/1",
+            "● check   ●●● 0/3",
+            "◌ process ◌ 0/1",
             "── Working (3) " + new string('─', 85),
             "● check/totals       ━━━━━━━───────── 1,928 of 4,087  summing entities                           50s",
             "● check/duplicates                                                                               50s",
@@ -86,7 +90,7 @@ public class WorkingAndWaitingTests
         b.Release();
         await display.Run;
 
-        frame.Skip(3).ShouldBe(
+        frame.SkipWhile(line => !line.StartsWith("── Working", StringComparison.Ordinal)).ShouldBe(
         [
             "── Working (2) " + new string('─', 65),
             "● a  " + new string(' ', 16) + " 42  reading file 3" + new string(' ', 38) + "0s",
@@ -109,8 +113,8 @@ public class WorkingAndWaitingTests
         a.Release();
         await display.Run;
 
-        before[4].ShouldEndWith(" 0s");
-        after[4].ShouldEndWith(" 1m 23s");
+        before[^1].ShouldEndWith(" 0s");
+        after[^1].ShouldEndWith(" 1m 23s");
     }
 
     [Test]
@@ -118,12 +122,13 @@ public class WorkingAndWaitingTests
     {
         PausedBody[] bodies = [new(), new(), new(), new(), new()];
         var builder = new GraphBuilder();
+        var group = builder.Group("g");
         for (var i = 0; i < bodies.Length; i++)
         {
-            builder.Task($"t{i + 1}", bodies[i].Body);
+            group.Task($"t{i + 1}", bodies[i].Body);
         }
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 7);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 9);
         foreach (var body in bodies)
         {
             await body.Started;
@@ -137,11 +142,11 @@ public class WorkingAndWaitingTests
 
         await display.Run;
 
-        frame.Skip(3).ShouldBe(
+        frame.SkipWhile(line => !line.StartsWith("── Working", StringComparison.Ordinal)).ShouldBe(
         [
             "── Working (5) " + new string('─', 65),
-            "● t1" + new string(' ', 74) + "0s",
-            "● t2" + new string(' ', 74) + "0s",
+            "● g/t1" + new string(' ', 72) + "0s",
+            "● g/t2" + new string(' ', 72) + "0s",
             "  and 3 more working",
         ]);
     }
@@ -191,7 +196,7 @@ public class WorkingAndWaitingTests
 
         await display.Run;
 
-        frame.Skip(3).ShouldBe(
+        frame.SkipWhile(line => !line.StartsWith("── Working", StringComparison.Ordinal)).ShouldBe(
         [
             "── Working (0) " + new string('─', 65),
             "  all 7 running tasks are waiting",
@@ -221,8 +226,9 @@ public class WorkingAndWaitingTests
         a.Release();
         await display.Run;
 
-        running.Count.ShouldBe(5);
-        running[3].ShouldStartWith("── Working (1) ");
+        running.ShouldContain(line => line.StartsWith("── Working (1) ", StringComparison.Ordinal));
+        running.ShouldNotContain(line => line.StartsWith("── Waiting", StringComparison.Ordinal));
+        running[^1].ShouldStartWith("● a ");
     }
 
     /// <summary>A task body that begins waiting when the test says so, then pauses until released.</summary>

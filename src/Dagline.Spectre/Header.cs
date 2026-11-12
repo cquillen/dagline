@@ -47,31 +47,8 @@ internal static class Header
     /// <summary>One bar for the whole run: the settled and running tasks by status, then the rest of the tasks empty.</summary>
     private static StyledLine Bar(Snapshot snapshot, int width, Glyphs glyphs)
     {
-        var counts = snapshot.Counts;
-        var tasks = counts.Values.Sum();
         var waiting = snapshot.Nodes.Count(Running.IsWaiting);
-        (int Tasks, Style Style)[] shares =
-        [
-            (snapshot.EarlierSuccesses, Palette.EarlierSuccess),
-            (counts[NodeStatus.Succeeded] - snapshot.EarlierSuccesses, Palette.Succeeded),
-            (counts[NodeStatus.Failed], Palette.Failed),
-            (counts[NodeStatus.Blocked], Palette.Blocked),
-            (counts[NodeStatus.Cancelled], Palette.Cancelled),
-            (counts[NodeStatus.Running] - waiting, Palette.Working),
-            (waiting, Palette.Waiting),
-        ];
-
-        var bar = StyledLine.Empty;
-        var before = 0;
-        foreach (var (share, style) in shares)
-        {
-            // Each share ends where its running total falls, so the cells always add up to the width.
-            var cells = tasks == 0 ? 0 : (int)((long)(before + share) * width / tasks) - (int)((long)before * width / tasks);
-            bar = bar.Add(DisplayText.Repeat(glyphs.Bar, cells), style);
-            before += share;
-        }
-
-        return bar.Add(DisplayText.Repeat(glyphs.BarRest, width - bar.Width), Palette.Dim);
+        return StatusBar.Of(snapshot.Counts, snapshot.EarlierSuccesses, waiting, width, glyphs);
     }
 
     private static StyledLine Slots(Snapshot snapshot, Glyphs glyphs)

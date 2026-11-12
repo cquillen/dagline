@@ -18,11 +18,13 @@ internal static class Frame
         var width = Math.Max(0, size.Width);
         var height = Math.Max(0, size.Height);
         var header = Header.Lines(snapshot, width, now, glyphs);
-        var waiting = WaitingPane.Lines(snapshot, width, now, glyphs, height - header.Count);
-        var working = WorkingPane.Lines(snapshot, width, now, glyphs, height - header.Count - waiting.Count);
+        var groups = GroupsPane.Lines(snapshot, width, height - header.Count, glyphs);
+        var left = height - header.Count - groups.Count;
+        var waiting = WaitingPane.Lines(snapshot, width, now, glyphs, left);
+        var working = WorkingPane.Lines(snapshot, width, now, glyphs, left - waiting.Count);
         return
         [
-            .. header.Concat(working).Concat(waiting)
+            .. header.Concat(groups).Concat(working).Concat(waiting)
                 .Select(line => line.Fit(width, glyphs.Ellipsis))
                 .Take(height),
         ];

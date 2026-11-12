@@ -1,9 +1,12 @@
 namespace Dagline.Spectre;
 
-/// <summary>The line that opens a pane of a frame: its title set in a rule across the width, as in <c>── Working (3) ───</c>.</summary>
+/// <summary>The one home of the line that opens a pane: a short rule, the pane's title, then a rule to the right edge.</summary>
 internal static class PaneTitle
 {
-    /// <summary>A rule <paramref name="width"/> cells wide with <paramref name="title"/> set in it near its start.</summary>
+    /// <summary>The title line of a pane, as in <c>── Groups ──────</c>, <paramref name="width"/> cells wide.</summary>
+    /// <param name="title">The title, with any counts it carries.</param>
+    /// <param name="width">The width of the console.</param>
+    /// <param name="glyphs">The glyphs to draw with.</param>
     public static StyledLine Line(StyledLine title, int width, Glyphs glyphs)
     {
         var line = StyledLine.Of(glyphs.Rule + glyphs.Rule + " ", Palette.Dim).Add(title).Add(" ");
