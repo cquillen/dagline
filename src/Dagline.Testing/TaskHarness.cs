@@ -12,9 +12,11 @@ namespace Dagline.Testing;
 /// </para>
 /// <para>
 /// <see cref="For"/> only wraps the body: nothing runs and nothing touches the disk until the first run. That run starts a new
-/// journal in a directory the harness creates under <see cref="Path.GetTempPath"/>, and every later run continues that journal,
-/// as <see cref="Journal.Continue"/> does. So a task gets back in a later run the checkpoint it saved in an earlier one that
-/// ended failed or cancelled, and a task that succeeded is an earlier success that does not run again.
+/// journal in a new directory the harness creates directly under <see cref="Path.GetTempPath"/>, named <c>dagline-harness-</c>
+/// and random characters, through <see cref="Directory.CreateTempSubdirectory"/>, so on Unix only the current user can open
+/// it. Every later run continues that journal, as <see cref="Journal.Continue"/> does. So a task gets back in a later run the
+/// checkpoint it saved in an earlier one that ended failed or cancelled, and a task that succeeded is an earlier success that
+/// does not run again.
 /// <see cref="DisposeAsync"/> deletes the directory.
 /// </para>
 /// <para>
@@ -161,8 +163,7 @@ public sealed class TaskHarness : IAsyncDisposable
         return TaskOutcome.From(result.Snapshot[_task], watcher.Waited);
     }
 
-    private static string CreateDirectory() =>
-        Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"dagline-harness-{Guid.NewGuid():N}")).FullName;
+    private static string CreateDirectory() => Directory.CreateTempSubdirectory("dagline-harness-").FullName;
 
     private sealed class WaitWatcher(StopSignal? stopAtWait) : IReporter
     {

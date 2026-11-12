@@ -156,6 +156,11 @@ public class TaskHarnessTests
         journal.ShouldNotBeNull();
         var directory = Path.GetDirectoryName(journal)!;
         Path.GetDirectoryName(directory).ShouldBe(Path.TrimEndingDirectorySeparator(Path.GetTempPath()));
+        Path.GetFileName(directory).ShouldStartWith("dagline-harness-");
+        if (!OperatingSystem.IsWindows())
+        {
+            File.GetUnixFileMode(directory).ShouldBe(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
 
         await harness.DisposeAsync();
 

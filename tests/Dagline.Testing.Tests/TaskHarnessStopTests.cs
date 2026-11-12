@@ -4,7 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Dagline.Testing.Tests;
 
-[NotInParallel(RepeatedJournalRuns.Key)]
+[NotInParallel(DiskHeavy.Key)]
 public class TaskHarnessStopTests
 {
     private const int _repeats = 50;

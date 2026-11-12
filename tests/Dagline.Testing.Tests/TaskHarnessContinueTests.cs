@@ -50,7 +50,7 @@ public class TaskHarnessContinueTests
     }
 
     [Test]
-    [NotInParallel(RepeatedJournalRuns.Key)]
+    [NotInParallel(DiskHeavy.Key)]
     public async Task A_task_stopped_at_its_wait_re_attaches_in_the_next_run_and_the_external_system_sees_one_trigger()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)

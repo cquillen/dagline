@@ -298,7 +298,7 @@ public class CheckpointTests
     }
 
     [Test]
-    [NotInParallel(RepeatedJournalRuns.Key)]
+    [NotInParallel(DiskHeavy.Key)]
     public async Task A_save_made_during_the_grace_period_succeeds_and_is_handed_back_in_the_next_run()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -336,7 +336,7 @@ public class CheckpointTests
     }
 
     [Test]
-    [NotInParallel(RepeatedJournalRuns.Key)]
+    [NotInParallel(DiskHeavy.Key)]
     public async Task A_save_or_clearing_after_the_run_has_let_go_of_the_task_throws_and_is_not_handed_back()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)

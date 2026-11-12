@@ -5,6 +5,7 @@ namespace Dagline.Tests;
 public class KilledProcessTests
 {
     [Test]
+    [NotInParallel(DiskHeavy.Key)]
     public async Task Every_cut_of_a_real_journal_continues_with_exactly_the_successes_and_checkpoints_whose_entries_were_whole()
     {
         using var temporary = new TemporaryDirectory();
