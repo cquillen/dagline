@@ -192,4 +192,30 @@ public class JournalHoldingTests
         thrown.Version.ShouldBe(1);
         listed.Version.ShouldBe(1);
     }
+
+    [Test]
+    public async Task A_journal_saved_with_a_byte_order_mark_keeps_every_entry_through_later_runs()
+    {
+        using var temporary = new TemporaryDirectory();
+        var fail = true;
+        var builder = new GraphBuilder();
+        var load = builder.Task("load", _ => Task.CompletedTask);
+        var publish = builder.Task("publish", context => fail ? throw context.Fail("not yet") : Task.CompletedTask).Requires(load);
+        var graph = builder.Build();
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var id = first.Snapshot.Journal!.Id;
+        var file = temporary.Combine($"{id}.journal");
+        await File.WriteAllBytesAsync(file, [0xEF, 0xBB, 0xBF, .. await File.ReadAllBytesAsync(file)]);
+
+        var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) });
+        fail = false;
+        var third = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) });
+
+        second.Snapshot[load.Path].IsEarlierSuccess.ShouldBeTrue();
+        second.Snapshot[publish.Path].Status.ShouldBe(NodeStatus.Failed);
+        third.Outcome.ShouldBe(RunOutcome.Complete);
+        third.Snapshot[load.Path].IsEarlierSuccess.ShouldBeTrue();
+        third.Snapshot[publish.Path].IsEarlierSuccess.ShouldBeFalse();
+        third.Snapshot.Journal!.Run.ShouldBe(3);
+    }
 }

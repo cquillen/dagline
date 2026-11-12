@@ -245,10 +245,14 @@ internal sealed class JournalFile : IDisposable
         var stream = claimed.Stream;
         try
         {
-            using var reader = new StreamReader(stream, _encoding, leaveOpen: true);
-            var whole = WholeLines(reader.ReadToEnd());
-            var fold = Read(new StringReader(whole), path);
-            stream.SetLength(_encoding.GetByteCount(whole));
+            var bytes = new byte[stream.Length];
+            stream.ReadExactly(bytes);
+
+            // Measured in the file's own bytes, so that a byte order mark, which the reader skips, is not cut from the last line.
+            var wholeLength = bytes.AsSpan().LastIndexOf(_lineFeed) + 1;
+            using var reader = new StreamReader(new MemoryStream(bytes, 0, wholeLength), _encoding);
+            var fold = Read(reader, path);
+            stream.SetLength(wholeLength);
             stream.Seek(0, SeekOrigin.End);
             return new JournalFile(claimed, fold);
         }
