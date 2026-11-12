@@ -261,6 +261,32 @@ Console.WriteLine($"{result.Snapshot.NeverReached.Count} tasks were never reache
 
 The run outcome is **stopped** when a stop was requested and at least one task has not succeeded. It takes precedence over incomplete, and maps to exit code 2, so a script can tell a run that was cut short from one that failed. A run in which every task succeeded despite the stop, such as one whose last task succeeded as the stop arrived, is **complete**, and so is a graph with no tasks.
 
+## When a journal write fails
+
+A run on a [journal](journals.md) writes to it all through the run. If a write fails, because the disk is full or the file is gone, the run can no longer record what it does, so Dagline stops it rather than let hours of unrecorded work pile up:
+
+- Dagline requests the stop itself. A <xref:Dagline.StopRequested> event is published with `By` set to <xref:Dagline.StopRequester.Dagline>, unless a stop was already in progress, and from then on the stop is like any other: nothing new starts, running tasks see their token signalled, and the run waits the grace period.
+- Any request on your app's `StopSignal`, the first included, ends that wait at once, as a second request does after a stop your app asked for.
+- A task that the step whose write failed had already started still starts, and the stop signals it at once.
+- Nothing more is written to the journal. Events still describe what happens, so reporters show the run to its end, but none of it is recorded.
+- The run ends with an error and no run outcome: <xref:Dagline.RunEnded> carries a <xref:Dagline.JournalWriteException> in `Error`, with `Outcome` null, and `RunAsync` throws that exception once reporters have handled every event. Its `Snapshot` is the final snapshot, which has an end time and no run outcome, and its inner exception is the file system's own. `ReporterErrors` is not available.
+- A checkpoint save that fails, or that comes after a failed write, throws `JournalWriteException` to the task that called it, with the snapshot as of that save.
+
+```csharp
+try
+{
+    var result = await Runner.RunAsync(graph, options, stop);
+    return result.Outcome.ToExitCode();
+}
+catch (JournalWriteException failed)
+{
+    Console.Error.WriteLine($"{failed.Message} ({failed.Snapshot.Counts[NodeStatus.Succeeded]} tasks had succeeded)");
+    return 3;
+}
+```
+
+The journal has no end recorded, so <xref:Dagline.Journals.ListAsync*> lists it as `Died`. Once the cause is fixed it can be continued like any other, keeping every success that was recorded before the failure.
+
 ## Exit codes
 
 Dagline never sets the exit code of your process. <xref:Dagline.RunOutcomeExtensions.ToExitCode*> gives a default mapping that you are free not to use:

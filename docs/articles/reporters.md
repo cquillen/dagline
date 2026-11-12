@@ -22,9 +22,9 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.WarningAdded> | When a running task adds a warning that is kept: the first 100 of each task. | The path of the task and the warning. |
 | <xref:Dagline.WaitingChanged> | When a running task begins waiting on an external system and when it stops: once each per wait, however many waiting scopes overlap. | The path of the task, whether it is now waiting, the text saying what it waits for, and when the wait began. |
 | <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it. | The path of the group, its status and its count of tasks per status. |
-| <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
+| <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | Who asked, `By`: the app through its `StopSignal`, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
 | <xref:Dagline.StoppedWaiting> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
-| <xref:Dagline.RunEnded> | Last, once per run. | The run outcome. |
+| <xref:Dagline.RunEnded> | Last, once per run. | Exactly one of the run outcome and an error: a run whose journal could no longer be written ends with a `JournalWriteException` in `Error` and a null `Outcome`. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 

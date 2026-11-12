@@ -18,7 +18,7 @@ What is recorded:
 
 Progress, waiting, pending and ready are never recorded, and neither is the status of a group, which is derived. Every time is UTC.
 
-When a write fails during a run, because the disk is full or the file is gone, Dagline treats it as a stop: nothing new starts, running tasks are signalled, and the run waits the grace period (ADR 0004). The run then ends with an error and not with a run outcome. A run that can no longer record must not keep starting work, and what it did is not reliably complete, incomplete or stopped. A checkpoint save that fails also throws to the task that called it. Such a run usually cannot record its end either, so the listing shows it as died, the same as a killed process (ADR 0007).
+When a write fails during a run, because the disk is full or the file is gone, Dagline treats it as a stop: nothing new starts, running tasks are signalled, and the run waits the grace period (ADR 0004). A task that the failing step had already started still starts, and the stop signals it at once. The run then ends with an error and not with a run outcome. A run that can no longer record must not keep starting work, and what it did is not reliably complete, incomplete or stopped. A checkpoint save that fails also throws to the task that called it. Such a run usually cannot record its end either, so the listing shows it as died, the same as a killed process (ADR 0007).
 
 ## Considered options
 

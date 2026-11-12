@@ -131,7 +131,7 @@ The second count matters when a journal is continued with a smaller graph. The r
 | `Incomplete` | A task failed or was blocked. |
 | `Stopped` | The run was asked to stop before every task succeeded. |
 | `InUse` | A run holds the journal right now. Continuing or deleting it throws `JournalInUseException`. |
-| `Died` | The latest run recorded no end and nothing holds the journal: its process was killed, its machine went down, or the journal's first run was never recorded. |
+| `Died` | The latest run recorded no end and nothing holds the journal: its process was killed, its machine went down, a journal write failed, or the journal's first run was never recorded. |
 
 A journal that died can be continued like any other. Its successes are kept, and a task that was running when it died runs again.
 
@@ -168,6 +168,18 @@ Dagline never deletes or expires a journal itself. How long a record is kept is 
 
 A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start and the earlier successes it set aside, each task's start, each task's settle with its whole outcome, each [checkpoint](writing-tasks.md#checkpoints) saved or cleared, and each run's end. Progress, waiting and the status of a group are never recorded.
 
-Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write.
+Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write. A new journal's first line and its first run's start reach the disk before any task starts, and on Unix systems so does the journal's entry in its directory, so the file itself survives a crash.
 
 The file is readable text, so you can look into it with any tool when something went wrong. Its format is not a stable contract, and may change between early releases. Anyone who can read the directory can read the file, so a task's outcome and its checkpoint must never hold secrets.
+
+## After a crash
+
+When the process is killed, the machine crashes or the power goes, the journal keeps every success and every checkpoint whose entry reached the disk, which by the flushes above is every success that any later work started from and every checkpoint save that returned. Continue it as you would any other: the successes are earlier successes, and every other task runs, a task that was running when the process died included, with its checkpoint handed back.
+
+The process may die in the middle of a write, leaving the last line of the file cut short. A journal opened to continue drops that line and trims the file back to the end of its last whole line before the run appends anything, so the file reads cleanly in every later run. The listing drops it too, without changing the file. A run that died recorded no end, so the listing shows its journal as `Died`.
+
+This promise holds as far as the storage device honours a flush. A disk or controller that acknowledges a write it has only cached can still lose it in a power cut.
+
+## When a journal write fails
+
+If the journal can no longer be written during a run, because the disk is full or the file is gone, Dagline stops the run itself, ends it with a <xref:Dagline.JournalWriteException>, and writes nothing more to the journal. The journal then has no end recorded, lists as `Died`, and can be continued once the cause is fixed. [Running and stopping](running-and-stopping.md#when-a-journal-write-fails) describes what the run does.
