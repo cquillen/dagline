@@ -10,6 +10,9 @@ namespace Dagline;
 /// started, or not at all, has no settle.
 /// </para>
 /// <para>
+/// A path's checkpoint is its latest save, and stands until a later clearing or a later settle that is a success.
+/// </para>
+/// <para>
 /// A new rule of reading, such as a set-aside or a checkpoint, is a case in <see cref="Add"/> and what it keeps per path.
 /// It is not thread-safe: it is folded once, before the run exists, and only read after that.
 /// </para>
@@ -19,6 +22,7 @@ internal sealed class JournalFold
     private readonly Dictionary<string, TaskSettledEntry> _latestSettles = new(StringComparer.Ordinal);
     private readonly HashSet<string> _setAside = new(StringComparer.Ordinal);
     private readonly HashSet<string> _paths = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _checkpoints = new(StringComparer.Ordinal);
 
     private JournalFold(HeaderEntry header)
     {
@@ -69,6 +73,12 @@ internal sealed class JournalFold
             ? settled
             : null;
 
+    /// <summary>
+    /// The checkpoint of the task at <paramref name="path"/>: its latest save, unless it was cleared or the task succeeded since,
+    /// whatever else is recorded in between. Empty when there is none.
+    /// </summary>
+    public string CheckpointAt(NodePath path) => _checkpoints.GetValueOrDefault(path.ToString(), "");
+
     private void Add(JournalEntry entry)
     {
         switch (entry)
@@ -83,10 +93,21 @@ internal sealed class JournalFold
                 _paths.Add(settled.Path);
                 _latestSettles[settled.Path] = settled;
                 _setAside.Remove(settled.Path);
+                if (settled.Status is NodeStatus.Succeeded)
+                {
+                    _checkpoints.Remove(settled.Path);
+                }
+
                 break;
             case SetAsideEntry setAside:
                 _paths.Add(setAside.Path);
                 _setAside.Add(setAside.Path);
+                break;
+            case CheckpointSavedEntry saved:
+                _checkpoints[saved.Path] = saved.Text;
+                break;
+            case CheckpointClearedEntry cleared:
+                _checkpoints.Remove(cleared.Path);
                 break;
         }
     }

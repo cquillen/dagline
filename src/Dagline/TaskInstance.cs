@@ -11,7 +11,7 @@ namespace Dagline;
 /// </para>
 /// <para>
 /// A report, an opened waiting scope and a closed waiting scope apply only while the task is running. On a task that is not running,
-/// such as one the run has let go of, each is ignored and gives <see langword="null"/>.
+/// such as one the run has let go of, each is ignored and gives <see langword="null"/>. A change of checkpoint on such a task throws instead.
 /// </para>
 /// <para>
 /// It holds the task's data itself, and makes a <see cref="NodeSnapshot"/> of it for each change without keeping one.
@@ -21,7 +21,8 @@ namespace Dagline;
 /// <para>It is not thread-safe: the run calls it under its lock.</para>
 /// </remarks>
 /// <param name="task">The task this is an instance of.</param>
-internal sealed class TaskInstance(BuiltTask task)
+/// <param name="checkpoint">The checkpoint the journal hands back to the task, or empty for none.</param>
+internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
 {
     /// <summary>How many warnings, and separately how many detail lines, are kept for one task. The rest are counted.</summary>
     private const int _kept = 100;
@@ -46,6 +47,12 @@ internal sealed class TaskInstance(BuiltTask task)
     private bool _isEarlierSuccess;
 
     public NodeStatus Status { get; private set; } = NodeStatus.Pending;
+
+    /// <summary>
+    /// The task's checkpoint: what the journal handed back, or what the task last saved in this run. Empty when there is none.
+    /// It is never part of a snapshot.
+    /// </summary>
+    public string Checkpoint { get; private set; } = checkpoint;
 
     /// <summary>
     /// The instance of a task that begins the run as an earlier success: succeeded, with the outcome and settle time an earlier run
@@ -268,6 +275,33 @@ internal sealed class TaskInstance(BuiltTask task)
         _openWaitingScopes--;
 
         return _openWaitingScopes > 0 ? Changed() : EndWaiting(now);
+    }
+
+    /// <summary>
+    /// Replaces the task's checkpoint with <paramref name="text"/>, which clears it when empty. Unlike a report, it throws on a task
+    /// that is not running, since a caller must never believe a checkpoint was kept when it was not.
+    /// </summary>
+    /// <returns>
+    /// <see langword="false"/> when nothing changed because the task cleared a checkpoint it did not have; <see langword="true"/> otherwise,
+    /// a save of the text it already had included.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
+    public bool ChangeCheckpoint(string text)
+    {
+        if (!IsRunning)
+        {
+            throw new InvalidOperationException(
+                $"The task '{task.Path}' cannot change its checkpoint: it is {Status.ToString().ToLowerInvariant()}, "
+                + "so the run no longer keeps anything it does. A task changes its checkpoint only while it is running.");
+        }
+
+        if (text.Length == 0 && Checkpoint.Length == 0)
+        {
+            return false;
+        }
+
+        Checkpoint = text;
+        return true;
     }
 
     private TaskChange EndWaiting(DateTimeOffset now)

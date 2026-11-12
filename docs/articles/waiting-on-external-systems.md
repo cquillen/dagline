@@ -159,3 +159,75 @@ catch (OperationCanceledException) when (context.CancellationToken.IsCancellatio
 ```
 
 Keep that cleanup within the grace period: once the run lets go of the task, nothing more it does is recorded.
+
+## Checkpoints: re-attaching instead of starting twice
+
+A task that starts work in an external system should not start it a second time when a run fails, is stopped or is killed, and its [journal](journals.md) is continued. A task does this with a **checkpoint**: a small piece of text, such as the external job's id, that Dagline keeps for the task and hands back when the task runs again in a run that continues the journal.
+
+- <xref:Dagline.TaskContext.Checkpoint> is the task's checkpoint: what the journal handed back when the task started, or what the task last saved in this run. It is empty when there is none.
+- <xref:Dagline.TaskContext.SaveCheckpointAsync(System.String,System.Threading.CancellationToken)> replaces it, and completes only once the text is flushed to the disk. Saving an empty string clears it.
+- <xref:Dagline.TaskContext.ClearCheckpointAsync(System.Threading.CancellationToken)> clears it. Clearing when there is none writes nothing.
+
+Dagline keeps the checkpoint through a failure, a cancellation and a killed process, and discards it when the task succeeds. It is private to the task: it is in no event and no snapshot, so no reporter ever shows it. Put an external id that the operator should see in the task's progress or outcome as well.
+
+### Trigger or re-attach
+
+The pattern is a few lines at the top of the task: start the work unless the checkpoint says it was started, then wait for it.
+
+```csharp
+builder.Task("export", async context =>
+{
+    var job = context.Checkpoint;
+    if (job == "")
+    {
+        job = await jobs.SubmitAsync("export", context.CancellationToken);
+        await context.SaveCheckpointAsync(job);
+    }
+
+    context.Status($"job {job}");
+    await context.WaitUntil(
+        TimeSpan.FromSeconds(30),
+        async token => (await jobs.GetStateAsync(job, token)).IsFinished,
+        $"job {job} to finish");
+
+    context.Message($"job {job} finished");
+});
+```
+
+When the run is stopped, killed or fails while the job is in flight, the next run that continues the journal hands `job` back, and the task waits for the same job instead of submitting a new one. Once the task succeeds, the checkpoint is gone.
+
+### Clearing a checkpoint for a fresh start
+
+A checkpoint survives a failure, so by default a later run re-attaches to the same external work. That suits work that was fixed and re-run in place. When the external work itself has failed and a later run should start fresh work instead, clear the checkpoint before reporting the failure:
+
+```csharp
+var state = await jobs.GetStateAsync(job, token);
+if (state.HasFailed)
+{
+    await context.ClearCheckpointAsync(CancellationToken.None);
+    throw context.Fail($"job {job} failed", state.Errors);
+}
+```
+
+### Do not pass the context's token to the save
+
+The save's token cancels only a save that has not begun to write. Do not pass <xref:Dagline.TaskContext.CancellationToken> to a save that records work the task has just started: if the run is stopped between the start and the save, the save is cancelled, nothing is recorded, and a later run starts the work a second time. Pass nothing, or `CancellationToken.None`, as the examples above do.
+
+A save made during the grace period after a stop succeeds and is handed back in the next run. A save or a clearing made once the task has settled, or after the run has let go of it, throws `InvalidOperationException`, because nothing it did would be kept.
+
+### The window between the start and the save
+
+One window stays open. If the process dies after the external system has accepted the work and before the save is on disk, the next run finds no checkpoint and starts the work again. Dagline cannot close that window, but the task can, where the external system allows, in one of two ways:
+
+- **Save an id of your own before starting the work**, and start the work with it as a correlation id. The checkpoint then says only that a start may have happened, since the process can also die between the save and the start. When the task runs again, it settles which it was: it asks the external system for that id, or starts the work in a way that is idempotent on it.
+- **Look the work up by a predictable name before starting it**, such as one built from the task's path and the journal's id.
+
+A lookup closes the window only if finding nothing rules out a start the external system has already accepted. Where it cannot, the start itself has to be idempotent on that id or name. [ADR 0006](https://github.com/cquillen/dagline/blob/main/docs/adr/0006-a-checkpoint-is-the-tasks-own-text-kept-until-the-task-succeeds.md) gives the reasoning.
+
+### The rules
+
+- A checkpoint is at most 4,096 bytes as UTF-8, counted in bytes and not characters. A longer one is refused at the call with `ArgumentException`, so a test finds the limit before a long run does.
+- Each save is a flush to the disk, which holds up the run for a few milliseconds. A checkpoint is for milestones, not for progress.
+- With `Journal.None` the checkpoint lives in memory for the run: it starts empty, reads back what the task saved, and the same rules apply. A task's code is therefore the same in a test with no journal.
+- A new journal has no checkpoints. A checkpoint whose path is not in a later run's graph is kept, and handed back if the path returns.
+- The journal is readable text: never put a secret in a checkpoint.
