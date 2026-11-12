@@ -19,6 +19,8 @@ internal sealed class JournalLock : IDisposable
 {
     private const int _sharingViolation = 32;
     private const int _lockViolation = 33;
+    private const int _wouldBlockOnLinux = 11;
+    private const int _wouldBlockOnBsd = 35;
 
     private readonly FileStream _file;
 
@@ -77,10 +79,12 @@ internal sealed class JournalLock : IDisposable
         }
     }
 
-    // Windows reports a file another handle has open as a sharing or lock violation. Elsewhere .NET reports a failed flock as a plain
-    // IOException, while every other failure to open is a subtype or carries another code.
+    // Windows reports a file another handle has open as a sharing or lock violation. Elsewhere .NET reports a flock refused because
+    // another holds it as a plain IOException whose HResult is the raw errno, EWOULDBLOCK, and a full disk the same way with its own.
     private static bool IsClaimedElsewhere(IOException failure)
         => OperatingSystem.IsWindows()
             ? (failure.HResult & 0xFFFF) is _sharingViolation or _lockViolation
-            : failure.GetType() == typeof(IOException);
+            : failure.GetType() == typeof(IOException) && failure.HResult == WouldBlock;
+
+    private static int WouldBlock => OperatingSystem.IsLinux() || OperatingSystem.IsAndroid() ? _wouldBlockOnLinux : _wouldBlockOnBsd;
 }
