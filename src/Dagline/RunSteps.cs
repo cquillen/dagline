@@ -68,7 +68,7 @@ internal sealed class RunSteps
         {
             var instance = journal?.Earlier.EarlierSuccessAt(task.Path) is { } recorded
                 ? TaskInstance.EarlierSuccess(task, recorded)
-                : new TaskInstance(task);
+                : new TaskInstance(task, journal?.Earlier.CheckpointAt(task.Path) ?? "");
             _instances[task.Position] = instance;
             if (instance.Status is NodeStatus.Succeeded)
             {
@@ -223,6 +223,32 @@ internal sealed class RunSteps
     {
         LetGo(StoppedWaitingReason.GracePeriodOver, now);
         return Decided();
+    }
+
+    /// <summary>The checkpoint of a task as it is now: empty when there is none.</summary>
+    public string CheckpointOf(BuiltTask task) => InstanceOf(task).Checkpoint;
+
+    /// <summary>
+    /// A running task saves a checkpoint, or clears it when <paramref name="text"/> is empty, through its <see cref="TaskContext"/>.
+    /// It makes no step, no event and no change to any snapshot.
+    /// </summary>
+    /// <param name="task">The task whose checkpoint changes.</param>
+    /// <param name="text">The checkpoint, or empty to clear it.</param>
+    /// <param name="now">When the checkpoint changes. A run with no journal records nothing, and need not read the clock for it.</param>
+    /// <returns>
+    /// The entry to write and flush before the call returns, or <see langword="null"/> when there is nothing to write: the run has no journal,
+    /// or the task cleared a checkpoint it did not have.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
+    public JournalEntry? ChangeCheckpoint(BuiltTask task, string text, DateTimeOffset now)
+    {
+        if (!InstanceOf(task).ChangeCheckpoint(text) || _journal is null)
+        {
+            return null;
+        }
+
+        var path = task.Path.ToString();
+        return text.Length == 0 ? new CheckpointClearedEntry(path, now) : new CheckpointSavedEntry(path, now, text);
     }
 
     /// <summary>

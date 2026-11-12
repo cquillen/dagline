@@ -23,6 +23,8 @@ namespace Dagline;
 [JsonDerivedType(typeof(TaskStartedEntry), "taskStarted")]
 [JsonDerivedType(typeof(TaskSettledEntry), "taskSettled")]
 [JsonDerivedType(typeof(RunEndedEntry), "runEnded")]
+[JsonDerivedType(typeof(CheckpointSavedEntry), "checkpointSaved")]
+[JsonDerivedType(typeof(CheckpointClearedEntry), "checkpointCleared")]
 internal abstract record JournalEntry;
 
 /// <summary>The first line of every journal.</summary>
@@ -92,3 +94,14 @@ internal sealed record TaskSettledEntry(
 /// <param name="Time">When the run ended.</param>
 /// <param name="Outcome">How it ended.</param>
 internal sealed record RunEndedEntry(DateTimeOffset Time, RunOutcome Outcome) : JournalEntry;
+
+/// <summary>A running task saved a checkpoint, which replaces any it had.</summary>
+/// <param name="Path">The path of the task.</param>
+/// <param name="Time">When it saved it.</param>
+/// <param name="Text">The checkpoint, never empty: saving an empty text is clearing.</param>
+internal sealed record CheckpointSavedEntry(string Path, DateTimeOffset Time, string Text) : JournalEntry;
+
+/// <summary>A running task cleared the checkpoint it had.</summary>
+/// <param name="Path">The path of the task.</param>
+/// <param name="Time">When it cleared it.</param>
+internal sealed record CheckpointClearedEntry(string Path, DateTimeOffset Time) : JournalEntry;
