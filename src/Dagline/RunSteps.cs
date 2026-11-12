@@ -166,11 +166,7 @@ internal sealed class RunSteps
         var warned = InstanceOf(task).Warn(warning, now);
         if (warned is not null)
         {
-            foreach (var group in task.Groups)
-            {
-                _warningsBeneath[group]++;
-                _groupsChanged.Add(group);
-            }
+            ChangeEachGroupAbove(task, 0, static (steps, group, _) => steps._warningsBeneath[group]++);
         }
 
         return Reported(task, warned);
@@ -587,19 +583,12 @@ internal sealed class RunSteps
         {
             RecordStatusChange(moved);
             _counts.Move(moved.From, moved.To);
-            foreach (var group in task.Groups)
-            {
-                MoveBeneath(group, moved.From, moved.To);
-            }
+            ChangeEachGroupAbove(task, moved, static (steps, group, move) => steps.MoveBeneath(group, move.From, move.To));
         }
         else if (change.Event is WaitingChanged waited)
         {
             _counts.Count(waited);
-            foreach (var group in task.Groups)
-            {
-                _groupCounts[group].Count(waited);
-                _groupsChanged.Add(group);
-            }
+            ChangeEachGroupAbove(task, waited, static (steps, group, wait) => steps._groupCounts[group].Count(wait));
         }
 
         if (change.Event is { } produced)
@@ -609,14 +598,27 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Counts one task's change of status in a group that holds it, and marks the group to be recorded for the next snapshot.
+    /// Applies a change of a task to every group above it, nearest first, and marks each group to be recorded again for the next
+    /// snapshot. The change is passed as <paramref name="change"/> so that <paramref name="apply"/> can be a static lambda,
+    /// which allocates nothing on a path a task may take very often.
+    /// </summary>
+    private void ChangeEachGroupAbove<TChange>(BuiltTask task, TChange change, Action<RunSteps, int, TChange> apply)
+    {
+        foreach (var group in task.Groups)
+        {
+            apply(this, group, change);
+            _groupsChanged.Add(group);
+        }
+    }
+
+    /// <summary>
+    /// Counts one task's change of status in a group that holds it.
     /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
     /// </summary>
     private void MoveBeneath(int group, NodeStatus from, NodeStatus to)
     {
         var counts = _groupCounts[group];
         counts.Move(from, to);
-        _groupsChanged.Add(group);
 
         if (counts.GroupStatus.IsSettled())
         {

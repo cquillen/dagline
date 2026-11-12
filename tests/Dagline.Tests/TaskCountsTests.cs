@@ -82,7 +82,7 @@ public class TaskCountsTests
         settled[1].Counts.Total.ShouldBe(4);
         settled[1].Counts.Unsucceeded.ShouldBe(2);
         settled[1].Counts.Waiting.ShouldBe(0);
-        settled[1].Counts.ShouldBe(result.Snapshot[shard.Path].Counts);
+        settled[1].Counts.ByStatus().ShouldBe(result.Snapshot[shard.Path].Counts.ByStatus());
 
         var final = result.Snapshot.Counts;
         final[NodeStatus.Succeeded].ShouldBe(2);

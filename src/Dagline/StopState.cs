@@ -13,4 +13,4 @@ namespace Dagline;
 /// longer be written. It is the same as <see cref="StopRequested.By"/>, and is set in the same step that applies the stop, so a
 /// reporter can read it from a snapshot before it has handled that event.
 /// </param>
-public sealed record StopState(DateTimeOffset RequestedAt, TimeSpan GracePeriod, DateTimeOffset? Deadline, StopRequester By = StopRequester.App);
+public sealed record StopState(DateTimeOffset RequestedAt, TimeSpan GracePeriod, DateTimeOffset? Deadline, StopRequester By);

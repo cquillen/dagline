@@ -212,6 +212,23 @@ public class WorkingAndWaitingTests
     }
 
     [Test]
+    public async Task A_waiting_task_whose_status_text_was_set_empty_shows_its_waiting_text()
+    {
+        var wait = new WaitingBody("job 17", status: "");
+        var builder = new GraphBuilder();
+        builder.Task("poll", wait.Body);
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 24);
+        wait.Begin();
+        await display.Handled("waiting poll: job 17");
+        var frame = display.NextFrame();
+        wait.Release();
+        await display.Run;
+
+        frame.ShouldContain(line => line.StartsWith("◌ poll  job 17 ", StringComparison.Ordinal));
+    }
+
+    [Test]
     public async Task The_waiting_pane_is_not_shown_when_no_task_is_waiting_and_the_working_pane_not_when_none_is_running()
     {
         var a = new PausedBody();

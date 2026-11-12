@@ -19,7 +19,7 @@ internal sealed class StatusCounts
     ];
 
     // Laid out as TaskCounts reads a tally: the count of each status, then the earlier successes, then the waiting.
-    private readonly int[] _tally = new int[TallyLength];
+    private readonly int[] _tally = new int[TaskCounts.TallyLength];
 
     // The last copy handed out, until the counts next change.
     private TaskCounts? _shown;
@@ -33,16 +33,7 @@ internal sealed class StatusCounts
         _tally[TaskCounts.EarlierSuccessesAt] = earlierSuccesses;
     }
 
-    /// <summary>How many numbers a tally of the counts takes.</summary>
-    public static int TallyLength => TaskCounts.TallyLength;
-
     public int this[NodeStatus status] => _tally[(int)status];
-
-    /// <summary>How many of the tasks are earlier successes. It is fixed when the run starts.</summary>
-    public int EarlierSuccesses => _tally[TaskCounts.EarlierSuccessesAt];
-
-    /// <summary>How many of the running tasks are waiting.</summary>
-    public int Waiting => _tally[TaskCounts.WaitingAt];
 
     /// <summary>
     /// The status of a group whose tasks, at any depth, these are.

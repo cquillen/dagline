@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace Dagline;
 
 /// <summary>
@@ -14,10 +12,9 @@ namespace Dagline;
 /// </para>
 /// <para>
 /// Only Dagline makes one. It is not a dictionary and is not enumerable: read the count of each status by its indexer.
-/// Two counts are equal when every number in them is.
 /// </para>
 /// </remarks>
-public sealed class TaskCounts : IEquatable<TaskCounts>
+public sealed class TaskCounts
 {
     private static readonly NodeStatus[] _statuses = Enum.GetValues<NodeStatus>();
 
@@ -123,44 +120,6 @@ public sealed class TaskCounts : IEquatable<TaskCounts>
         => waiting ? _ofOneWaitingTask
             : earlierSuccess ? _ofOneEarlierSuccess
             : _ofOneTask[(int)status];
-
-    /// <inheritdoc/>
-    public bool Equals(TaskCounts? other) => other is not null && _numbers.AsSpan().SequenceEqual(other._numbers);
-
-    /// <inheritdoc/>
-    public override bool Equals(object? obj) => Equals(obj as TaskCounts);
-
-    /// <inheritdoc/>
-    public override int GetHashCode()
-    {
-        var hash = new HashCode();
-        hash.AddBytes(System.Runtime.InteropServices.MemoryMarshal.AsBytes(_numbers.AsSpan()));
-        return hash.ToHashCode();
-    }
-
-    /// <summary>
-    /// The counts for a person reading a test failure or a debugger, as in <c>pending 1, running 2 (1 waiting), succeeded 3 (1 earlier)</c>:
-    /// each status that has a task, in lifecycle order. The wording may change and is not for parsing.
-    /// </summary>
-    public override string ToString()
-    {
-        var text = new StringBuilder();
-        foreach (var status in _statuses.Where(status => this[status] > 0))
-        {
-            text.Append(text.Length == 0 ? "" : ", ").Append(NameText.Of(status)).Append(' ').Append(this[status]);
-            if (status is NodeStatus.Running && Waiting > 0)
-            {
-                text.Append(" (").Append(Waiting).Append(" waiting)");
-            }
-
-            if (status is NodeStatus.Succeeded && EarlierSuccesses > 0)
-            {
-                text.Append(" (").Append(EarlierSuccesses).Append(" earlier)");
-            }
-        }
-
-        return text.Length == 0 ? "no tasks" : text.ToString();
-    }
 
     private static TaskCounts OfOne(NodeStatus status, bool waiting, bool earlierSuccess)
     {
