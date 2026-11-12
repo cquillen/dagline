@@ -36,13 +36,13 @@ public sealed class TaskHarness : IAsyncDisposable
     private string? _journalId;
     private bool _disposed;
 
-    private TaskHarness(TaskBody body, TimeProvider runClock, TimeProvider stopClock)
+    private TaskHarness(TaskBody body, TimeProvider? clock)
     {
         var builder = new GraphBuilder();
         _task = builder.Task("task", body).Path;
         _graph = builder.Build();
-        _runClock = runClock;
-        _stopClock = stopClock;
+        _runClock = clock ?? new InstantClock();
+        _stopClock = clock ?? new NeverEndingClock();
     }
 
     /// <summary>Wraps <paramref name="body"/> in a harness. Nothing runs and nothing touches the disk until the first run.</summary>
@@ -51,14 +51,15 @@ public sealed class TaskHarness : IAsyncDisposable
     /// The clock every run uses, as <see cref="RunOptions.TimeProvider"/>, and so the one the body sees as
     /// <see cref="TaskContext.TimeProvider"/>. It is used as is. With none, <see cref="RunAsync"/> uses an
     /// <see cref="InstantClock"/> with the default guard, one for the life of the harness, so its guard counts fake time across
-    /// runs, and <see cref="RunUntilWaitingThenStopAsync"/> uses a clock on which no delay ever ends.
+    /// runs, and <see cref="RunUntilWaitingThenStopAsync"/> uses a clock on which no delay ever ends, so a body that delays on
+    /// its clock before it begins waiting never reaches the wait in that call.
     /// </param>
     /// <returns>The harness. Dispose it to delete its temporary journal.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="body"/> is <see langword="null"/>.</exception>
     public static TaskHarness For(TaskBody body, TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(body);
-        return new TaskHarness(body, clock ?? new InstantClock(), clock ?? new NeverEndingClock());
+        return new TaskHarness(body, clock);
     }
 
     /// <summary>Runs the task to the end of the run and returns its outcome from the run's final snapshot.</summary>
@@ -98,7 +99,9 @@ public sealed class TaskHarness : IAsyncDisposable
     /// </para>
     /// <para>
     /// With no clock passed to <see cref="For"/>, the run uses a clock on which no delay ever ends, so the task is still waiting
-    /// when the stop arrives. A clock passed in is used as is. With an <see cref="InstantClock"/> passed in this is a race by
+    /// when the stop arrives. That holds for every delay on the clock, not only the wait's: a body that delays on its clock
+    /// before it begins waiting never reaches the wait, so the stop is never requested and the call does not return. Pass a
+    /// clock to <see cref="For"/> for such a body. A clock passed in is used as is. With an <see cref="InstantClock"/> passed in this is a race by
     /// nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is returned.
     /// </para>
     /// <para>

@@ -54,24 +54,24 @@ public class InstantClockTests
         var clock = new InstantClock();
         var firings = new List<DateTimeOffset>();
         var thirdFiring = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var disposed = new ManualResetEventSlim();
+        ITimer? timer = null;
 
-        var timer = clock.CreateTimer(
+        // Made idle and started with Change, so the callback can dispose the timer from its third firing, before a fourth.
+        timer = clock.CreateTimer(
             _ =>
             {
                 firings.Add(clock.GetUtcNow());
                 if (firings.Count == 3)
                 {
+                    timer!.Dispose();
                     thirdFiring.SetResult();
-                    disposed.Wait();
                 }
             },
             null,
-            TimeSpan.FromMinutes(1),
-            TimeSpan.FromMinutes(10));
+            Timeout.InfiniteTimeSpan,
+            Timeout.InfiniteTimeSpan);
+        timer.Change(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10));
         await thirdFiring.Task;
-        timer.Dispose();
-        disposed.Set();
         await Task.Delay(TimeSpan.FromSeconds(1), clock);
 
         firings.ShouldBe([_start.AddMinutes(1), _start.AddMinutes(11), _start.AddMinutes(21)]);
@@ -117,6 +117,44 @@ public class InstantClockTests
         await Task.Delay(TimeSpan.FromMilliseconds(1), clock);
 
         Should.Throw<ClockGuardException>(() => Task.Delay(TimeSpan.FromSeconds(1), clock));
+    }
+
+    [Test]
+    [Arguments(-2, 0)]
+    [Arguments(0, -2)]
+    [Arguments(-1000, 0)]
+    [Arguments(0, -1000)]
+    public void A_negative_due_time_or_period_other_than_infinite_is_refused_and_time_does_not_move(int dueMilliseconds, int periodMilliseconds)
+    {
+        var clock = new InstantClock();
+
+        Should.Throw<ArgumentOutOfRangeException>(() => clock.CreateTimer(
+            _ => { },
+            null,
+            TimeSpan.FromMilliseconds(dueMilliseconds),
+            TimeSpan.FromMilliseconds(periodMilliseconds)));
+
+        clock.GetUtcNow().ShouldBe(_start);
+    }
+
+    [Test]
+    public void A_timer_changed_to_a_negative_due_time_other_than_infinite_is_refused()
+    {
+        var clock = new InstantClock();
+        using var timer = clock.CreateTimer(_ => { }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+
+        Should.Throw<ArgumentOutOfRangeException>(() => timer.Change(TimeSpan.FromMinutes(-1), Timeout.InfiniteTimeSpan));
+        Should.Throw<ArgumentOutOfRangeException>(() => timer.Change(TimeSpan.Zero, TimeSpan.FromMinutes(-1)));
+    }
+
+    [Test]
+    public void An_infinite_due_time_and_period_are_accepted()
+    {
+        var clock = new InstantClock();
+
+        using var timer = clock.CreateTimer(_ => { }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+
+        timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan).ShouldBeTrue();
     }
 
     [Test]

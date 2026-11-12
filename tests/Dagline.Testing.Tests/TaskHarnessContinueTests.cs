@@ -1,7 +1,9 @@
 namespace Dagline.Testing.Tests;
 
-public class TaskHarnessRerunTests
+public class TaskHarnessContinueTests
 {
+    private const int _repeats = 50;
+
     [Test]
     public async Task A_second_run_hands_the_task_the_checkpoint_it_saved_before_failing()
     {
@@ -48,19 +50,22 @@ public class TaskHarnessRerunTests
     [Test]
     public async Task A_task_stopped_at_its_wait_re_attaches_in_the_next_run_and_the_external_system_sees_one_trigger()
     {
-        var system = new FakeExternalSystem();
-        await using var harness = TaskHarness.For(context => TriggerOrReattach(context, system));
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var system = new FakeExternalSystem();
+            await using var harness = TaskHarness.For(context => TriggerOrReattach(context, system));
 
-        var stopped = await harness.RunUntilWaitingThenStopAsync();
-        var continued = await harness.RunAsync();
-        var third = await harness.RunAsync();
+            var stopped = await harness.RunUntilWaitingThenStopAsync();
+            var continued = await harness.RunAsync();
+            var third = await harness.RunAsync();
 
-        stopped.Status.ShouldBe(NodeStatus.Cancelled);
-        stopped.Waited.ShouldBeTrue();
-        continued.Status.ShouldBe(NodeStatus.Succeeded);
-        continued.Message.ShouldBe("job-1 finished");
-        third.Status.ShouldBe(NodeStatus.Succeeded);
-        system.Triggers.ShouldBe(1);
+            stopped.Status.ShouldBe(NodeStatus.Cancelled);
+            stopped.Waited.ShouldBeTrue();
+            continued.Status.ShouldBe(NodeStatus.Succeeded);
+            continued.Message.ShouldBe("job-1 finished");
+            third.Status.ShouldBe(NodeStatus.Succeeded);
+            system.Triggers.ShouldBe(1);
+        }
     }
 
     private static async Task TriggerOrReattach(TaskContext context, FakeExternalSystem system)

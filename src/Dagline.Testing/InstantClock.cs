@@ -14,9 +14,10 @@ namespace Dagline.Testing;
 /// </para>
 /// <para>
 /// A callback never runs inside the call that created or changed its timer: it is queued to the thread pool. A periodic timer
-/// fires again and again, each firing moving the time forward by its period, until it is disposed or changed. Do not hand the
-/// clock to anything that keeps a periodic timer for the life of a run, such as a reporter: that timer would keep firing and
-/// spin.
+/// fires again and again, each firing moving the time forward by its period, until it is disposed or changed. The guard does not
+/// stop it: the guard is checked only when a delay or timer is made, so a periodic timer already made keeps firing past it. Do
+/// not hand the clock to anything that keeps a periodic timer for the life of a run, such as a reporter: that timer would keep
+/// firing and spin.
 /// </para>
 /// <para>
 /// The clock is safe to use from several threads at once.
@@ -28,6 +29,8 @@ public sealed class InstantClock : TimeProvider
 
     private static readonly TimeSpan _defaultGuard = TimeSpan.FromDays(7);
 
+    private static readonly TimeSpan _maxTime = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
+
     private readonly TimeSpan _guard;
     private long _elapsedTicks;
 
@@ -37,7 +40,8 @@ public sealed class InstantClock : TimeProvider
     /// <see cref="CreateTimer"/>, and so every <see cref="Task.Delay(TimeSpan, TimeProvider)"/> on the clock, throws
     /// <see cref="ClockGuardException"/>. Inside a task body that fails the task as an unexpected failure, so a check that never
     /// returns <see langword="true"/> ends the task instead of spinning for ever. The default is 7 days. Set it higher for a task
-    /// that legitimately waits for longer.
+    /// that legitimately waits for longer. The guard is checked only when a delay or timer is made: a periodic timer already
+    /// made keeps firing, and moving the time forward, past the guard until it is disposed or changed.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="guard"/> is zero or less.</exception>
     public InstantClock(TimeSpan? guard = null)
@@ -73,11 +77,21 @@ public sealed class InstantClock : TimeProvider
     /// <param name="period">
     /// The fake time between later firings. <see cref="Timeout.InfiniteTimeSpan"/> or zero makes a timer that fires once.
     /// </param>
-    /// <returns>The timer. Disposing it stops any firing not yet begun.</returns>
+    /// <returns>
+    /// The timer. Disposing it stops any firing not yet begun. Its <see cref="ITimer.Change"/> validates its arguments as this
+    /// method does.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="callback"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="dueTime"/> or <paramref name="period"/> is negative other than <see cref="Timeout.InfiniteTimeSpan"/>, or
+    /// more than <see cref="uint.MaxValue"/> - 1 milliseconds, the same range <see cref="TimeProvider.System"/> accepts. Time
+    /// does not move.
+    /// </exception>
     /// <exception cref="ClockGuardException">More fake time than the clock's guard has passed since the clock was made.</exception>
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
         ArgumentNullException.ThrowIfNull(callback);
+        ThrowIfOutOfRange(dueTime, period);
         ThrowIfPastGuard();
         var timer = new InstantTimer(this, callback, state);
         timer.Change(dueTime, period);
@@ -94,6 +108,21 @@ public sealed class InstantClock : TimeProvider
         }
     }
 
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="dueTime"/> or <paramref name="period"/> is outside the range <see cref="TimeProvider.System"/> accepts.
+    /// </exception>
+    internal static void ThrowIfOutOfRange(TimeSpan dueTime, TimeSpan period)
+    {
+        ThrowIfOutOfRange(dueTime, nameof(dueTime));
+        ThrowIfOutOfRange(period, nameof(period));
+    }
+
+    private static void ThrowIfOutOfRange(TimeSpan time, string name)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(time, Timeout.InfiniteTimeSpan, name);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(time, _maxTime, name);
+    }
+
     private TimeSpan Elapsed => TimeSpan.FromTicks(Interlocked.Read(ref _elapsedTicks));
 
     private void MoveForward(TimeSpan by) => Interlocked.Add(ref _elapsedTicks, by.Ticks);
@@ -106,6 +135,7 @@ public sealed class InstantClock : TimeProvider
 
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
+            ThrowIfOutOfRange(dueTime, period);
             long schedule;
             lock (_gate)
             {

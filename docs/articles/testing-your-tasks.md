@@ -48,7 +48,7 @@ A harness does one run at a time and is not safe to call from two threads at onc
 
 With no clock passed, `RunAsync` runs on an <xref:Dagline.Testing.InstantClock>: a `TimeProvider` on which every delay and timer ends at once, and whose time jumps forward by the delay as it does. A task that measures elapsed time, such as one with a deadline of its own, still sees time pass. The clock starts at midnight UTC on 1 January 2000 on every run, its local time zone is UTC, and time only moves forward.
 
-A check that never returns `true` would spin for ever on such a clock, so the clock has a guard. Once more fake time than the guard has passed since the clock was made, making a delay or timer on it throws <xref:Dagline.Testing.ClockGuardException>. In a task body that fails the task, the run ends, and the harness throws `ClockGuardException` in place of returning the outcome, so the test fails with a clear exception instead of hanging. The default guard is 7 days of fake time. One default clock serves the whole life of a harness, so its guard counts fake time across runs.
+A check that never returns `true` would spin for ever on such a clock, so the clock has a guard. Once more fake time than the guard has passed since the clock was made, making a delay or timer on it throws <xref:Dagline.Testing.ClockGuardException>. In a task body that fails the task, the run ends, and the harness throws `ClockGuardException` in place of returning the outcome, so the test fails with a clear exception instead of hanging. The default guard is 7 days of fake time. The guard is checked only when a delay or timer is made, so a periodic timer made before the guard was passed keeps firing past it; see [Do not hand an instant clock to a reporter](#do-not-hand-an-instant-clock-to-a-reporter). One default clock serves the whole life of a harness, so its guard counts fake time across runs.
 
 A task that legitimately waits for longer gets a clock with a bigger guard:
 
@@ -113,7 +113,7 @@ outcome.Message.ShouldBe("stopped before the export finished");
 
 A task that settles without ever waiting returns its own outcome from the call, so a test of a fast path does not hang.
 
-With no clock passed, this call runs on a clock on which no delay ever ends, so the task is still waiting when the stop arrives. That clock is internal to the harness. A clock you pass to `For` is used as is here too. With an `InstantClock` passed, the call is a race by nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is the one returned.
+With no clock passed, this call runs on a clock on which no delay ever ends, so the task is still waiting when the stop arrives. That clock is internal to the harness. Every delay on it never ends, not only the wait's, so a body that delays on `context.TimeProvider` before it begins waiting never reaches the wait: the stop is never requested and the call does not return. Pass a clock to `For` for such a body. A clock you pass to `For` is used as is here too. With an `InstantClock` passed, the call is a race by nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is the one returned.
 
 Every run of the harness has an unlimited grace period, so the run never lets go of the task. A body that ignores the stop keeps the call from returning, and your test framework's timeout is what fails the test.
 
@@ -165,7 +165,7 @@ public async Task A_failed_export_blocks_the_report()
 
 ### Do not hand an instant clock to a reporter
 
-A periodic timer on an `InstantClock` fires again and again, moving time forward each time, until it is disposed. Anything that keeps a periodic timer for the life of a run would spin on it. Reporters do: the plain-text reporter and the terminal display both refresh on a timer. Give a reporter a clock of its own, such as `TimeProvider.System`, or leave reporters out of a test run.
+A periodic timer on an `InstantClock` fires again and again, moving time forward each time, until it is disposed, and the guard does not stop it, because the guard is checked only when a delay or timer is made. Anything that keeps a periodic timer for the life of a run would spin on it. Reporters do: the plain-text reporter and the terminal display both refresh on a timer. Give a reporter a clock of its own, such as `TimeProvider.System`, or leave reporters out of a test run.
 
 ## When to pass Microsoft's fake clock instead
 

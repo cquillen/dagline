@@ -54,54 +54,63 @@ public class TaskHarnessStopTests
     [Test]
     public async Task A_task_that_settles_without_waiting_comes_back_with_its_own_outcome()
     {
-        await using var harness = TaskHarness.For(context =>
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
-            context.Message("nothing to wait for");
-            return Task.CompletedTask;
-        });
+            await using var harness = TaskHarness.For(context =>
+            {
+                context.Message("nothing to wait for");
+                return Task.CompletedTask;
+            });
 
-        var outcome = await harness.RunUntilWaitingThenStopAsync();
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
 
-        outcome.Status.ShouldBe(NodeStatus.Succeeded);
-        outcome.Message.ShouldBe("nothing to wait for");
-        outcome.Waited.ShouldBeFalse();
+            outcome.Status.ShouldBe(NodeStatus.Succeeded);
+            outcome.Message.ShouldBe("nothing to wait for");
+            outcome.Waited.ShouldBeFalse();
+        }
     }
 
     [Test]
     public async Task With_no_clock_passed_the_run_is_on_a_clock_that_is_not_public_and_on_which_no_delay_ends()
     {
-        TimeProvider? seen = null;
-        await using var harness = TaskHarness.For(async context =>
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
-            seen = context.TimeProvider;
-            await context.WaitUntil(TimeSpan.FromMilliseconds(1), _ => Task.FromResult(false));
-        });
+            TimeProvider? seen = null;
+            await using var harness = TaskHarness.For(async context =>
+            {
+                seen = context.TimeProvider;
+                await context.WaitUntil(TimeSpan.FromMilliseconds(1), _ => Task.FromResult(false));
+            });
 
-        var outcome = await harness.RunUntilWaitingThenStopAsync();
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
 
-        outcome.Status.ShouldBe(NodeStatus.Cancelled);
-        seen.ShouldNotBeNull();
-        seen.ShouldNotBeOfType<InstantClock>();
-        seen.GetType().IsVisible.ShouldBeFalse();
+            outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            seen.ShouldNotBeNull();
+            seen.ShouldNotBeOfType<InstantClock>();
+            seen.GetType().IsVisible.ShouldBeFalse();
+        }
     }
 
     [Test]
     public async Task A_clock_passed_in_is_used_as_is()
     {
-        var clock = new FakeTimeProvider();
-        TimeProvider? seen = null;
-        await using var harness = TaskHarness.For(
-            async context =>
-            {
-                seen = context.TimeProvider;
-                await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
-            },
-            clock);
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var clock = new FakeTimeProvider();
+            TimeProvider? seen = null;
+            await using var harness = TaskHarness.For(
+                async context =>
+                {
+                    seen = context.TimeProvider;
+                    await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
+                },
+                clock);
 
-        var outcome = await harness.RunUntilWaitingThenStopAsync();
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
 
-        outcome.Status.ShouldBe(NodeStatus.Cancelled);
-        seen.ShouldBeSameAs(clock);
+            outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            seen.ShouldBeSameAs(clock);
+        }
     }
 
     [Test]
@@ -122,7 +131,7 @@ public class TaskHarnessStopTests
                     }
                     catch (OperationCanceledException)
                     {
-                        for (var step = 0; step < 10; step++)
+                        for (var hour = 0; hour < 10; hour++)
                         {
                             await Task.Delay(TimeSpan.FromHours(1), context.TimeProvider);
                         }
@@ -143,19 +152,22 @@ public class TaskHarnessStopTests
     [Test]
     public async Task A_second_run_hands_back_the_checkpoint_saved_before_the_stop()
     {
-        var seen = new ConcurrentQueue<string>();
-        await using var harness = TaskHarness.For(async context =>
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
-            seen.Enqueue(context.Checkpoint);
-            await context.SaveCheckpointAsync("job-17");
-            await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(context.Checkpoint == "job-17" && seen.Count == 2));
-        });
+            var seen = new ConcurrentQueue<string>();
+            await using var harness = TaskHarness.For(async context =>
+            {
+                seen.Enqueue(context.Checkpoint);
+                await context.SaveCheckpointAsync("job-17");
+                await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(context.Checkpoint == "job-17" && seen.Count == 2));
+            });
 
-        var first = await harness.RunUntilWaitingThenStopAsync();
-        var second = await harness.RunAsync();
+            var first = await harness.RunUntilWaitingThenStopAsync();
+            var second = await harness.RunAsync();
 
-        first.Status.ShouldBe(NodeStatus.Cancelled);
-        second.Status.ShouldBe(NodeStatus.Succeeded);
-        seen.ShouldBe(["", "job-17"]);
+            first.Status.ShouldBe(NodeStatus.Cancelled);
+            second.Status.ShouldBe(NodeStatus.Succeeded);
+            seen.ShouldBe(["", "job-17"]);
+        }
     }
 }
