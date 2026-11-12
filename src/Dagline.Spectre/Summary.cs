@@ -18,7 +18,7 @@ internal static class Summary
     /// <param name="glyphs">The glyphs to draw with.</param>
     public static IReadOnlyList<StyledLine> Lines(RunEnded ended, Snapshot snapshot, int width, Glyphs glyphs) =>
     [
-        StyledLine.Of(string.Concat(Enumerable.Repeat(glyphs.Rule, Math.Max(1, width))), Palette.Dim),
+        StyledLine.Of(DisplayText.Repeat(glyphs.Rule, Math.Max(1, width)), Palette.Dim),
         Outcome(ended, snapshot, glyphs),
         // A run ends with an error only when its journal can no longer be written, and the exception's message says why.
         .. ended.Error is { } error ? [StyledLine.Of(_indent + error.Message, Palette.Failed)] : Array.Empty<StyledLine>(),
