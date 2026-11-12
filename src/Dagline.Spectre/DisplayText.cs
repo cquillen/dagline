@@ -22,11 +22,6 @@ internal static class DisplayText
     public static string OneLine(string text) => text.ReplaceLineEndings(" ");
 
     /// <summary>
-    /// The time of day in UTC, as in <c>07:18:00</c>, as the plain-text reporter writes its times in UTC.
-    /// </summary>
-    public static string TimeOfDay(DateTimeOffset time) => time.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-
-    /// <summary>
     /// Whole seconds under a minute, as in <c>45s</c>. Minutes and seconds under an hour, as in <c>20m 44s</c>. Hours and minutes
     /// from there, as in <c>1h 15m</c>. Always rounded down, and a duration below zero is written as zero.
     /// </summary>

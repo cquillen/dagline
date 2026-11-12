@@ -32,7 +32,7 @@ internal static class StopBanner
             line = line.Add("the journal could not be written", Palette.Failed).Add($" {glyphs.Separator} ", Palette.Dim);
         }
 
-        line = line.Add($"waiting for {DisplayText.Number(running)} running {(running == 1 ? "task" : "tasks")} to end", Palette.Cancelled);
+        line = line.Add($"waiting for {DisplayText.Count(running, "running task", "running tasks")} to end", Palette.Cancelled);
         if (stop.Deadline is { } deadline)
         {
             line = line.Add($" {glyphs.Separator} ", Palette.Dim).Add($"{DisplayText.Duration(deadline - now)} left", Palette.Bold);

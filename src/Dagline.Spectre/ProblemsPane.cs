@@ -42,9 +42,9 @@ internal static class ProblemsPane
     {
         string[] counts =
         [
-            .. Count(snapshot.Failed.Count, "failed", "failed"),
-            .. Count(snapshot.Cancelled.Count, "cancelled", "cancelled"),
-            .. Count(snapshot.WarningCount, "warning", "warnings"),
+            .. NonZero(snapshot.Failed.Count, "failed", "failed"),
+            .. NonZero(snapshot.Cancelled.Count, "cancelled", "cancelled"),
+            .. NonZero(snapshot.WarningCount, "warning", "warnings"),
         ];
         var title = StyledLine.Of("Problems", Palette.Bold).Add($" ({string.Join(", ", counts)})");
         var blocked = snapshot.Counts[NodeStatus.Blocked];
@@ -55,7 +55,7 @@ internal static class ProblemsPane
 
         var causes = snapshot.Blocked.Count;
         return title.Add(
-            $" {Counted(blocked, "task", "tasks")} blocked behind {Counted(causes, "failure", "failures")}",
+            $" {DisplayText.Count(blocked, "task", "tasks")} blocked behind {DisplayText.Count(causes, "failure", "failures")}",
             Palette.Blocked);
     }
 
@@ -96,14 +96,12 @@ internal static class ProblemsPane
     private static StyledLine Named(NodeSnapshot task, string glyph, Style style)
         => StyledLine.Of(glyph, style).Add($" {task.Path}");
 
-    private static string SettledAt(NodeSnapshot task) => task.Settled is { } settled ? DisplayText.TimeOfDay(settled) : "";
+    private static string SettledAt(NodeSnapshot task) => task.Settled is { } settled ? DisplayText.Time(settled) : "";
 
     /// <summary>The tasks, the one that settled last first. Tasks that settled at once keep their declaration order.</summary>
     private static IEnumerable<NodeSnapshot> NewestFirst(IEnumerable<NodeSnapshot> tasks)
         => tasks.OrderByDescending(task => task.Settled);
 
-    private static IEnumerable<string> Count(int count, string one, string many)
-        => count == 0 ? [] : [Counted(count, one, many)];
-
-    private static string Counted(int count, string one, string many) => $"{DisplayText.Number(count)} {(count == 1 ? one : many)}";
+    private static IEnumerable<string> NonZero(int count, string one, string many)
+        => count == 0 ? [] : [DisplayText.Count(count, one, many)];
 }
