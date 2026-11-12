@@ -286,7 +286,7 @@ internal sealed class Run : ISnapshotSource
         {
             _journal.Append(entries, flush);
         }
-        catch (IOException cause)
+        catch (Exception cause) when (FileSystemFailure.Is(cause))
         {
             _writeFailure = cause;
         }

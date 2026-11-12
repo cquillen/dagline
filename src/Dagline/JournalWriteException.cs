@@ -15,7 +15,8 @@ namespace Dagline;
 /// <see cref="Journals.ListAsync"/> shows it as <see cref="JournalEnding.Died"/>, and it can be continued like any other.
 /// </para>
 /// <para>
-/// <see cref="Exception.InnerException"/> is the file system's own exception.
+/// <see cref="Exception.InnerException"/> is the file system's own exception: an <see cref="IOException"/>, or an
+/// <see cref="UnauthorizedAccessException"/> when the process may no longer write the file.
 /// </para>
 /// </remarks>
 public sealed class JournalWriteException : DaglineException
