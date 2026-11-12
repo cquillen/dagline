@@ -33,6 +33,10 @@ internal sealed class RunSteps
     private readonly SortedSet<int> _ready = [];
     private readonly TaskInstance?[] _instances;
     private readonly Slots _slots;
+    // Nothing changes a step once it is decided, so every report that produced no event answers with this one.
+    private static readonly IReadOnlyList<Step> _changedOnlyTheSnapshot =
+        [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null)];
+
     private readonly List<Step> _decided = [];
     private readonly SnapshotTaker _snapshots;
 
@@ -110,6 +114,10 @@ internal sealed class RunSteps
     /// A running task reports something about itself through its <see cref="TaskContext"/>. The report is one step, with the event it
     /// produced, or with none when it changed only the snapshot. A report on a task that is not running gives no step.
     /// </summary>
+    /// <remarks>
+    /// A task may report progress millions of times, so a report that produced no event allocates nothing here beyond
+    /// the task as it now is: it is recorded for the next snapshot, and the step it answers with is shared by all such reports.
+    /// </remarks>
     /// <param name="task">The task that reports.</param>
     /// <param name="report">The operation on the task's instance, given the time.</param>
     /// <param name="now">When the task reports.</param>
@@ -118,6 +126,12 @@ internal sealed class RunSteps
         if (report(InstanceOf(task), now) is not { } change)
         {
             return [];
+        }
+
+        if (change.Event is null)
+        {
+            _snapshots.Record(task.Position, change.Task);
+            return _changedOnlyTheSnapshot;
         }
 
         Begin();

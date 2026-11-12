@@ -132,7 +132,16 @@ internal sealed class Run : ISnapshotSource
     /// <summary>Gives the steps what a running task reports about itself, and carries out the step it caused, if any.</summary>
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
     private bool Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
-        => Give((steps, now) => steps.Report(task, report, now)).Count > 0;
+    {
+        // Not through Give: a task may report progress millions of times, and Give would cost each report a second closure.
+        lock (_gate)
+        {
+            var steps = _steps.Report(task, report, _timeProvider.GetUtcNow());
+            CarryOut(steps);
+
+            return steps.Count > 0;
+        }
+    }
 
     /// <summary>
     /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
@@ -157,18 +166,21 @@ internal sealed class Run : ISnapshotSource
     /// <summary>
     /// Gives the steps one input, under the lock and with the time read once for it, and carries out the steps it caused, in order.
     /// </summary>
-    /// <returns>The steps the input caused.</returns>
-    private IReadOnlyList<Step> Give(Func<RunSteps, DateTimeOffset, IReadOnlyList<Step>> input)
+    private void Give(Func<RunSteps, DateTimeOffset, IReadOnlyList<Step>> input)
     {
         lock (_gate)
         {
-            var steps = input(_steps, _timeProvider.GetUtcNow());
-            foreach (var step in steps)
-            {
-                CarryOut(step);
-            }
+            CarryOut(input(_steps, _timeProvider.GetUtcNow()));
+        }
+    }
 
-            return steps;
+    /// <summary>Carries out the steps one input caused, under the lock and in order.</summary>
+    private void CarryOut(IReadOnlyList<Step> steps)
+    {
+        // Indexed, not enumerated, so that no enumerator is allocated for each input.
+        for (var i = 0; i < steps.Count; i++)
+        {
+            CarryOut(steps[i]);
         }
     }
 
