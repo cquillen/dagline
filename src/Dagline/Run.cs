@@ -206,7 +206,7 @@ internal sealed class Run : ISnapshotSource
             var now = _journal is null ? default : _timeProvider.GetUtcNow();
             if (_steps.ChangeCheckpoint(task, text, now) is { } entry)
             {
-                Write([entry], flush: true);
+                Write([entry], JournalFlush.ToDisk);
             }
 
             failed = _journal is null ? null : _writeFailure;
@@ -275,7 +275,7 @@ internal sealed class Run : ISnapshotSource
     /// written, though the journal stays held until the run ends, and the failure waits for the input to end. Whatever else the
     /// input decided is still carried out, since its events and starts are already facts of the run.
     /// </summary>
-    private void Write(IReadOnlyList<JournalEntry> entries, bool flush)
+    private void Write(IReadOnlyList<JournalEntry> entries, JournalFlush flush)
     {
         if (_journal is null || _writeFailure is not null)
         {
@@ -307,7 +307,7 @@ internal sealed class Run : ISnapshotSource
     {
         if (step.Entries.Count > 0)
         {
-            Write(step.Entries, step.Flushes);
+            Write(step.Entries, step.Flush);
         }
 
         if (step.SignalsTheTasks)

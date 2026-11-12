@@ -19,8 +19,8 @@ namespace Dagline;
 /// </remarks>
 public sealed class JournalInUseException : DaglineException
 {
-    internal JournalInUseException(string directory, string id, Exception innerException)
-        : base($"The journal '{id}' in '{directory}' is in use: another run holds it.", innerException)
+    internal JournalInUseException(JournalLocation location, Exception innerException)
+        : base($"The journal '{location.Id}' in '{location.Directory}' is in use: another run holds it.", innerException)
     {
     }
 }

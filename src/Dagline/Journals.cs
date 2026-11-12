@@ -42,20 +42,20 @@ public static class Journals
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
 
         var summaries = new List<JournalSummary>();
-        foreach (var id in IdsIn(directory))
+        foreach (var location in JournalsIn(directory))
         {
             cancellationToken.ThrowIfCancellationRequested();
             JournalFold fold;
             try
             {
-                fold = await JournalFile.ReadAsync(JournalId.FileIn(directory, id), cancellationToken).ConfigureAwait(false);
+                fold = await JournalFile.ReadAsync(location.FilePath, cancellationToken).ConfigureAwait(false);
             }
             catch (FileNotFoundException)
             {
                 continue;
             }
 
-            summaries.Add(new JournalSummary(fold, JournalLock.IsHeld(directory, id)));
+            summaries.Add(new JournalSummary(fold, JournalLock.IsInUse(location)));
         }
 
         return [.. summaries.OrderBy(summary => summary.Created).ThenBy(summary => summary.Id, StringComparer.Ordinal)];
@@ -82,29 +82,24 @@ public static class Journals
     public static Task DeleteAsync(string directory, string id, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
-        JournalId.ThrowIfNotValid(id);
+        var location = JournalLocation.Of(directory, id);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var path = JournalId.FileIn(directory, id);
-        if (!File.Exists(path))
-        {
-            throw new JournalNotFoundException(directory, id, new FileNotFoundException(null, path));
-        }
-
-        using var held = JournalLock.HoldToDelete(directory, id);
+        location.ThrowIfNotFound();
+        using var claim = JournalLock.ClaimToDelete(location);
         try
         {
-            File.Delete(path);
+            File.Delete(location.FilePath);
         }
-        catch (Exception cannotDelete) when (cannotDelete is IOException or UnauthorizedAccessException)
+        catch (Exception cannotDelete) when (FileSystemFailure.Is(cannotDelete))
         {
-            throw new JournalOpenException(path, cannotDelete);
+            throw new JournalOpenException(location.FilePath, cannotDelete);
         }
 
         return Task.CompletedTask;
     }
 
-    private static List<string> IdsIn(string directory)
+    private static List<JournalLocation> JournalsIn(string directory)
     {
         if (!Directory.Exists(directory))
         {
@@ -117,9 +112,10 @@ public static class Journals
                 .Select(Path.GetFileNameWithoutExtension)
                 .OfType<string>()
                 .Where(JournalId.IsValid)
+                .Select(id => JournalLocation.Of(directory, id))
                 .ToList();
         }
-        catch (Exception cannotList) when (cannotList is IOException or UnauthorizedAccessException)
+        catch (Exception cannotList) when (FileSystemFailure.Is(cannotList))
         {
             throw new JournalOpenException(directory, cannotList);
         }

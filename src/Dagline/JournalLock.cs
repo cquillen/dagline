@@ -1,13 +1,13 @@
 namespace Dagline;
 
 /// <summary>
-/// The hold on one journal: its lock file, <c>&lt;id&gt;.lock</c> beside the journal, open for exclusive use. A run takes it before
+/// The claim on one journal: its lock file, <c>&lt;id&gt;.lock</c> beside the journal, open for exclusive use. A run takes it before
 /// it opens the journal and lets go of it when the run ends.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The lock file is opened with <see cref="FileShare.None"/>, which Windows enforces and which .NET maps to an advisory
-/// <c>flock</c> elsewhere. Either way a second open fails while the first is held, in this process or another.
+/// <c>flock</c> elsewhere. Either way a second open fails while the first is open, in this process or another.
 /// </para>
 /// <para>
 /// A run leaves the lock file behind when it lets go. Deleting it then could race with a run that had opened it a moment
@@ -24,29 +24,28 @@ internal sealed class JournalLock : IDisposable
 
     private JournalLock(FileStream file) => _file = file;
 
-    /// <summary>Holds the journal <paramref name="id"/> in <paramref name="directory"/> until disposed, creating its lock file if missing.</summary>
-    /// <exception cref="JournalInUseException">Another run holds the journal.</exception>
+    /// <summary>Claims the journal at <paramref name="location"/> until disposed, creating its lock file if missing.</summary>
+    /// <exception cref="JournalInUseException">Another run has claimed the journal.</exception>
     /// <exception cref="JournalOpenException">The lock file cannot be opened or created.</exception>
-    public static JournalLock Hold(string directory, string id) => new(Open(directory, id, FileMode.OpenOrCreate, FileOptions.None));
+    public static JournalLock Claim(JournalLocation location) => new(Open(location, FileMode.OpenOrCreate, FileOptions.None));
 
     /// <summary>
-    /// Holds the journal <paramref name="id"/> in <paramref name="directory"/> so that it can be deleted: the lock file goes when
-    /// this is disposed.
+    /// Claims the journal at <paramref name="location"/> so that it can be deleted: the lock file goes when this is disposed.
     /// </summary>
-    /// <exception cref="JournalInUseException">Another run holds the journal.</exception>
+    /// <exception cref="JournalInUseException">Another run has claimed the journal.</exception>
     /// <exception cref="JournalOpenException">The lock file cannot be opened or created.</exception>
-    public static JournalLock HoldToDelete(string directory, string id)
-        => new(Open(directory, id, FileMode.OpenOrCreate, FileOptions.DeleteOnClose));
+    public static JournalLock ClaimToDelete(JournalLocation location)
+        => new(Open(location, FileMode.OpenOrCreate, FileOptions.DeleteOnClose));
 
     /// <summary>
-    /// Whether a run holds the journal <paramref name="id"/> in <paramref name="directory"/> at this instant. A journal with no lock
-    /// file is not held. Asking holds the lock for a moment, without creating it.
+    /// Whether a run has claimed the journal at <paramref name="location"/> at this instant. A journal with no lock file is not in use.
+    /// Asking claims the journal for a moment, without creating its lock file.
     /// </summary>
-    public static bool IsHeld(string directory, string id)
+    public static bool IsInUse(JournalLocation location)
     {
         try
         {
-            Open(directory, id, FileMode.Open, FileOptions.None).Dispose();
+            Open(location, FileMode.Open, FileOptions.None).Dispose();
             return false;
         }
         catch (JournalInUseException)
@@ -62,26 +61,25 @@ internal sealed class JournalLock : IDisposable
     /// <summary>Lets go of the journal.</summary>
     public void Dispose() => _file.Dispose();
 
-    private static FileStream Open(string directory, string id, FileMode mode, FileOptions options)
+    private static FileStream Open(JournalLocation location, FileMode mode, FileOptions options)
     {
-        var path = JournalId.LockIn(directory, id);
         try
         {
-            return new FileStream(path, mode, FileAccess.ReadWrite, FileShare.None, bufferSize: 0, options);
+            return new FileStream(location.LockPath, mode, FileAccess.ReadWrite, FileShare.None, bufferSize: 0, options);
         }
-        catch (IOException held) when (IsHeldElsewhere(held))
+        catch (IOException inUse) when (IsClaimedElsewhere(inUse))
         {
-            throw new JournalInUseException(directory, id, held);
+            throw new JournalInUseException(location, inUse);
         }
-        catch (Exception cannotOpen) when (cannotOpen is IOException or UnauthorizedAccessException)
+        catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen))
         {
-            throw new JournalOpenException(path, cannotOpen);
+            throw new JournalOpenException(location.LockPath, cannotOpen);
         }
     }
 
-    // Windows reports a file another handle holds as a sharing or lock violation. Elsewhere .NET reports a failed flock as a plain
+    // Windows reports a file another handle has open as a sharing or lock violation. Elsewhere .NET reports a failed flock as a plain
     // IOException, while every other failure to open is a subtype or carries another code.
-    private static bool IsHeldElsewhere(IOException failure)
+    private static bool IsClaimedElsewhere(IOException failure)
         => OperatingSystem.IsWindows()
             ? (failure.HResult & 0xFFFF) is _sharingViolation or _lockViolation
             : failure.GetType() == typeof(IOException);

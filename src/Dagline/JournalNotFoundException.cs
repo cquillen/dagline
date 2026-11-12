@@ -11,8 +11,8 @@ namespace Dagline;
 /// </remarks>
 public sealed class JournalNotFoundException : DaglineException
 {
-    internal JournalNotFoundException(string directory, string id, Exception innerException)
-        : base($"The directory '{directory}' has no journal with the id '{id}'.", innerException)
+    internal JournalNotFoundException(JournalLocation location, Exception innerException)
+        : base($"The directory '{location.Directory}' has no journal with the id '{location.Id}'.", innerException)
     {
     }
 }

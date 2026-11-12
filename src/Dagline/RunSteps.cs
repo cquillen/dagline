@@ -38,7 +38,7 @@ internal sealed class RunSteps
     private readonly Slots _slots;
     // Nothing changes a step once it is decided, so every report that produced no event answers with this one.
     private static readonly IReadOnlyList<Step> _changedOnlyTheSnapshot =
-        [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null, Entries: [], Flushes: false)];
+        [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null, Entries: [], Flush: JournalFlush.None)];
 
     private readonly List<Step> _decided = [];
     private readonly SnapshotTaker _snapshots;
@@ -732,6 +732,9 @@ internal sealed class RunSteps
 
         // Every entry but a start is flushed, and entries written together share one flush, so one is enough for the whole step.
         public Step Decided()
-            => new(Events, Starts, SignalsTheTasks, GracePeriodTimer, Ends, Entries, Flushes: Entries.Exists(entry => entry is not TaskStartedEntry));
+            => new(Events, Starts, SignalsTheTasks, GracePeriodTimer, Ends, Entries, Flush: FlushOf(Entries));
+
+        private static JournalFlush FlushOf(List<JournalEntry> entries)
+            => entries.Exists(entry => entry is not TaskStartedEntry) ? JournalFlush.ToDisk : JournalFlush.None;
     }
 }

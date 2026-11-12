@@ -90,9 +90,8 @@ public abstract record Journal
     public static Journal Continue(string directory, string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
-        JournalId.ThrowIfNotValid(id);
 
-        return new ContinuedJournal(directory, id);
+        return new ContinuedJournal(JournalLocation.Of(directory, id));
     }
 
     /// <summary>Opens the journal the choice names, before the run exists: <see langword="null"/> for no journal.</summary>
@@ -108,8 +107,8 @@ public abstract record Journal
         internal override JournalFile Open(TimeProvider clock) => JournalFile.Create(Directory, Description, clock);
     }
 
-    private sealed record ContinuedJournal(string Directory, string Id) : Journal
+    private sealed record ContinuedJournal(JournalLocation Location) : Journal
     {
-        internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(Directory, Id);
+        internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(Location);
     }
 }

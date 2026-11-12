@@ -9,14 +9,14 @@ namespace Dagline;
 /// </remarks>
 public sealed record JournalSummary
 {
-    internal JournalSummary(JournalFold fold, bool held)
+    internal JournalSummary(JournalFold fold, bool inUse)
     {
         Id = fold.Id;
         Created = fold.Created;
         Description = fold.Description;
         Runs = fold.Runs;
         LatestRun = fold.LatestRun;
-        Ending = EndingOf(fold.LatestOutcome, held);
+        Ending = EndingOf(fold.LatestOutcome, inUse);
         Counts = fold.LastStatusCounts();
         Finished = fold.LatestOutcome is RunOutcome.Complete;
     }
@@ -60,9 +60,9 @@ public sealed record JournalSummary
     /// </summary>
     public bool Finished { get; }
 
-    private static JournalEnding EndingOf(RunOutcome? latestOutcome, bool held)
+    private static JournalEnding EndingOf(RunOutcome? latestOutcome, bool inUse)
     {
-        if (held)
+        if (inUse)
         {
             return JournalEnding.InUse;
         }

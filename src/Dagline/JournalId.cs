@@ -18,8 +18,6 @@ internal static partial class JournalId
     /// <summary>The extension of a journal's file.</summary>
     public const string Extension = ".journal";
 
-    private const string _lockExtension = ".lock";
-
     /// <summary>A new id for a journal created at <paramref name="created"/>, with a newly drawn suffix.</summary>
     public static string New(DateTimeOffset created)
         => created.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)
@@ -43,12 +41,6 @@ internal static partial class JournalId
             throw new ArgumentException($"The journal id '{id}' is not in the id format: {_rule}.", paramName);
         }
     }
-
-    /// <summary>The path of the file of the journal <paramref name="id"/> in <paramref name="directory"/>.</summary>
-    public static string FileIn(string directory, string id) => Path.Combine(directory, id + Extension);
-
-    /// <summary>The path of the lock file of the journal <paramref name="id"/> in <paramref name="directory"/>, beside its file.</summary>
-    public static string LockIn(string directory, string id) => Path.Combine(directory, id + _lockExtension);
 
     [GeneratedRegex(@"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}\z", RegexOptions.CultureInvariant)]
     private static partial Regex Format();
