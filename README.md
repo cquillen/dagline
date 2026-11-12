@@ -17,6 +17,7 @@ Think Apache Airflow, but purely local: no scheduler service, no database, no we
 | --- | --- |
 | [`Dagline`](https://www.nuget.org/packages/Dagline) | Core engine: define, schedule and run task graphs. No UI dependencies. |
 | [`Dagline.Spectre`](https://www.nuget.org/packages/Dagline.Spectre) | Live terminal UI built on [Spectre.Console](https://spectreconsole.net/). |
+| [`Dagline.Testing`](https://www.nuget.org/packages/Dagline.Testing) | For test projects only: a clock on which every delay ends at once. Works with any test framework. |
 
 ```shell
 dotnet add package Dagline

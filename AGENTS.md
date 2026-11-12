@@ -14,7 +14,8 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 
 - `src/Dagline`: core engine, NuGet package
 - `src/Dagline.Spectre`: Spectre.Console UI, NuGet package
-- `tests/*.Tests`: one TUnit project per package
+- `src/Dagline.Testing`: helpers for consumers' test projects (the instant clock), NuGet package
+- `tests/*.Tests`: one TUnit project per package, `tests/Dagline.Testing.Tests` among them
 - `tests/Dagline.TestSupport`: helpers the test projects share (recording reporter, paused task bodies, fake clock helper); holds no tests, never packed
 - `samples/`: runnable console apps
 - `docs/`: DocFX site, published to GitHub Pages
@@ -22,6 +23,7 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 ## Rules
 
 - `src/Dagline` must never reference Spectre.Console or any UI or console library.
+- `src/Dagline.Testing` references `Dagline` only: never a test framework, an assertion library, Spectre.Console or Microsoft's fake clock. It is built on Dagline's public API only: no `InternalsVisibleTo`, and `Dagline` gains no member for it.
 - Package versions go only in `Directory.Packages.props`. No `Version=` on a `PackageReference`.
 - Tests: TUnit `[Test]` with Shouldly assertions only (not TUnit's `Assert.That`).
 - Nullable on, file-scoped namespaces, LF line endings, `.editorconfig` style.

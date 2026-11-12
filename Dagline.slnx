@@ -10,10 +10,12 @@
   <Folder Name="/src/">
     <Project Path="src/Dagline/Dagline.csproj" />
     <Project Path="src/Dagline.Spectre/Dagline.Spectre.csproj" />
+    <Project Path="src/Dagline.Testing/Dagline.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Dagline.Tests/Dagline.Tests.csproj" />
     <Project Path="tests/Dagline.Spectre.Tests/Dagline.Spectre.Tests.csproj" />
+    <Project Path="tests/Dagline.Testing.Tests/Dagline.Testing.Tests.csproj" />
     <Project Path="tests/Dagline.TestSupport/Dagline.TestSupport.csproj" />
   </Folder>
   <Folder Name="/samples/">
