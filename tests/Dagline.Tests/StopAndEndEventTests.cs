@@ -41,4 +41,17 @@ public class StopAndEndEventTests
         Should.Throw<ArgumentException>(() => new RunEnded(at, RunOutcome.Complete, new IOException("disk full")));
         new RunEnded(at, null, new IOException("disk full")).Outcome.ShouldBeNull();
     }
+
+    [Test]
+    public void A_run_ended_event_cannot_be_given_a_second_one_by_an_initializer_or_a_with_expression()
+    {
+        var at = new DateTimeOffset(2026, 11, 11, 5, 0, 0, TimeSpan.Zero);
+
+        // Set only by the constructor, so that neither member can be set apart from the other.
+        typeof(RunEnded).GetProperty(nameof(RunEnded.Outcome))!.SetMethod.ShouldBeNull();
+        typeof(RunEnded).GetProperty(nameof(RunEnded.Error))!.SetMethod.ShouldBeNull();
+        var copied = new RunEnded(at, RunOutcome.Complete) with { At = at.AddSeconds(1) };
+        copied.Outcome.ShouldBe(RunOutcome.Complete);
+        copied.Error.ShouldBeNull();
+    }
 }

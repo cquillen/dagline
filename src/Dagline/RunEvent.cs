@@ -232,11 +232,19 @@ public sealed record RunEnded(DateTimeOffset At, RunOutcome? Outcome, Exception?
     {
     }
 
-    /// <summary>The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</summary>
+    /// <summary>How the run ended, or <see langword="null"/> when it ended with an error.</summary>
+    /// <remarks>
+    /// Set only by the constructor, as is <see cref="Error"/>, so that an object initializer or a <see langword="with"/> expression
+    /// cannot give an event both or neither.
+    /// </remarks>
     /// <exception cref="ArgumentException">
-    /// Both or neither of <see cref="Outcome"/> and <see cref="Error"/> are set when the event is constructed.
+    /// Both or neither of <see cref="Outcome"/> and <see cref="Error"/> are given when the event is constructed.
     /// </exception>
-    public Exception? Error { get; init; } = (Outcome is null) != (Error is null)
-        ? Error
+    public RunOutcome? Outcome { get; } = (Outcome is null) != (Error is null)
+        ? Outcome
         : throw new ArgumentException("A run ends with exactly one of a run outcome and an error.", nameof(Error));
+
+    /// <summary>The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</summary>
+    /// <remarks>Set only by the constructor, as is <see cref="Outcome"/>.</remarks>
+    public Exception? Error { get; } = Error;
 }
