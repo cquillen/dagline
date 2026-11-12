@@ -64,9 +64,45 @@ A journal whose latest run was complete can be continued like any other. With an
 
 Each run chooses its own cap and limit sizes. A run that continues a journal may use different ones from the runs before it.
 
+### An *after* task runs again when what it is after runs again
+
+One rule decides whether an earlier success is kept, and it depends on the kind of dependency:
+
+- A task that is ***after*** something keeps its earlier success only if everything it is after is itself an earlier success in this run. Against a group that means every task beneath it at any depth, and an empty group qualifies. Otherwise the success is **set aside**: the task starts pending and runs again once its dependencies are met.
+- A task that only ***requires*** something never loses its earlier success because of a change upstream, not even when a group it requires gained a task that has not run.
+
+An *after* task exists to act on how its upstreams ended, such as a summary or a cleanup, so it acts again when they end again and is never stale. A *requires* task is usually one that did real work, perhaps in an external system, and running it again unasked would do that work twice. If you want finished work to run again, start a new journal.
+
+```csharp
+var check = builder.Task("check", CheckAsync);
+var summary = builder.Task("summary", SummariseAsync).After(check);    // set aside when check runs again
+var publish = builder.Task("publish", PublishAsync).Requires(summary); // keeps its success
+```
+
+The rule is applied in dependency order. A task set aside is not an earlier success, so a task that is *after* it is set aside too, while a task that *requires* it keeps its own earlier success.
+
+The run lists the paths it set aside in <xref:Dagline.Snapshot.SetAside>, in declaration order. A set-aside is written to the journal with the start of the run, on disk before any task starts. From then on the task has no success on record, in later runs too, until it succeeds again: if this run is stopped before the task runs, the next run does not bring back the stale success, even though everything the task is after is an earlier success by then.
+
+Whether a group counts as an earlier success is judged by the graph of this run. A task *after* the group `shards` keeps its success when the journal is continued with the same shards, and loses it when `shards` gained a shard whose tasks have not succeeded.
+
+## A graph that differs from its journal
+
+The lists that shape a graph are fetched before every build, so the graph a continuing run is given will often differ from the one the journal was written with. None of the differences is an error. The only link between a graph and a journal is the path:
+
+- **A path in the graph and not in the journal** is an ordinary pending task.
+- **A path in the journal and not in the graph** is left untouched and is not part of the run. It has no node in the snapshot, no event and no effect on the run outcome. If a later run's graph has the path again, what the journal holds for it applies again, its earlier success included.
+- **A path that is a task in one and a group in the other** counts as not in the graph. A rename is a removal and an addition.
+
+The run counts what it left untouched, so that a reporter can show it:
+
+- <xref:Dagline.Snapshot.JournalPathsNotInGraph> is how many paths the journal holds that are not a task of this run's graph.
+- <xref:Dagline.Snapshot.JournalPathsNotInGraphUnsucceeded> is how many of those have not succeeded: the journal holds no success for the path, or its success was set aside.
+
+The second count matters when a journal is continued with a smaller graph. The run outcome covers only the run's graph, so a run that completes can still leave work in the journal that never succeeded. That count is the signal. [Running part of the work](running-part-of-the-work.md) shows how this comes about.
+
 ## The file
 
-A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start, each task's start, each task's settle with its whole outcome, and each run's end. Progress, waiting and the status of a group are never recorded.
+A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start and the earlier successes it set aside, each task's start, each task's settle with its whole outcome, and each run's end. Progress, waiting and the status of a group are never recorded.
 
 Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A failure and every task it blocks share one write.
 

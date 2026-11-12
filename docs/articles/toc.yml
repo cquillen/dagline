@@ -12,6 +12,8 @@
   href: running-and-stopping.md
 - name: Journals
   href: journals.md
+- name: Running part of the work
+  href: running-part-of-the-work.md
 - name: Terminal UI
   href: terminal-ui.md
 - name: Reporters
