@@ -198,6 +198,7 @@ public class SummaryTests
 
         await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 20);
         await check.Started;
+        await display.Handled("load: running -> failed");
         display.Clock.Advance(TimeSpan.FromSeconds(3));
         check.Release();
         var summary = await display.EndAsync();
