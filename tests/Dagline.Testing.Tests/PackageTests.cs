@@ -9,6 +9,6 @@ public class PackageTests
             .Select(reference => reference.Name!)
             .Where(name => name != "System" && !name.StartsWith("System.", StringComparison.Ordinal) && name != "netstandard");
 
-        references.ShouldBeSubsetOf(["Dagline"]);
+        references.ShouldBe(["Dagline"]);
     }
 }

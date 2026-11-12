@@ -78,15 +78,20 @@ public sealed class InstantClock : TimeProvider
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
         ArgumentNullException.ThrowIfNull(callback);
+        ThrowIfPastGuard();
+        var timer = new InstantTimer(this, callback, state);
+        timer.Change(dueTime, period);
+        return timer;
+    }
+
+    /// <exception cref="ClockGuardException">More fake time than the clock's guard has passed since the clock was made.</exception>
+    internal void ThrowIfPastGuard()
+    {
         var elapsed = Elapsed;
         if (elapsed > _guard)
         {
             throw new ClockGuardException(elapsed, _guard);
         }
-
-        var timer = new InstantTimer(this, callback, state);
-        timer.Change(dueTime, period);
-        return timer;
     }
 
     private TimeSpan Elapsed => TimeSpan.FromTicks(Interlocked.Read(ref _elapsedTicks));
