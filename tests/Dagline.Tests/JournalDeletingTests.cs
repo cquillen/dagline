@@ -1,0 +1,73 @@
+using Dagline.TestSupport;
+
+namespace Dagline.Tests;
+
+public class JournalDeletingTests
+{
+    [Test]
+    public async Task Deleting_a_journal_removes_it_and_its_lock_file()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var graph = builder.Build();
+        var kept = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var deleted = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+
+        await Journals.DeleteAsync(temporary.Path, deleted.Snapshot.Journal!.Id);
+
+        var id = kept.Snapshot.Journal!.Id;
+        Directory.GetFiles(temporary.Path).Select(Path.GetFileName).Order(StringComparer.Ordinal)
+            .ShouldBe([$"{id}.journal", $"{id}.lock"]);
+        (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem().Id.ShouldBe(id);
+    }
+
+    [Test]
+    public async Task Deleting_a_journal_a_run_holds_is_refused()
+    {
+        using var temporary = new TemporaryDirectory();
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("load", load.Body);
+        var holder = new RecordingReporter();
+        var holding = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.New(temporary.Path), Reporters = [holder] });
+        await load.Started;
+        var id = (await holder.Source).Current.Journal!.Id;
+
+        await Should.ThrowAsync<JournalInUseException>(() => Journals.DeleteAsync(temporary.Path, id));
+
+        load.Release();
+        (await holding).Outcome.ShouldBe(RunOutcome.Complete);
+        (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem().Ending.ShouldBe(JournalEnding.Complete);
+    }
+
+    [Test]
+    public async Task Deleting_a_journal_that_is_not_there_throws()
+    {
+        using var temporary = new TemporaryDirectory();
+
+        await Should.ThrowAsync<JournalNotFoundException>(() => Journals.DeleteAsync(temporary.Path, "20261111T041200Z-a3f9c2"));
+        await Should.ThrowAsync<JournalNotFoundException>(
+            () => Journals.DeleteAsync(temporary.Combine("missing"), "20261111T041200Z-a3f9c2"));
+
+        Directory.GetFiles(temporary.Path).ShouldBeEmpty();
+    }
+
+    [Test]
+    [Arguments("../20261111T041200Z-a3f9c2")]
+    [Arguments("20261111T041200Z-A3F9C2")]
+    [Arguments("")]
+    public async Task Deleting_an_id_not_in_the_id_format_is_an_argument_error(string id)
+    {
+        (await Should.ThrowAsync<ArgumentException>(() => Journals.DeleteAsync("journals", id))).ParamName.ShouldBe("id");
+    }
+
+    [Test]
+    public async Task Listing_and_deleting_need_a_directory()
+    {
+        await Should.ThrowAsync<ArgumentNullException>(() => Journals.ListAsync(null!));
+        await Should.ThrowAsync<ArgumentException>(() => Journals.ListAsync(" "));
+        await Should.ThrowAsync<ArgumentException>(() => Journals.DeleteAsync("", "20261111T041200Z-a3f9c2"));
+        await Should.ThrowAsync<ArgumentNullException>(() => Journals.DeleteAsync("journals", null!));
+    }
+}

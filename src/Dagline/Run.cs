@@ -49,8 +49,9 @@ internal sealed class Run : ISnapshotSource
     /// <param name="delivery">Delivery of the run's events to its reporters.</param>
     /// <param name="signal">The signal through which the app stops the run, if it can.</param>
     /// <param name="journal">
-    /// The journal the run is on, already opened and read, or <see langword="null"/> for none. The run owns it from here,
-    /// and closes it in the step that ends the run, so that a later run can continue it as soon as this one has ended.
+    /// The journal the run is on, already held, opened and read, or <see langword="null"/> for none. The run owns it from here,
+    /// and closes it and lets go of its lock in the step that ends the run, so that a later run can continue it as soon as this one
+    /// has ended.
     /// </param>
     public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, StopSignal? signal, JournalFile? journal)
     {

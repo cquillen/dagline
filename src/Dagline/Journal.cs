@@ -43,7 +43,9 @@ public abstract record Journal
     /// already exists, a new suffix is drawn. <see cref="Snapshot.Journal"/> carries the id, from the first event of the run on.
     /// </para>
     /// <para>
-    /// The journal's first line is written and flushed to the disk while it is created, before the run exists.
+    /// The journal's first line is written and flushed to the disk while it is created, before the run exists. Its lock file,
+    /// <c>&lt;id&gt;.lock</c>, is created beside it. <see cref="Runner.RunAsync"/> throws <see cref="JournalOpenException"/> when the
+    /// directory, the lock file or the journal cannot be created, or the first line cannot be written.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="directory"/> is <see langword="null"/>.</exception>
@@ -74,7 +76,10 @@ public abstract record Journal
     /// can be continued like any other: with an unchanged graph the run is complete at once, and a path the graph gained runs.
     /// </para>
     /// <para>
-    /// <see cref="Runner.RunAsync"/> throws <see cref="JournalNotFoundException"/> when the directory has no journal with the id.
+    /// <see cref="Runner.RunAsync"/> throws <see cref="JournalNotFoundException"/> when the directory has no journal with the id,
+    /// <see cref="JournalInUseException"/> when another run holds it, <see cref="JournalOpenException"/> when it cannot be opened or
+    /// read, and <see cref="JournalFormatException"/> when it cannot be read as a journal. <see cref="Journals.ListAsync"/> lists the
+    /// journals in a directory, to choose one from.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="directory"/> or <paramref name="id"/> is <see langword="null"/>.</exception>
@@ -85,11 +90,7 @@ public abstract record Journal
     public static Journal Continue(string directory, string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
-        ArgumentNullException.ThrowIfNull(id);
-        if (!JournalId.IsValid(id))
-        {
-            throw new ArgumentException($"The journal id '{id}' is not in the id format: {JournalId.Rule}.", nameof(id));
-        }
+        JournalId.ThrowIfNotValid(id);
 
         return new ContinuedJournal(directory, id);
     }

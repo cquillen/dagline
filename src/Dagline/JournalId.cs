@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
@@ -11,10 +12,13 @@ namespace Dagline;
 internal static partial class JournalId
 {
     /// <summary>The id format in words, worded to end a sentence that names an id that breaks it.</summary>
-    public const string Rule = "an id is the UTC creation time as yyyyMMddTHHmmssZ, a hyphen and six lowercase hex digits, "
+    private const string _rule = "an id is the UTC creation time as yyyyMMddTHHmmssZ, a hyphen and six lowercase hex digits, "
         + "as in 20261111T041200Z-a3f9c2";
 
-    private const string _extension = ".journal";
+    /// <summary>The extension of a journal's file.</summary>
+    public const string Extension = ".journal";
+
+    private const string _lockExtension = ".lock";
 
     /// <summary>A new id for a journal created at <paramref name="created"/>, with a newly drawn suffix.</summary>
     public static string New(DateTimeOffset created)
@@ -28,8 +32,23 @@ internal static partial class JournalId
     /// </summary>
     public static bool IsValid(string id) => Format().IsMatch(id);
 
+    /// <summary>Refuses an <paramref name="id"/> given at a public call that is not in the id format, as an argument error.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="id"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="id"/> is not in the id format.</exception>
+    public static void ThrowIfNotValid(string id, [CallerArgumentExpression(nameof(id))] string? paramName = null)
+    {
+        ArgumentNullException.ThrowIfNull(id, paramName);
+        if (!IsValid(id))
+        {
+            throw new ArgumentException($"The journal id '{id}' is not in the id format: {_rule}.", paramName);
+        }
+    }
+
     /// <summary>The path of the file of the journal <paramref name="id"/> in <paramref name="directory"/>.</summary>
-    public static string FileIn(string directory, string id) => Path.Combine(directory, id + _extension);
+    public static string FileIn(string directory, string id) => Path.Combine(directory, id + Extension);
+
+    /// <summary>The path of the lock file of the journal <paramref name="id"/> in <paramref name="directory"/>, beside its file.</summary>
+    public static string LockIn(string directory, string id) => Path.Combine(directory, id + _lockExtension);
 
     [GeneratedRegex(@"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}\z", RegexOptions.CultureInvariant)]
     private static partial Regex Format();

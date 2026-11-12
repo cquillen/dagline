@@ -16,6 +16,9 @@ namespace Dagline;
 internal sealed class JournalFold
 {
     private readonly Dictionary<string, TaskSettledEntry> _latestSettles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, NodeStatus> _lastStatuses = new(StringComparer.Ordinal);
+    private RunStartedEntry? _latestRunStarted;
+    private RunEndedEntry? _latestRunEnded;
 
     private JournalFold(HeaderEntry header)
     {
@@ -38,6 +41,34 @@ internal sealed class JournalFold
 
     /// <summary>The journal as a snapshot of the run that continues it next shows it.</summary>
     public JournalInfo NextRun => new(Id, Description, Runs + 1);
+
+    /// <summary>
+    /// The latest run the journal records, or <see langword="null"/> when no run was ever recorded. Its end is
+    /// <see langword="null"/> when the journal records none for it.
+    /// </summary>
+    public JournalRunSummary? LatestRun => _latestRunStarted is { } started
+        ? new(started.Time, _latestRunEnded?.Time, started.User, started.Machine)
+        : null;
+
+    /// <summary>
+    /// The run outcome the latest run recorded, or <see langword="null"/> when it recorded none, or no run was ever recorded.
+    /// </summary>
+    public RunOutcome? LatestOutcome => _latestRunEnded?.Outcome;
+
+    /// <summary>
+    /// How many paths have each status as their last recorded one, with every status present: the latest settle, or running when
+    /// the path's latest entry is a start.
+    /// </summary>
+    public IReadOnlyDictionary<NodeStatus, int> LastStatusCounts()
+    {
+        Span<int> tally = stackalloc int[StatusCounts.TallyLength];
+        foreach (var status in _lastStatuses.Values)
+        {
+            tally[(int)status]++;
+        }
+
+        return StatusCounts.ToDictionary(tally);
+    }
 
     /// <summary>Folds the entries of one journal, in the order of the file, under its header.</summary>
     public static JournalFold Of(HeaderEntry header, IEnumerable<JournalEntry> entries)
@@ -62,11 +93,20 @@ internal sealed class JournalFold
     {
         switch (entry)
         {
-            case RunStartedEntry:
+            case RunStartedEntry started:
                 Runs++;
+                _latestRunStarted = started;
+                _latestRunEnded = null;
+                break;
+            case TaskStartedEntry started:
+                _lastStatuses[started.Path] = NodeStatus.Running;
                 break;
             case TaskSettledEntry settled:
                 _latestSettles[settled.Path] = settled;
+                _lastStatuses[settled.Path] = settled.Status;
+                break;
+            case RunEndedEntry ended:
+                _latestRunEnded = ended;
                 break;
         }
     }

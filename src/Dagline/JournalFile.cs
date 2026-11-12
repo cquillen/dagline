@@ -4,8 +4,8 @@ using System.Text.Json;
 namespace Dagline;
 
 /// <summary>
-/// One journal's file, open for one run: the one type that knows the file format. It reads every entry when it is opened,
-/// folds them, and from then on only appends.
+/// One journal's file: the one type that knows the file format. Open for one run, it holds the journal, reads every entry when it
+/// is opened, folds them, and from then on only appends. A listing reads a journal through it without holding it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,18 +17,25 @@ namespace Dagline;
 /// file stream does not do. The stream has no buffer of its own, so each append reaches the operating system in one write
 /// whether it is flushed or not, and appends land in the file in the order they were made.
 /// </para>
-/// <para>It is not thread-safe: the run appends under its lock.</para>
+/// <para>
+/// Opening checks in the order a run needs: the lock (<see cref="JournalLock"/>), then the file, then what it holds.
+/// It is not thread-safe: the run appends under its lock.
+/// </para>
 /// </remarks>
 internal sealed class JournalFile : IDisposable
 {
     private const int _version = 1;
     private const byte _lineFeed = (byte)'\n';
 
-    private readonly FileStream _stream;
+    private static readonly UTF8Encoding _encoding = new(encoderShouldEmitUTF8Identifier: false);
 
-    private JournalFile(FileStream stream, JournalFold fold)
+    private readonly FileStream _stream;
+    private readonly JournalLock _held;
+
+    private JournalFile(FileStream stream, JournalLock held, JournalFold fold)
     {
         _stream = stream;
+        _held = held;
         Fold = fold;
     }
 
@@ -37,17 +44,30 @@ internal sealed class JournalFile : IDisposable
 
     /// <summary>
     /// Creates a new journal in <paramref name="directory"/>, creating the directory if it is missing, with an id from the time on
-    /// <paramref name="clock"/>. The header is written and flushed before this returns. If a file with the id drawn already exists,
-    /// a new suffix is drawn.
+    /// <paramref name="clock"/>, and holds it. The header is written and flushed before this returns. If a file with the id drawn
+    /// already exists, or another run holds that id, a new suffix is drawn.
     /// </summary>
+    /// <exception cref="JournalOpenException">
+    /// The directory, the lock file or the journal cannot be created, or the header cannot be written.
+    /// </exception>
     public static JournalFile Create(string directory, string? description, TimeProvider clock)
     {
-        Directory.CreateDirectory(directory);
+        CreateDirectory(directory);
         var created = clock.GetUtcNow();
         while (true)
         {
             var id = JournalId.New(created);
             var path = JournalId.FileIn(directory, id);
+            JournalLock held;
+            try
+            {
+                held = JournalLock.Hold(directory, id);
+            }
+            catch (JournalInUseException)
+            {
+                continue;
+            }
+
             FileStream stream;
             try
             {
@@ -55,44 +75,114 @@ internal sealed class JournalFile : IDisposable
             }
             catch (IOException) when (File.Exists(path))
             {
+                held.Dispose();
                 continue;
             }
+            catch (Exception cannotCreate) when (IsOpenFailure(cannotCreate))
+            {
+                held.Dispose();
+                throw new JournalOpenException(path, cannotCreate);
+            }
 
-            return OwningOnSuccess(stream, () =>
+            return OwningOnSuccess(stream, held, () =>
             {
                 var header = new HeaderEntry(_version, id, created, description);
-                var file = new JournalFile(stream, JournalFold.Of(header, []));
-                file.Append([header], flush: true);
+                var file = new JournalFile(stream, held, JournalFold.Of(header, []));
+                try
+                {
+                    file.Append([header], flush: true);
+                }
+                catch (IOException cannotWrite)
+                {
+                    throw new JournalOpenException(path, cannotWrite);
+                }
+
                 return file;
             });
         }
     }
 
-    /// <summary>Opens the journal <paramref name="id"/> in <paramref name="directory"/>, reads and folds it, and readies it for appending.</summary>
+    /// <summary>
+    /// Holds the journal <paramref name="id"/> in <paramref name="directory"/>, then opens it, reads and folds it, and readies it for
+    /// appending.
+    /// </summary>
     /// <exception cref="JournalNotFoundException">The directory has no journal with that id.</exception>
+    /// <exception cref="JournalInUseException">Another run holds the journal.</exception>
+    /// <exception cref="JournalOpenException">The lock file or the journal cannot be opened or read.</exception>
+    /// <exception cref="JournalFormatException">The file cannot be read as a journal.</exception>
     public static JournalFile Open(string directory, string id)
     {
+        var path = JournalId.FileIn(directory, id);
+
+        // Checked before the lock is taken, so that an id with no journal leaves no lock file behind.
+        if (!File.Exists(path))
+        {
+            throw new JournalNotFoundException(directory, id, new FileNotFoundException(null, path));
+        }
+
+        var held = JournalLock.Hold(directory, id);
         FileStream stream;
         try
         {
-            stream = new FileStream(
-                JournalId.FileIn(directory, id),
-                FileMode.Open,
-                FileAccess.ReadWrite,
-                FileShare.Read,
-                bufferSize: 0);
+            stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read, bufferSize: 0);
         }
         catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
         {
+            held.Dispose();
             throw new JournalNotFoundException(directory, id, missing);
         }
-
-        return OwningOnSuccess(stream, () =>
+        catch (Exception cannotOpen) when (IsOpenFailure(cannotOpen))
         {
-            var fold = Read(stream);
-            stream.Seek(0, SeekOrigin.End);
-            return new JournalFile(stream, fold);
+            held.Dispose();
+            throw new JournalOpenException(path, cannotOpen);
+        }
+
+        return OwningOnSuccess(stream, held, () =>
+        {
+            try
+            {
+                using var reader = new StreamReader(stream, _encoding, leaveOpen: true);
+                var fold = Read(reader, path);
+                stream.Seek(0, SeekOrigin.End);
+                return new JournalFile(stream, held, fold);
+            }
+            catch (IOException cannotRead)
+            {
+                throw new JournalOpenException(path, cannotRead);
+            }
         });
+    }
+
+    /// <summary>
+    /// Reads and folds the journal file at <paramref name="path"/> without holding it, as a listing does. A run may be appending
+    /// to it meanwhile: what the run had written by then is read.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The file is not there, or no longer.</exception>
+    /// <exception cref="JournalOpenException">The file cannot be opened or read.</exception>
+    /// <exception cref="JournalFormatException">The file cannot be read as a journal.</exception>
+    public static async Task<JournalFold> ReadAsync(string path, CancellationToken cancellationToken)
+    {
+        string text;
+        try
+        {
+            // Shared for delete as well, so that a listing never stands in the way of deleting a journal.
+            var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 4096,
+                useAsync: true);
+            using var reader = new StreamReader(stream, _encoding);
+            text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception cannotOpen) when (IsOpenFailure(cannotOpen) && cannotOpen is not FileNotFoundException)
+        {
+            throw new JournalOpenException(path, cannotOpen);
+        }
+
+        using var lines = new StringReader(text);
+        return Read(lines, path);
     }
 
     /// <summary>
@@ -115,11 +205,32 @@ internal sealed class JournalFile : IDisposable
         }
     }
 
-    /// <summary>Closes the file, so that a later run can continue the journal at once.</summary>
-    public void Dispose() => _stream.Dispose();
+    /// <summary>Closes the file and lets go of the journal, so that a later run can continue it at once.</summary>
+    public void Dispose()
+    {
+        _stream.Dispose();
+        _held.Dispose();
+    }
 
-    /// <summary>Gives the file to what <paramref name="open"/> makes of it, and closes the file when that throws.</summary>
-    private static JournalFile OwningOnSuccess(FileStream stream, Func<JournalFile> open)
+    private static bool IsOpenFailure(Exception failure) => failure is IOException or UnauthorizedAccessException;
+
+    private static void CreateDirectory(string directory)
+    {
+        try
+        {
+            Directory.CreateDirectory(directory);
+        }
+        catch (Exception cannotCreate) when (IsOpenFailure(cannotCreate))
+        {
+            throw new JournalOpenException(directory, cannotCreate);
+        }
+    }
+
+    /// <summary>
+    /// Gives the file and the hold on the journal to what <paramref name="open"/> makes of them, and closes the file and lets go of
+    /// the hold when that throws.
+    /// </summary>
+    private static JournalFile OwningOnSuccess(FileStream stream, JournalLock held, Func<JournalFile> open)
     {
         var owned = false;
         try
@@ -133,33 +244,33 @@ internal sealed class JournalFile : IDisposable
             if (!owned)
             {
                 stream.Dispose();
+                held.Dispose();
             }
         }
     }
 
-    private static JournalFold Read(FileStream stream)
+    private static JournalFold Read(TextReader reader, string path)
     {
-        using var reader = new StreamReader(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true);
         var header = ReadEntry(reader.ReadLine()) as HeaderEntry
-            ?? throw Unreadable("The file is not a journal: its first line is not a journal header.");
+            ?? throw new JournalFormatException(path, "its first line is not a journal header.");
         if (header.Version != _version)
         {
-            throw Unreadable($"The journal is in format version {header.Version}, which this Dagline cannot read.");
+            throw new JournalFormatException(
+                path,
+                $"it is in format version {header.Version}, which this Dagline cannot read.",
+                header.Version);
         }
 
-        return JournalFold.Of(header, Entries(reader));
+        return JournalFold.Of(header, Entries(reader, path, header.Version));
     }
 
-    private static IEnumerable<JournalEntry> Entries(StreamReader reader)
+    private static IEnumerable<JournalEntry> Entries(TextReader reader, string path, int version)
     {
         while (reader.ReadLine() is { } line)
         {
-            yield return ReadEntry(line) ?? throw Unreadable("A line of the journal is not an entry.");
+            yield return ReadEntry(line) ?? throw new JournalFormatException(path, "a line of it is not an entry.", version);
         }
     }
-
-    // The one place a journal that cannot be read is reported. The typed exception for it comes with the errors of opening a journal.
-    private static InvalidDataException Unreadable(string reason) => new(reason);
 
     private static JournalEntry? ReadEntry(string? line)
     {

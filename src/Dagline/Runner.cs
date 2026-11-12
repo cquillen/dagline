@@ -66,8 +66,15 @@ public static class Runner
     /// <para>
     /// A run on a journal opens it at the call, before the run exists: a new journal is created with its first line flushed to the disk,
     /// and one to continue is read in full. The run writes each step's entries before anything else the step does, and flushes every
-    /// settle to the disk before any dependent starts and before its event is published. It closes the journal in the step that ends
-    /// the run, after flushing the run's end, so a later run can continue it as soon as this task completes.
+    /// settle to the disk before any dependent starts and before its event is published. The run holds the journal for its whole
+    /// life through a lock file beside it, <c>&lt;id&gt;.lock</c>, so that no other run can use it meanwhile. It closes the journal and lets
+    /// go of the lock in the step that ends the run, after flushing the run's end, however the run ends, so a later run can continue it
+    /// as soon as this task completes. The lock file stays behind, and holds nothing.
+    /// </para>
+    /// <para>
+    /// The journal exceptions are thrown at the call, after the options have been checked: no task has started, no event has been
+    /// published and no reporter has been called. The checks run in this order: the options, the journal's lock, opening or creating
+    /// the journal, reading it.
     /// </para>
     /// <para>
     /// Dagline never writes to the console and never hooks a console or process signal: the app decides what requests a stop.
@@ -80,9 +87,18 @@ public static class Runner
     /// or above <see cref="uint.MaxValue"/> - 1 milliseconds and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
     /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
     /// </exception>
+    /// <exception cref="JournalInUseException">
+    /// <see cref="RunOptions.Journal"/> continues a journal that another run holds, in this process or another.
+    /// </exception>
     /// <exception cref="JournalNotFoundException">
-    /// <see cref="RunOptions.Journal"/> continues a journal that is not in its directory. It is thrown at the call, after the options
-    /// have been checked: no task has started, no event has been published and no reporter has been called.
+    /// <see cref="RunOptions.Journal"/> continues a journal that is not in its directory.
+    /// </exception>
+    /// <exception cref="JournalOpenException">
+    /// The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written.
+    /// </exception>
+    /// <exception cref="JournalFormatException">
+    /// The journal to continue cannot be read as one: its first line is not a journal header, its format version is unknown, or a
+    /// line other than the last is not an entry.
     /// </exception>
     public static Task<RunResult> RunAsync(Graph graph, RunOptions options, StopSignal? stop = null)
     {
