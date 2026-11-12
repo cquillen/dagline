@@ -1,8 +1,9 @@
 namespace Dagline.Testing;
 
 /// <summary>
-/// A clock on which every delay and timer ends at once, and whose time jumps forward by the delay as it does. Pass it as
-/// <see cref="RunOptions.TimeProvider"/>, and a graph whose tasks wait for hours completes in milliseconds.
+/// A clock on which every finite delay and timer ends at once, and whose time jumps forward by the delay as it does. Pass it as
+/// <see cref="RunOptions.TimeProvider"/>, and a graph whose tasks wait for hours completes in milliseconds. A delay or timer
+/// with an infinite due time never ends.
 /// </summary>
 /// <remarks>
 /// <para>

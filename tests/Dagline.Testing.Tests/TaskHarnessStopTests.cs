@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using Dagline.TestSupport;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Dagline.Testing.Tests;
 
+[NotInParallel(DiskHeavy.Key)]
 public class TaskHarnessStopTests
 {
     private const int _repeats = 50;

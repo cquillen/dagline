@@ -1,6 +1,6 @@
 # Testing your tasks
 
-`Dagline.Testing` is a package for test projects only. It holds a harness that runs one task body and hands back what the task left behind, and a clock on which every delay ends at once, so a task that waits an hour in production takes milliseconds in a test. It depends on `Dagline` alone: no test framework, no assertion library and no terminal library, so it works with whatever your test project already uses.
+`Dagline.Testing` is a package for test projects only. It holds a harness that runs one task body and hands back what the task left behind, and a clock on which every finite delay ends at once, so a task that waits an hour in production takes milliseconds in a test. It depends on `Dagline` alone: no test framework, no assertion library and no terminal library, so it works with whatever your test project already uses.
 
 ```shell
 dotnet add package Dagline.Testing
@@ -38,7 +38,7 @@ The outcome carries everything a task reports:
 
 It has no times, no checkpoint and no counts of lines that were not kept.
 
-A run of the harness is a real run through `Runner.RunAsync`: a graph of one task at the root, a journal in a temporary directory the harness creates, and a reporter of the harness's own that watches it. The body sees exactly what it would see in your app, so a test proves what a real run will do. Nothing runs and nothing touches the disk until the first run. Disposing the harness deletes the directory. Disposing it twice is harmless, and a run after disposal throws `ObjectDisposedException`.
+A run of the harness is a real run through `Runner.RunAsync`: a graph of one task at the root, a journal in a new directory the harness creates under the system's temporary directory, named `dagline-harness-` and random characters (on Unix only you can open it), and a reporter of the harness's own that watches it. The body sees exactly what it would see in your app, so a test proves what a real run will do. Nothing runs and nothing touches the disk until the first run. Disposing the harness deletes the directory. Disposing it twice is harmless, and a run after disposal throws `ObjectDisposedException`.
 
 An exception the body throws never comes out of the harness: it is the task's unexpected failure and comes back as an outcome, the way a run sees it. An exception from the run itself, such as a journal that cannot be written, comes out of the call unchanged.
 
@@ -46,7 +46,7 @@ A harness does one run at a time and is not safe to call from two threads at onc
 
 ## The instant clock and its guard
 
-With no clock passed, `RunAsync` runs on an <xref:Dagline.Testing.InstantClock>: a `TimeProvider` on which every delay and timer ends at once, and whose time jumps forward by the delay as it does. A task that measures elapsed time, such as one with a deadline of its own, still sees time pass. The clock starts at midnight UTC on 1 January 2000 on every run, its local time zone is UTC, and time only moves forward.
+With no clock passed, `RunAsync` runs on an <xref:Dagline.Testing.InstantClock>: a `TimeProvider` on which every finite delay and timer ends at once, and whose time jumps forward by the delay as it does. A delay or timer with an infinite due time never ends. A task that measures elapsed time, such as one with a deadline of its own, still sees time pass. The harness makes this clock once and uses it for its whole life: it starts at midnight UTC on 1 January 2000 when the harness is made, and a later run carries on from the time the earlier runs moved it to. Its local time zone is UTC, and time only moves forward.
 
 A check that never returns `true` would spin for ever on such a clock, so the clock has a guard. Once more fake time than the guard has passed since the clock was made, making a delay or timer on it throws <xref:Dagline.Testing.ClockGuardException>. In a task body that fails the task, the run ends, and the harness throws `ClockGuardException` in place of returning the outcome, so the test fails with a clear exception instead of hanging. The default guard is 7 days of fake time. The guard is checked only when a delay or timer is made, so a periodic timer made before the guard was passed keeps firing past it; see [Do not hand an instant clock to a reporter](#do-not-hand-an-instant-clock-to-a-reporter). One default clock serves the whole life of a harness, so its guard counts fake time across runs.
 

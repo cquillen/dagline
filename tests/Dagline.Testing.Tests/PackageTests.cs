@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Xml.Linq;
+using Dagline.TestSupport;
 
 namespace Dagline.Testing.Tests;
 
@@ -17,6 +18,7 @@ public class PackageTests
     }
 
     [Test]
+    [NotInParallel(DiskHeavy.Key)]
     public async Task The_build_packs_it_with_the_other_two_packages()
     {
         var root = RepositoryRoot();
