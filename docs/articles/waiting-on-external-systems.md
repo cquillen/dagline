@@ -196,6 +196,8 @@ builder.Task("export", async context =>
 
 When the run is stopped, killed or fails while the job is in flight, the next run that continues the journal hands `job` back, and the task waits for the same job instead of submitting a new one. Once the task succeeds, the checkpoint is gone.
 
+The job task of the `Batch` sample is this pattern, with the clearing below and a comment on the open window. [Its README](https://github.com/cquillen/dagline/blob/main/samples/Dagline.Samples.Batch/README.md#3-ctrlc-during-the-jobs-then-again) shows a stopped run re-attaching to its jobs.
+
 ### Clearing a checkpoint for a fresh start
 
 A checkpoint survives a failure, so by default a later run re-attaches to the same external work. That suits work that was fixed and re-run in place. When the external work itself has failed and a later run should start fresh work instead, clear the checkpoint before reporting the failure:

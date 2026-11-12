@@ -6,7 +6,7 @@
 dotnet add package Dagline.Testing
 ```
 
-The examples below use Shouldly for assertions. Any assertion library does the same job.
+The examples below use Shouldly for assertions. Any assertion library does the same job. For a worked example on realistic tasks, [`samples/Dagline.Samples.Batch.Tests`](https://github.com/cquillen/dagline/tree/main/samples/Dagline.Samples.Batch.Tests) tests the task bodies of the `Batch` sample with the harness, a re-attach across two runs included, and uses nothing but the packages and a test framework.
 
 ## The harness and its outcome
 
