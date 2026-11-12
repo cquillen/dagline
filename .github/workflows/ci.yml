@@ -47,6 +47,29 @@ jobs:
           grep -q 'run ended: complete' basic-sample.txt
           if grep -q $'\x1b' basic-sample.txt; then echo 'The Basic sample wrote control sequences to redirected output.' >&2; exit 1; fi
 
+      # Three runs of the Batch sample on one journal, in a fresh data directory, checked by exit code only. The first
+      # fails a validation, which blocks every job. The second continues it: one status call throws and one job ends in
+      # error. The third continues again and can end complete only if the first job re-attaches and the last triggers
+      # afresh, since the fake scheduler refuses a second trigger of a job that is running or done.
+      - name: Run the Batch sample three times on one journal
+        shell: bash
+        run: |
+          data_dir="$RUNNER_TEMP/batch-data"
+          rm -rf "$data_dir"
+          batch() {
+            local expected=$1
+            shift
+            local code=0
+            dotnet run --project samples/Dagline.Samples.Batch -c Release --no-build -- --fast --plain --dir "$data_dir" "$@" || code=$?
+            if [ "$code" -ne "$expected" ]; then
+              echo "The Batch sample run with '$*' exited $code, expected $expected." >&2
+              exit 1
+            fi
+          }
+          batch 1 --fault validate
+          batch 1 --fault poll --fault job
+          batch 0
+
       - name: Validate packages
         if: runner.os == 'Linux'
         run: dotnet pack -c Release --no-build

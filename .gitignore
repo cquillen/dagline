@@ -488,3 +488,4 @@ docs/api/*.yml
 docs/api/.manifest
 TestResults/
 .claude/worktrees/
+batch-data/

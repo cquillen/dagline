@@ -151,3 +151,5 @@ Last, redirect the output: `dotnet run > run.txt`. Standard output is not a term
 ## Next
 
 [Concepts](concepts.md) walks through the ideas behind what you just used: the graph, statuses, the run outcome, stopping, journals and reporters.
+
+For a full example, the `Batch` sample, [`samples/Dagline.Samples.Batch`](https://github.com/cquillen/dagline/tree/main/samples/Dagline.Samples.Batch), is a small complete app that runs a batch of about 1,500 tasks over fake external systems, with faults to inject, continuing journals and subsets. [Its README](https://github.com/cquillen/dagline/blob/main/samples/Dagline.Samples.Batch/README.md) has the things to try.

@@ -20,5 +20,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Dagline.Samples.Basic/Dagline.Samples.Basic.csproj" />
+    <Project Path="samples/Dagline.Samples.Batch/Dagline.Samples.Batch.csproj" />
+    <Project Path="samples/Dagline.Samples.Batch.Tests/Dagline.Samples.Batch.Tests.csproj" />
   </Folder>
 </Solution>

@@ -47,6 +47,8 @@ var journal = options.Continue is { } id
 
 Operators working on different parts then each have a journal of their own, and can tell them apart when they list the directory.
 
+The `Batch` sample builds its subsets this way: it filters its shards, gates its jobs on the collection of shard groups and describes each journal by its shards. [Its README](https://github.com/cquillen/dagline/blob/main/samples/Dagline.Samples.Batch/README.md#4-two-operators-on-different-shards) runs two subsets side by side.
+
 ## A task in two subsets runs in each journal
 
 Dagline does not coordinate across processes. A task that is in two operators' subsets runs once in each of their journals. If it starts external work, each run starts that work. A checkpoint guards against starting it twice within one journal and cannot be seen from another. Make such a task safe to run in every journal that has it, or leave it out of subset graphs.

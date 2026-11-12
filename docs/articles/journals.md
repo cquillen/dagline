@@ -68,6 +68,8 @@ A directory that does not exist gives an empty list. Each <xref:Dagline.JournalS
 
 The listing reads each journal with the same code that a continuing run uses, so what it shows is what a run that continues the journal would find.
 
+The `Batch` sample's policy also matches the description, so each subset continues its own journal, and it does not skip a journal that another run holds, so that run is refused. [Its README](https://github.com/cquillen/dagline/blob/main/samples/Dagline.Samples.Batch/README.md#2-a-failed-validation-then-the-fix) shows a failed run and the run that continues it.
+
 ## What a continuing run keeps and runs again
 
 A task whose latest settle in the journal is a success is an **earlier success**:

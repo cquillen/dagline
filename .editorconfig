@@ -49,6 +49,6 @@ dotnet_diagnostic.CA2007.severity = warning
 # Internal types are sealed until something derives from them.
 dotnet_diagnostic.CA1852.severity = warning
 
-[tests/**.cs]
+[{tests/**.cs,samples/*.Tests/**.cs}]
 # Test method names may use underscores.
 dotnet_diagnostic.CA1707.severity = none
