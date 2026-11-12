@@ -55,8 +55,8 @@ internal static class Tally
         yield return new(counts[NodeStatus.Succeeded], glyphs.Succeeded, Palette.Succeeded, "succeeded", "succeeded", snapshot.EarlierSuccesses);
         yield return new(counts[NodeStatus.Running] - waiting, glyphs.Running, Palette.Working, "working", "working");
         yield return new(waiting, glyphs.Waiting, Palette.Waiting, "waiting", "waiting");
-        yield return new(counts[NodeStatus.Ready], glyphs.Ready, Palette.For(NodeStatus.Ready), "ready", "ready");
-        yield return new(counts[NodeStatus.Pending], glyphs.Pending, Palette.For(NodeStatus.Pending), "pending", "pending");
+        yield return new(counts[NodeStatus.Ready], glyphs.Ready, Palette.Ready, "ready", "ready");
+        yield return new(counts[NodeStatus.Pending], glyphs.Pending, Palette.Pending, "pending", "pending");
         yield return new(counts[NodeStatus.Failed], glyphs.Failed, Palette.Failed, "failed", "failed");
         yield return new(counts[NodeStatus.Blocked], glyphs.Blocked, Palette.Blocked, "blocked", "blocked");
         yield return new(counts[NodeStatus.Cancelled], glyphs.Cancelled, Palette.Cancelled, "cancelled", "cancelled");

@@ -36,7 +36,7 @@ internal static class Frame
         IReadOnlyList<StyledLine> top =
         [
             .. Header.Lines(snapshot, width, now, glyphs),
-            .. StopBanner.Lines(snapshot, heard.StopBy, now, glyphs),
+            .. StopBanner.Lines(snapshot, heard.StopBy, width, now, glyphs),
         ];
         var groups = GroupsPane.Lines(snapshot, width, height - top.Count, glyphs);
         var left = height - top.Count - groups.Count;

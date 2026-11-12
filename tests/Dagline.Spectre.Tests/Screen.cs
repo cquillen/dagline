@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace Dagline.Spectre.Tests;
 
@@ -62,7 +64,7 @@ internal sealed class Screen
     {
         get
         {
-            var lines = _alternate.Select(row => new string([.. row.Select(cell => cell.Character)]).TrimEnd()).ToList();
+            var lines = _alternate.Select(row => string.Concat(row.Select(cell => cell.Text)).TrimEnd()).ToList();
             while (lines.Count > 0 && lines[^1].Length == 0)
             {
                 lines.RemoveAt(lines.Count - 1);
@@ -139,8 +141,15 @@ internal sealed class Screen
                 continue;
             }
 
-            Print(character);
-            index++;
+            var textEnd = output.IndexOf(_escape, index);
+            textEnd = textEnd < 0 ? output.Length : textEnd;
+            var elements = StringInfo.GetTextElementEnumerator(output[index..textEnd]);
+            while (elements.MoveNext())
+            {
+                Print(elements.GetTextElement());
+            }
+
+            index = textEnd;
         }
     }
 
@@ -196,52 +205,89 @@ internal sealed class Screen
         }
     }
 
-    private void Print(char character)
+    /// <summary>Prints one text element (a character as a reader sees it) in as many cells as Spectre.Console measures it.</summary>
+    private void Print(string element)
     {
         if (!OnAlternateScreen)
         {
-            if (character == '\n')
+            if (element.EndsWith('\n'))
             {
                 _ordinary.Add(new());
             }
-            else if (character != '\r')
+            else if (element != "\r")
             {
-                _ordinary[^1].Append(character);
+                _ordinary[^1].Append(element);
             }
 
             return;
         }
 
-        switch (character)
+        switch (element)
         {
-            case '\r':
+            case "\r":
                 _column = 0;
                 _pendingWrap = false;
                 return;
-            case '\n':
+            case "\n":
+                NextRow();
+                return;
+            case "\r\n":
+                _column = 0;
                 NextRow();
                 return;
         }
 
-        if (_pendingWrap)
+        var cells = new Segment(element).CellCount();
+        if (cells == 0)
+        {
+            AppendToPreviousCell(element);
+            return;
+        }
+
+        if (_pendingWrap || _column + cells > _width)
         {
             Overflowed = true;
             _column = 0;
             NextRow();
         }
 
-        if (_row >= _height || _column >= _width)
+        if (_row >= _height || _column + cells > _width)
         {
             Overflowed = true;
             return;
         }
 
-        _alternate[_row][_column] = new Cell(character, _style);
-        _column++;
+        _alternate[_row][_column] = new Cell(element, _style);
+        for (var covered = 1; covered < cells; covered++)
+        {
+            _alternate[_row][_column + covered] = Cell.Covered(_style);
+        }
+
+        _column += cells;
         if (_column == _width)
         {
             _column = _width - 1;
             _pendingWrap = true;
+        }
+    }
+
+    private void AppendToPreviousCell(string element)
+    {
+        if (_row >= _height)
+        {
+            return;
+        }
+
+        var column = _pendingWrap ? _column : _column - 1;
+        while (column > 0 && _alternate[_row][column].Text.Length == 0)
+        {
+            column--;
+        }
+
+        if (column >= 0)
+        {
+            var cell = _alternate[_row][column];
+            _alternate[_row][column] = cell with { Text = cell.Text + element };
         }
     }
 
@@ -315,8 +361,14 @@ internal sealed class Screen
 
     private static Cell[] BlankRow(int width) => [.. Enumerable.Repeat(Cell.Blank, width)];
 
-    private readonly record struct Cell(char Character, string Style)
+    /// <summary>
+    /// One cell of the alternate screen: the text element written there, or empty when the cell is covered by a wide one to its
+    /// left.
+    /// </summary>
+    private readonly record struct Cell(string Text, string Style)
     {
-        public static Cell Blank { get; } = new(' ', "");
+        public static Cell Blank { get; } = new(" ", "");
+
+        public static Cell Covered(string style) => new("", style);
     }
 }

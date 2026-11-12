@@ -9,6 +9,7 @@ internal static class GroupsPane
     /// <summary>
     /// The pane for the run as <paramref name="snapshot"/> shows it: its title, then one row per group two levels down and per
     /// top-level node with no group beneath it, or one row per top-level node when those do not fit in <paramref name="height"/>.
+    /// When even those do not fit, the pane keeps to <paramref name="height"/> lines, the last saying how many rows it left out.
     /// A graph with no nodes gives no lines.
     /// </summary>
     /// <param name="snapshot">The run.</param>
@@ -29,8 +30,20 @@ internal static class GroupsPane
             rows = [.. snapshot.Nodes.Where(node => node.Path.Parent is null)];
         }
 
-        var nameWidth = rows.Max(node => Name(node, glyphs).Width);
-        return [PaneTitle.Line(StyledLine.Of("Groups", Palette.Bold), width, glyphs), .. rows.Select(node => Row(node, family, nameWidth, width, glyphs))];
+        var fits = rows.Count + 1 <= height;
+        var shown = fits ? rows : rows.Take(Math.Max(0, height - 2)).ToList();
+        var nameWidth = shown.Select(node => Name(node, glyphs).Width).DefaultIfEmpty(0).Max();
+        List<StyledLine> lines =
+        [
+            PaneTitle.Line(StyledLine.Of("Groups", Palette.Bold), width, glyphs),
+            .. shown.Select(node => Row(node, family, nameWidth, width, glyphs)),
+        ];
+        if (!fits)
+        {
+            lines.Add(TaskLine.More("and " + DisplayText.Count(rows.Count - shown.Count, "more row", "more rows")));
+        }
+
+        return lines;
     }
 
     private static StyledLine Row(NodeSnapshot node, Family family, int nameWidth, int width, Glyphs glyphs)
@@ -64,7 +77,7 @@ internal static class GroupsPane
         var running = node.Counts[NodeStatus.Running];
         return node.Status is NodeStatus.Running && running > 0 && family.WaitingBeneath(node) == running
             ? StyledLine.Of(glyphs.Waiting, Palette.Waiting)
-            : StyledLine.Of(glyphs.For(node.Status), Palette.For(node.Status));
+            : StatusMark.Of(node.Status, glyphs);
     }
 
     /// <summary>Succeeded over total, then the failures and the warnings when there are any, as in <c>1,087/1,104 ✗2 ▲3,173</c>.</summary>

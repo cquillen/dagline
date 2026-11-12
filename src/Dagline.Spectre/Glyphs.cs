@@ -65,17 +65,4 @@ internal sealed record Glyphs(
 
         return text.ToString();
     }
-
-    /// <summary>The glyph of a status. A running task that is waiting is drawn with <see cref="Waiting"/> instead.</summary>
-    public string For(NodeStatus status) => status switch
-    {
-        NodeStatus.Pending => Pending,
-        NodeStatus.Ready => Ready,
-        NodeStatus.Running => Running,
-        NodeStatus.Succeeded => Succeeded,
-        NodeStatus.Failed => Failed,
-        NodeStatus.Blocked => Blocked,
-        NodeStatus.Cancelled => Cancelled,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Not a status."),
-    };
 }

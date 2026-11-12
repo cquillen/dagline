@@ -68,6 +68,27 @@ public class StopBannerTests
         frame[3].ShouldBe(" STOPPING  waiting for 1 running task to end · Ctrl+C again to stop waiting");
     }
 
+    [Test]
+    public async Task On_a_narrow_terminal_the_banner_cuts_what_the_run_is_waiting_for_and_keeps_what_Ctrl_C_does()
+    {
+        var a = new PausedBody();
+        var stop = new StopSignal();
+        var builder = new GraphBuilder();
+        builder.Task("a", a.Body);
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15, stop: stop);
+        await a.Started;
+        stop.Request();
+        await display.Handled("stop requested");
+        var frame = display.NextFrame();
+        var overflowed = display.Screen.Overflowed;
+        a.Release();
+        await display.Run;
+
+        overflowed.ShouldBeFalse();
+        frame[3].ShouldBe(" STOPPING  waiting for 1 run… · Ctrl+C again to stop waiting");
+    }
+
     /// <summary><paramref name="left"/> at the start of a line <paramref name="width"/> cells wide and <paramref name="right"/> at its end.</summary>
     private static string Pinned(string left, string right, int width) => left + new string(' ', width - left.Length - right.Length) + right;
 }

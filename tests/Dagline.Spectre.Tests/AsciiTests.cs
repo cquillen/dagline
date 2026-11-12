@@ -67,7 +67,7 @@ public class AsciiTests
         running.ShouldContain("    no input ?");
         running.ShouldContain(line => line.StartsWith("! ok  odd caf?", StringComparison.Ordinal));
         running.ShouldContain(line => line.Contains("...", StringComparison.Ordinal));
-        stopping.ShouldContain(line => line.StartsWith(" STOPPING  waiting for 2 running tasks to end | ", StringComparison.Ordinal));
+        stopping.ShouldContain(" STOPPING  waiting for 2 running tasks to end ... | Ctrl+C again to stop waiting");
         stopping.ShouldContain(line => line.StartsWith("# cancel  arr?t?", StringComparison.Ordinal));
         summary.ShouldContain(line => line.StartsWith("x bad ", StringComparison.Ordinal));
         summary.ShouldContain("    no input ?");

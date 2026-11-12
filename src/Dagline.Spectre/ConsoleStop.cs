@@ -17,7 +17,8 @@ namespace Dagline.Spectre;
 /// </para>
 /// <para>
 /// The signal hooks the console's cancel key event, <see cref="Console.CancelKeyPress"/>, and nothing else: no other key and no
-/// other process signal. Presses are counted by the hook itself, so a <see cref="StopSignal.Request"/> the app makes on the same
+/// other process signal. Of that event it handles Ctrl+C alone. Ctrl+Break, which raises the same event, is left as it is: it
+/// is not counted, not swallowed and requests nothing, so it ends the process as it would with no hook. Presses are counted by the hook itself, so a <see cref="StopSignal.Request"/> the app makes on the same
 /// signal does not use up one of the two presses that are swallowed. Every other member is that of any stop signal.
 /// </para>
 /// </remarks>
@@ -69,6 +70,11 @@ public sealed class ConsoleStop : StopSignal, IDisposable
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs pressed)
     {
+        if (pressed.SpecialKey != ConsoleSpecialKey.ControlC)
+        {
+            return;
+        }
+
         if (Interlocked.Increment(ref _presses) > _swallowedPresses)
         {
             return;

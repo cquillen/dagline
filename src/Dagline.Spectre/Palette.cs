@@ -28,16 +28,7 @@ internal static class Palette
 
     public static Style Warning { get; } = new(Color.Yellow);
 
-    /// <summary>The style of a status. A running task that is waiting is drawn with <see cref="Waiting"/> instead.</summary>
-    public static Style For(NodeStatus status) => status switch
-    {
-        NodeStatus.Pending => Dim,
-        NodeStatus.Ready => Plain,
-        NodeStatus.Running => Working,
-        NodeStatus.Succeeded => Succeeded,
-        NodeStatus.Failed => Failed,
-        NodeStatus.Blocked => Blocked,
-        NodeStatus.Cancelled => Cancelled,
-        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Not a status."),
-    };
+    public static Style Pending { get; } = Dim;
+
+    public static Style Ready { get; } = Plain;
 }

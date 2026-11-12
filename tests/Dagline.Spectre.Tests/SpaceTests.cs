@@ -93,6 +93,56 @@ public class SpaceTests
         ]);
     }
 
+    [Test]
+    public async Task A_line_too_few_for_a_pane_goes_to_another_pane_and_is_not_left_blank()
+    {
+        // The header (3) and the groups (9) leave 3 lines: working takes 2 first, which leaves 1, too few for waiting's 2.
+        List<PausedBody> bodies = [];
+        var builder = new GraphBuilder();
+        var work = builder.Group("work");
+        for (var i = 1; i <= 3; i++)
+        {
+            var body = new PausedBody();
+            bodies.Add(body);
+            work.Task($"w{i}", body.Body);
+        }
+
+        var waited = new PausedBody();
+        bodies.Add(waited);
+        builder.Group("wait").Task("a1", async context =>
+        {
+            using var job = context.Waiting("job");
+            await waited.Body(context);
+        });
+        for (var i = 1; i <= 6; i++)
+        {
+            builder.Task($"p{i}", _ => Task.CompletedTask).After(work);
+        }
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 15);
+        foreach (var body in bodies)
+        {
+            await body.Started;
+        }
+
+        await display.Handled("waiting wait/a1: job");
+        var frame = display.NextFrame();
+        foreach (var body in bodies)
+        {
+            body.Release();
+        }
+
+        await display.Run;
+
+        frame.Count.ShouldBe(15);
+        frame.Skip(12).ShouldBe(
+        [
+            Rule("Working (3)"),
+            Pinned("● work/w1", "0s"),
+            "  and 2 more working",
+        ]);
+    }
+
     /// <summary>The lines of the pane whose title starts with <paramref name="title"/>, up to the next pane's title.</summary>
     private static List<string> Pane(IReadOnlyList<string> frame, string title)
     {

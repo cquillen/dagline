@@ -87,7 +87,7 @@ A count of zero is left out, and so are full limits and held tasks when there ar
 
 ### Groups
 
-One row per group two levels down, plus one row for each top-level node that has no group beneath it, in declaration order. When those rows do not fit, there is one row per top-level node instead.
+One row per group two levels down, plus one row for each top-level node that has no group beneath it, in declaration order. When those rows do not fit, there is one row per top-level node instead. When even those do not fit, the pane keeps to the lines it has, and its last line says how many rows it left out, as in `and 4 more rows`.
 
 A row is the node's status glyph, its title or else the last segment of its path, then one cell per child in the glyph and colour of that child's status, then succeeded over total (`1,087/1,104`) and the failures (`✗2`) and warnings (`▲3,173`) beneath it when there are any. A group's glyph is its derived status, drawn as waiting when every task running beneath it is waiting. A row with more children than it has room for shows a bar split by status in place of the cells, so a large graph still fits on one screen.
 
@@ -120,7 +120,7 @@ The header, the stop banner and the groups come first. The lines left are shared
 3. Waiting grows to all it wants, which is at most five tasks.
 4. Working grows to all it wants.
 
-Lines that no pane can use stay blank, so problems never take more than a third, or two lines when a third is fewer. A pane given fewer than two lines draws nothing, except the working pane when every running task is waiting, which needs only its title. A pane given two lines and more than it can show draws its title and the line that says how many it left out.
+Lines that no pane can use stay blank, so problems never take more than a third, or two lines when a third is fewer. No pane is given fewer lines than it needs to draw: when only one line is left for a pane that needs two, it gets none, and the line goes to a pane after it. A pane given fewer than two lines draws nothing, except the working pane when every running task is waiting, which needs only its title. A pane given two lines and more than it can show draws its title and the line that says how many it left out.
 
 ### Width
 
@@ -139,7 +139,7 @@ Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a nar
 - Both are swallowed, so your process lives on, the run winds down and `RunAsync` returns its result.
 - **From the third Ctrl+C on** nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Disposing unhooks the key, and a press after that is your app's own business again. The signal hooks nothing but the console's cancel key event, and the core package still hooks nothing at all. The two presses are counted by the hook itself, so a `Request` your app makes on the same signal does not use one up. The display does not depend on the hook: any stop signal shows the banner.
+Disposing unhooks the key, and a press after that is your app's own business again. The signal hooks nothing but the console's cancel key event, and the core package still hooks nothing at all. Of that event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. The two presses are counted by the hook itself, so a `Request` your app makes on the same signal does not use one up. The display does not depend on the hook: any stop signal shows the banner.
 
 ### The stop banner
 
@@ -156,6 +156,8 @@ It says how many running tasks the run is waiting for and the time left until th
 ```
 
 After a stop that Dagline asked for, your first request already ends the wait, so the banner says `Ctrl+C` and not `Ctrl+C again`.
+
+On a terminal too narrow for the whole banner, what the run is waiting for is cut, and what Ctrl+C does is always kept at the end of the line.
 
 ## The summary
 
@@ -246,7 +248,7 @@ So, while a run with the display is in progress:
 The display draws on the terminal's alternate screen, the one full-screen programs such as editors use. That has two consequences.
 
 - **The run is not in your scrollback while it is in progress.** Each frame replaces the one before, and none of them is kept. What stays when the run has ended is the summary, printed on the ordinary screen, with whatever was there before the run above it.
-- **A killed process leaves the terminal as it was.** The display restores the terminal on every way out it controls: the end of the run, a drawing failure, and a stop that ends the run's wait for reporters while the display is still busy. A process that is killed, by the third Ctrl+C or from outside, gives it no chance, so the terminal can be left on the alternate screen with the cursor hidden. On Unix, `tput rmcup; tput cnorm` or `reset` brings it back. On any terminal, writing the sequences `ESC [ ? 1049 l` and `ESC [ ? 25 h` (without the spaces) leaves the alternate screen and shows the cursor, as PowerShell's `Write-Host "$([char]27)[?1049l$([char]27)[?25h"` does. A journal is not harmed by a killed process: see [After a crash](journals.md#after-a-crash).
+- **A killed process can leave the terminal unrestored.** The display restores the terminal on every way out it controls: the end of the run, a drawing failure, and a stop that ends the run's wait for reporters while the display is still busy. A process that is killed, by the third Ctrl+C or from outside, gives it no chance, so the terminal can be left on the alternate screen with the cursor hidden. On Unix, `tput rmcup; tput cnorm` or `reset` brings it back. On any terminal, writing the sequences `ESC [ ? 1049 l` and `ESC [ ? 25 h` (without the spaces) leaves the alternate screen and shows the cursor, as PowerShell's `Write-Host "$([char]27)[?1049l$([char]27)[?25h"` does. A journal is not harmed by a killed process: see [After a crash](journals.md#after-a-crash).
 
 Every frame repaints every line, so a stray line written to the console is gone within a quarter of a second, and a resize repaints cleanly at the next frame. The display does not check that the terminal honours the alternate screen: on one that does not, the frames are drawn on the ordinary screen.
 

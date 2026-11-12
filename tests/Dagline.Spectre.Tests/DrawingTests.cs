@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Dagline.TestSupport;
 
 namespace Dagline.Spectre.Tests;
@@ -61,9 +62,12 @@ public class DrawingTests
         await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 24, holdBefore: "work: pending -> ready");
         var first = display.LastFrame;
         IReadOnlyList<string> frame;
+        var waited = Stopwatch.StartNew();
         do
         {
+            waited.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30), "no frame showed the task succeeded");
             frame = display.NextFrame();
+            await Task.Yield();
         }
         while (!frame[0].Contains("100%", StringComparison.Ordinal));
 

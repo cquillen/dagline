@@ -112,6 +112,36 @@ public class GroupsTests
     }
 
     [Test]
+    public async Task When_even_the_top_level_rows_do_not_fit_the_pane_keeps_to_its_lines_and_says_how_many_it_left_out()
+    {
+        var first = new PausedBody();
+        var builder = new GraphBuilder();
+        var gate = builder.Task("t1", first.Body);
+        for (var i = 2; i <= 14; i++)
+        {
+            builder.Task($"t{i}", _ => Task.CompletedTask).After(gate);
+        }
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15);
+        await first.Started;
+        var frame = display.NextFrame();
+        var overflowed = display.Screen.Overflowed;
+        first.Release();
+        await display.Run;
+
+        overflowed.ShouldBeFalse();
+        frame.Count.ShouldBe(15);
+        frame.Skip(3).ShouldBe(
+        [
+            "── Groups " + new string('─', 50),
+            "● t1  0/1",
+            .. Enumerable.Range(2, 8).Select(i => $"· t{i}  0/1"),
+            "· t10 0/1",
+            "  and 4 more rows",
+        ]);
+    }
+
+    [Test]
     public async Task A_row_with_more_children_than_cells_shows_a_bar_split_by_status()
     {
         var gate = new PausedBody();
