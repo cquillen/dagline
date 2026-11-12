@@ -9,6 +9,18 @@ internal static class DisplayText
     /// <summary>A whole number with its thousands grouped, as in <c>3,173</c>, in the invariant culture.</summary>
     public static string Number(long number) => number.ToString("N0", CultureInfo.InvariantCulture);
 
+    /// <summary>A number and the word it counts, as in <c>1 task</c> and <c>3,173 tasks</c>.</summary>
+    public static string Count(long number, string one, string many) => $"{Number(number)} {(number == 1 ? one : many)}";
+
+    /// <summary>The time of day in UTC to the second, as in <c>06:48:40</c>.</summary>
+    public static string Time(DateTimeOffset at) => at.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Text a task gave, such as its status text, on one line: each line break is printed as a space, as the plain-text
+    /// reporter prints it.
+    /// </summary>
+    public static string OneLine(string text) => text.ReplaceLineEndings(" ");
+
     /// <summary>
     /// Whole seconds under a minute, as in <c>45s</c>. Minutes and seconds under an hour, as in <c>20m 44s</c>. Hours and minutes
     /// from there, as in <c>1h 15m</c>. Always rounded down, and a duration below zero is written as zero.
