@@ -46,7 +46,7 @@ internal static class WaitingPane
 
     private static StyledLine Line(NodeSnapshot node, int column, int width, DateTimeOffset now, Glyphs glyphs)
     {
-        var line = TaskLine.Start(glyphs.Waiting, Palette.Waiting, node, column, glyphs);
+        var line = TaskLine.Start(StatusMark.Waiting(glyphs), node, column, glyphs);
         if ((node.StatusText ?? node.WaitingText) is { } text)
         {
             line = line.Add(glyphs.Text(DisplayText.OneLine(text)));

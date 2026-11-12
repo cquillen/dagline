@@ -71,13 +71,13 @@ internal static class GroupsPane
     {
         if (node.IsEarlierSuccess)
         {
-            return StyledLine.Of(glyphs.Succeeded, Palette.EarlierSuccess);
+            return StatusMark.EarlierSuccess(glyphs).Line();
         }
 
         var running = node.Counts[NodeStatus.Running];
         return node.Status is NodeStatus.Running && running > 0 && family.WaitingBeneath(node) == running
-            ? StyledLine.Of(glyphs.Waiting, Palette.Waiting)
-            : StatusMark.Of(node.Status, glyphs);
+            ? StatusMark.Waiting(glyphs).Line()
+            : StatusMark.For(node.Status, glyphs).Line();
     }
 
     /// <summary>Succeeded over total, then the failures and the warnings when there are any, as in <c>1,087/1,104 ✗2 ▲3,173</c>.</summary>
@@ -88,13 +88,15 @@ internal static class GroupsPane
         var failed = node.Counts[NodeStatus.Failed];
         if (failed > 0)
         {
-            totals = totals.Add($" {glyphs.Failed}{DisplayText.Number(failed)}", Palette.Failed);
+            var mark = StatusMark.For(NodeStatus.Failed, glyphs);
+            totals = totals.Add($" {mark.Glyph}{DisplayText.Number(failed)}", mark.Style);
         }
 
         var warnings = family.WarningsBeneath(node);
         if (warnings > 0)
         {
-            totals = totals.Add($" {glyphs.Warning}{DisplayText.Number(warnings)}", Palette.Warning);
+            var mark = StatusMark.Warning(glyphs);
+            totals = totals.Add($" {mark.Glyph}{DisplayText.Number(warnings)}", mark.Style);
         }
 
         return totals;

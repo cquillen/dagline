@@ -64,7 +64,7 @@ internal static class Summary
             :
             [
                 Heading("Cancelled", snapshot.Cancelled.Count),
-                .. snapshot.Cancelled.Select(task => StyledLine.Of(glyphs.Cancelled + " ", Palette.Cancelled)
+                .. snapshot.Cancelled.Select(task => StatusMark.For(NodeStatus.Cancelled, glyphs).Line(" ")
                     .Add(task.Path.ToString())
                     .Add(task.Message is { Length: > 0 } message ? DisplayText.Between + glyphs.Text(message) : "", Palette.Dim)),
             ];
@@ -88,7 +88,7 @@ internal static class Summary
             StyledLine.Of(title, Palette.Bold),
             .. snapshot.WithWarnings.Where(task => !task.IsEarlierSuccess).SelectMany(task => (IEnumerable<StyledLine>)
             [
-                StyledLine.Of(glyphs.Warning + " ", Palette.Warning)
+                StatusMark.Warning(glyphs).Line(" ")
                     .Add(task.Path.ToString())
                     .Add(DisplayText.Between + DisplayText.Number(TaskCounts.Warnings(task)), Palette.Warning),
                 .. Kept(task.Warnings, task.WarningsOmitted, "warning", "warnings", glyphs),
@@ -97,7 +97,7 @@ internal static class Summary
                 ? Array.Empty<StyledLine>()
                 :
                 [
-                    StyledLine.Of(glyphs.Warning + " ", Palette.Warning).Add(
+                    StatusMark.Warning(glyphs).Line(" ").Add(
                         $"{DisplayText.Count(earlier.Sum(TaskCounts.Warnings), "warning", "warnings")} on "
                         + $"{DisplayText.Count(earlier.Count, "task", "tasks")} from earlier runs, not listed again",
                         Palette.Dim),
@@ -171,7 +171,7 @@ internal static class Summary
             .. Progress(task, glyphs) is { } progress ? [$"got to {progress}"] : Array.Empty<string>(),
         ];
 
-        yield return StyledLine.Of(glyphs.Failed + " ", Palette.Failed)
+        yield return StatusMark.For(NodeStatus.Failed, glyphs).Line(" ")
             .Add(task.Path.ToString())
             .Add(DisplayText.Between + string.Join($" {glyphs.Separator} ", facts), Palette.Dim);
 
@@ -188,7 +188,8 @@ internal static class Summary
         if (blocked is not null)
         {
             var roots = string.Join(", ", blocked.Roots.Select(Root));
-            yield return StyledLine.Of($"{DisplayText.Indent}{glyphs.Blocked} ", Palette.Blocked)
+            var mark = StatusMark.For(NodeStatus.Blocked, glyphs);
+            yield return StyledLine.Of($"{DisplayText.Indent}{mark.Glyph} ", mark.Style)
                 .Add($"blocked {DisplayText.Count(blocked.Tasks.Count, "task", "tasks")}: {roots}");
         }
     }

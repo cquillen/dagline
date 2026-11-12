@@ -53,7 +53,7 @@ internal static class WorkingPane
 
     private static StyledLine Line(NodeSnapshot node, int column, int countCells, int width, DateTimeOffset now, Glyphs glyphs)
     {
-        var line = TaskLine.Start(glyphs.Running, Palette.Working, node, column, glyphs);
+        var line = TaskLine.Start(StatusMark.For(NodeStatus.Running, glyphs), node, column, glyphs);
         if (countCells > 0)
         {
             line = line.Add(Bar(node, glyphs)).Add(" ").Add(CountText(node).PadRight(countCells));

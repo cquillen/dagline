@@ -1,5 +1,3 @@
-using Spectre.Console;
-
 namespace Dagline.Spectre;
 
 /// <summary>
@@ -20,12 +18,12 @@ internal static class TaskLine
         return Math.Min(longest + _gap, width * 45 / 100);
     }
 
-    /// <summary>The glyph, then the path cut to the column, keeping its start, and spaces to the end of the column.</summary>
-    public static StyledLine Start(string glyph, Style style, NodeSnapshot node, int column, Glyphs glyphs)
+    /// <summary>The mark, then the path cut to the column, keeping its start, and spaces to the end of the column.</summary>
+    public static StyledLine Start(Mark mark, NodeSnapshot node, int column, Glyphs glyphs)
     {
         var path = StyledLine.Of(node.Path.ToString()).Fit(Math.Max(0, column - _gap), glyphs.Ellipsis);
-        var mark = StyledLine.Of(glyph + " ", style);
-        return mark.Add(path).PadTo(mark.Width + column);
+        var start = mark.Line(" ");
+        return start.Add(path).PadTo(start.Width + column);
     }
 
     /// <summary>

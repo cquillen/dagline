@@ -1,5 +1,3 @@
-using Spectre.Console;
-
 namespace Dagline.Spectre;
 
 /// <summary>
@@ -91,18 +89,19 @@ internal static class ProblemsPane
             var when = StyledLine.Empty;
             if (blocks.TryGetValue(task.Path, out var blocked))
             {
-                when = when.Add($"{glyphs.Blocked} blocks {DisplayText.Number(blocked)}", Palette.Blocked).Add(DisplayText.Between);
+                var mark = StatusMark.For(NodeStatus.Blocked, glyphs);
+                when = when.Add($"{mark.Glyph} blocks {DisplayText.Number(blocked)}", mark.Style).Add(DisplayText.Between);
             }
 
             when = when.Add(SettledAt(task), Palette.Dim);
-            var named = StyledLine.PinRight(Named(task, glyphs.Failed, Palette.Failed), when, width, glyphs.Ellipsis);
+            var named = StyledLine.PinRight(Named(task, StatusMark.For(NodeStatus.Failed, glyphs)), when, width, glyphs.Ellipsis);
             yield return new Entry(_failure, task.Message is { } message ? [named, StyledLine.Of(DisplayText.Indent + glyphs.Text(message))] : [named]);
         }
     }
 
     private static StyledLine Cancelled(NodeSnapshot task, int width, Glyphs glyphs)
     {
-        var named = Named(task, glyphs.Cancelled, Palette.Cancelled);
+        var named = Named(task, StatusMark.For(NodeStatus.Cancelled, glyphs));
         if (task.Message is { } message)
         {
             named = named.Add(DisplayText.Between + glyphs.Text(message), Palette.Dim);
@@ -112,10 +111,9 @@ internal static class ProblemsPane
     }
 
     private static StyledLine Warning(WarningAdded warning, Glyphs glyphs)
-        => StyledLine.Of(glyphs.Warning, Palette.Warning).Add($" {warning.Path}").Add(DisplayText.Between + glyphs.Text(warning.Warning), Palette.Dim);
+        => StatusMark.Warning(glyphs).Line().Add($" {warning.Path}").Add(DisplayText.Between + glyphs.Text(warning.Warning), Palette.Dim);
 
-    private static StyledLine Named(NodeSnapshot task, string glyph, Style style)
-        => StyledLine.Of(glyph, style).Add($" {task.Path}");
+    private static StyledLine Named(NodeSnapshot task, Mark mark) => mark.Line().Add($" {task.Path}");
 
     private static string SettledAt(NodeSnapshot task) => task.Settled is { } settled ? DisplayText.Time(settled) : "";
 

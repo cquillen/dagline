@@ -1,5 +1,3 @@
-using Spectre.Console;
-
 namespace Dagline.Spectre;
 
 /// <summary>
@@ -31,10 +29,10 @@ internal static class Tally
                 line = line.Add(DisplayText.Between);
             }
 
-            line = line.Add($"{part.Glyph} {DisplayText.Number(part.Count)}", part.Style);
+            line = line.Add($"{part.Mark.Glyph} {DisplayText.Number(part.Count)}", part.Mark.Style);
             if (word)
             {
-                line = line.Add(" " + (part.Count == 1 ? part.One : part.Many), part.Style);
+                line = line.Add(" " + (part.Count == 1 ? part.One : part.Many), part.Mark.Style);
             }
 
             if (part.Earlier > 0)
@@ -52,16 +50,16 @@ internal static class Tally
         var counts = snapshot.Counts;
         var warnings = snapshot.WarningCount;
 
-        yield return new(counts[NodeStatus.Succeeded], glyphs.Succeeded, Palette.Succeeded, "succeeded", "succeeded", snapshot.EarlierSuccesses);
-        yield return new(counts[NodeStatus.Running] - waiting, glyphs.Running, Palette.Working, "working", "working");
-        yield return new(waiting, glyphs.Waiting, Palette.Waiting, "waiting", "waiting");
-        yield return new(counts[NodeStatus.Ready], glyphs.Ready, Palette.Ready, "ready", "ready");
-        yield return new(counts[NodeStatus.Pending], glyphs.Pending, Palette.Pending, "pending", "pending");
-        yield return new(counts[NodeStatus.Failed], glyphs.Failed, Palette.Failed, "failed", "failed");
-        yield return new(counts[NodeStatus.Blocked], glyphs.Blocked, Palette.Blocked, "blocked", "blocked");
-        yield return new(counts[NodeStatus.Cancelled], glyphs.Cancelled, Palette.Cancelled, "cancelled", "cancelled");
-        yield return new(warnings, glyphs.Warning, Palette.Warning, "warning", "warnings");
+        yield return new(counts[NodeStatus.Succeeded], StatusMark.For(NodeStatus.Succeeded, glyphs), "succeeded", "succeeded", snapshot.EarlierSuccesses);
+        yield return new(counts[NodeStatus.Running] - waiting, StatusMark.For(NodeStatus.Running, glyphs), "working", "working");
+        yield return new(waiting, StatusMark.Waiting(glyphs), "waiting", "waiting");
+        yield return new(counts[NodeStatus.Ready], StatusMark.For(NodeStatus.Ready, glyphs), "ready", "ready");
+        yield return new(counts[NodeStatus.Pending], StatusMark.For(NodeStatus.Pending, glyphs), "pending", "pending");
+        yield return new(counts[NodeStatus.Failed], StatusMark.For(NodeStatus.Failed, glyphs), "failed", "failed");
+        yield return new(counts[NodeStatus.Blocked], StatusMark.For(NodeStatus.Blocked, glyphs), "blocked", "blocked");
+        yield return new(counts[NodeStatus.Cancelled], StatusMark.For(NodeStatus.Cancelled, glyphs), "cancelled", "cancelled");
+        yield return new(warnings, StatusMark.Warning(glyphs), "warning", "warnings");
     }
 
-    private readonly record struct Part(int Count, string Glyph, Style Style, string One, string Many, int Earlier = 0);
+    private readonly record struct Part(int Count, Mark Mark, string One, string Many, int Earlier = 0);
 }
