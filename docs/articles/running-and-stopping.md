@@ -292,8 +292,17 @@ The options cannot be used to run the graph:
 
 It is thrown at the call too: no task has started, no event has been published and no reporter has been called.
 
-`RunAsync` throws <xref:Dagline.JournalNotFoundException> when <xref:Dagline.Journal.Continue*> names a journal that is not in its directory, after the options have been checked and also before anything has happened. See [Journals](journals.md#continuing-a-journal).
+A run on a journal then holds, opens and reads it, also before anything has happened. Each of these is thrown at the call, checked in this order:
 
-`RunConfigurationException` and `JournalNotFoundException` derive from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
+| Exception | When |
+| --- | --- |
+| <xref:Dagline.JournalInUseException> | Another run holds the journal, in this process or another. |
+| <xref:Dagline.JournalNotFoundException> | <xref:Dagline.Journal.Continue*> names a journal that is not in its directory. |
+| <xref:Dagline.JournalOpenException> | The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written. |
+| <xref:Dagline.JournalFormatException> | The file cannot be read as a journal: its first line is not a journal header, its format version is unknown (in `Version`), or a line other than the last is not an entry. |
+
+See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.
+
+`RunConfigurationException` and the journal exceptions derive from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
 
 A graph that cannot run never reaches `RunAsync`. `Build` refuses it with a <xref:Dagline.GraphException>, which has the same base: see [Build errors](defining-a-graph.md#build-errors).
