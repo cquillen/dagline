@@ -121,7 +121,8 @@ public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiti
 /// of the groups beneath it. One failure can settle many groups in one step, since every task it blocks settles with it.
 /// </para>
 /// <para>
-/// A group that is settled from the start of the run, because no task is beneath it, gets no event.
+/// A group that is settled from the start of the run, because no task is beneath it or every task beneath it is an earlier success,
+/// gets no event.
 /// A group's status before it settles is never an event: read it from a snapshot.
 /// </para>
 /// </remarks>
@@ -142,6 +143,17 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
     /// </summary>
     /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
     public IReadOnlyDictionary<NodeStatus, int> Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
+
+    /// <summary>
+    /// How many of the tasks beneath the group, at any depth, are earlier successes: kept from an earlier run of the journal
+    /// and not run in this one. They are among the succeeded in <see cref="Counts"/>, counted apart here so that a reporter can show
+    /// how much this run did. Zero for a run with no journal.
+    /// </summary>
+    /// <remarks>
+    /// A group made only of earlier successes is settled from the start of the run and gets no event, so a group that settles in a
+    /// run always has at least one task beneath it that settled in that run.
+    /// </remarks>
+    public int EarlierSuccesses { get; init; }
 }
 
 /// <summary>
@@ -150,9 +162,15 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is published once at most, when the run applies the first request on the <see cref="StopSignal"/> it was given.
+/// It is published once at most: when the run applies the first request on the <see cref="StopSignal"/> it was given, with
+/// <see cref="By"/> set to <see cref="StopRequester.App"/>, or when the run's journal can no longer be written, with
+/// <see cref="StopRequester.Dagline"/>, unless a stop was already in progress.
 /// It is a step of its own. A signal already requested when the run starts gives <see cref="RunStarted"/>, the tasks that become ready,
 /// this event, then <see cref="RunEnded"/>, with no task started.
+/// </para>
+/// <para>
+/// After a stop that Dagline asked for, any request on the app's <see cref="StopSignal"/>, the first included, ends the wait for the
+/// running tasks, as a second request does after a stop the app asked for.
 /// </para>
 /// <para>
 /// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Stop"/> set.
@@ -161,10 +179,20 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
 /// </para>
 /// </remarks>
 /// <param name="At">When the stop was applied.</param>
+/// <param name="By">Who asked for the stop: the app, through its <see cref="StopSignal"/>, or Dagline, when a journal write failed.</param>
 /// <param name="GracePeriod">
 /// How long the run waits for its running tasks to end. <see cref="Timeout.InfiniteTimeSpan"/> means the run waits until they have.
 /// </param>
-public sealed record StopRequested(DateTimeOffset At, TimeSpan GracePeriod) : RunEvent(At);
+public sealed record StopRequested(DateTimeOffset At, StopRequester By, TimeSpan GracePeriod) : RunEvent(At)
+{
+    /// <summary>A stop the app asked for through its <see cref="StopSignal"/>.</summary>
+    /// <param name="at">When the stop was applied.</param>
+    /// <param name="gracePeriod">How long the run waits for its running tasks to end.</param>
+    public StopRequested(DateTimeOffset at, TimeSpan gracePeriod)
+        : this(at, StopRequester.App, gracePeriod)
+    {
+    }
+}
 
 /// <summary>
 /// The run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
@@ -186,6 +214,37 @@ public sealed record StopRequested(DateTimeOffset At, TimeSpan GracePeriod) : Ru
 public sealed record StoppedWaiting(DateTimeOffset At, StoppedWaitingReason Reason) : RunEvent(At);
 
 /// <summary>The run ended. This is the last event of every run.</summary>
+/// <remarks>
+/// It carries exactly one of <see cref="Outcome"/> and <see cref="Error"/>. An ordinary run, stopped or not, ends with its run outcome.
+/// A run whose journal could no longer be written ends with a <see cref="JournalWriteException"/> and no run outcome, and
+/// <see cref="Runner.RunAsync"/> throws that same exception once reporters have handled every event.
+/// </remarks>
 /// <param name="At">When the run ended.</param>
-/// <param name="Outcome">How the run ended.</param>
-public sealed record RunEnded(DateTimeOffset At, RunOutcome Outcome) : RunEvent(At);
+/// <param name="Outcome">How the run ended, or <see langword="null"/> when it ended with an error.</param>
+/// <param name="Error">The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</param>
+public sealed record RunEnded(DateTimeOffset At, RunOutcome? Outcome, Exception? Error) : RunEvent(At)
+{
+    /// <summary>A run that ended with a run outcome, and no error.</summary>
+    /// <param name="at">When the run ended.</param>
+    /// <param name="outcome">How the run ended.</param>
+    public RunEnded(DateTimeOffset at, RunOutcome outcome)
+        : this(at, outcome, null)
+    {
+    }
+
+    /// <summary>How the run ended, or <see langword="null"/> when it ended with an error.</summary>
+    /// <remarks>
+    /// Set only by the constructor, as is <see cref="Error"/>, so that an object initializer or a <see langword="with"/> expression
+    /// cannot give an event both or neither.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Both or neither of <see cref="Outcome"/> and <see cref="Error"/> are given when the event is constructed.
+    /// </exception>
+    public RunOutcome? Outcome { get; } = (Outcome is null) != (Error is null)
+        ? Outcome
+        : throw new ArgumentException("A run ends with exactly one of a run outcome and an error.", nameof(Error));
+
+    /// <summary>The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</summary>
+    /// <remarks>Set only by the constructor, as is <see cref="Outcome"/>.</remarks>
+    public Exception? Error { get; } = Error;
+}

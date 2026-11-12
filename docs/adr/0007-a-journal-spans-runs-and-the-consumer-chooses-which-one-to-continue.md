@@ -17,7 +17,7 @@ What Dagline provides:
 How a journal is identified and held:
 
 - **The consumer names a directory, and each journal is one file in it.** There is no default directory, because a default relative to the working directory would make continuing depend on where the command was launched.
-- **Dagline generates the id when it creates the journal:** the UTC creation time and a short random suffix, as in `20270105-091233-k4f`. It sorts by age, can be typed, and is also the file name.
+- **Dagline generates the id when it creates the journal:** the UTC creation time and a short random suffix, as in `20261111T041200Z-a3f9c2`. It sorts by age, can be typed, and is also the file name.
 - **A description is optional free text given at creation.** It never changes, and it is how operators working in the same directory tell their journals apart.
 - **A journal is finished when its latest run was complete, and unfinished otherwise.** There is no marker for a journal that was given up on. Giving up on one is deleting it.
 - **A run holds its journal exclusively for its whole life.** A second process that tries to continue the same journal gets an error before any run exists, and the listing shows the journal as in use.

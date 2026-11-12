@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Dagline;
 
 /// <summary>
@@ -27,7 +29,9 @@ namespace Dagline;
 /// <para>
 /// Once the task has settled, <see cref="Status"/>, <see cref="Count"/>, <see cref="Warn"/>, <see cref="Message"/>,
 /// <see cref="Detail"/> and <see cref="Fail"/> change nothing and publish nothing, though they still check their arguments.
-/// <see cref="StatusOf"/> still answers. A body sees this only when it leaves work running after it has ended.
+/// <see cref="StatusOf"/> and <see cref="Checkpoint"/> still answer. <see cref="SaveCheckpointAsync"/> and
+/// <see cref="ClearCheckpointAsync"/> are the exception: they throw <see cref="InvalidOperationException"/>, so that a task never
+/// believes a checkpoint was kept when it was not. A body sees this only when it leaves work running after it has ended.
 /// </para>
 /// <para>
 /// The same holds for a task the run has <em>let go of</em>: one still running when the run stopped waiting for it after a stop
@@ -35,7 +39,8 @@ namespace Dagline;
 /// <c>still running when the run stopped waiting</c>, in place of any message it set, and keeps its warnings, detail lines and
 /// frozen progress. Its body may still be running, and nothing it does changes the run: the reporting members do nothing
 /// and do not throw, <see cref="Waiting"/> returns a scope that does nothing, and disposing a scope does nothing.
-/// <see cref="StatusOf"/>, <see cref="Path"/>, <see cref="TimeProvider"/> and <see cref="CancellationToken"/> keep working.
+/// A save or a clearing of the checkpoint throws <see cref="InvalidOperationException"/>, as on a task that has settled.
+/// <see cref="StatusOf"/>, <see cref="Checkpoint"/>, <see cref="Path"/>, <see cref="TimeProvider"/> and <see cref="CancellationToken"/> keep working.
 /// When the body ends, however it ends, nothing is published and no snapshot changes, and an exception from it is dropped.
 /// </para>
 /// <para>
@@ -46,6 +51,8 @@ namespace Dagline;
 /// </remarks>
 public sealed class TaskContext
 {
+    private const int _checkpointBytes = 4096;
+
     private readonly Run _run;
     private readonly BuiltTask _task;
 
@@ -338,6 +345,114 @@ public sealed class TaskContext
         ArgumentNullException.ThrowIfNull(dependency);
 
         return _run.StatusOf(_task, dependency);
+    }
+
+    /// <summary>
+    /// The task's checkpoint: what a run that continues the journal handed back when the task started, or what the task last saved
+    /// in this run. Empty when there is none.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A checkpoint is a small piece of text the task keeps for a later run of itself, typically the id of work it started in an external
+    /// system, so that a later run re-attaches to that work instead of starting it a second time. Dagline never reads it, and it is in no
+    /// event and no snapshot, so no reporter ever shows it.
+    /// </para>
+    /// <para>
+    /// The journal keeps a checkpoint through a failure, a cancellation, a task the run let go of and a killed process, and discards it
+    /// when the task succeeds. A task that succeeded therefore starts with none if it runs again, and so does every task on a new journal.
+    /// A checkpoint whose path is not in the graph of a later run is kept, and handed back again if the path returns.
+    /// </para>
+    /// <para>
+    /// With <see cref="Journal.None"/> a checkpoint lives in memory for the run: it starts empty and reads back what the task saved.
+    /// The property can be read at any time, from any thread, including after the task has settled.
+    /// </para>
+    /// </remarks>
+    public string Checkpoint => _run.CheckpointOf(_task);
+
+    /// <summary>
+    /// Saves the task's checkpoint, which replaces any it had, and completes once the checkpoint is flushed to the disk.
+    /// <c>await context.SaveCheckpointAsync(job.Id);</c>.
+    /// </summary>
+    /// <param name="text">
+    /// The checkpoint: any text of at most 4,096 bytes as UTF-8. An empty string clears the checkpoint, as
+    /// <see cref="ClearCheckpointAsync"/> does.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Cancels the save only if it is signalled before the save begins to write: once begun, the save completes. Do not pass
+    /// <see cref="CancellationToken"/> to a save that records work the task has just started, since a stop would then cancel the save
+    /// and a later run would start the work again.
+    /// </param>
+    /// <returns>A task that completes once the checkpoint is on disk, and at once for a run with no journal.</returns>
+    /// <remarks>
+    /// <para>
+    /// The save writes one line to the journal and flushes it to the disk before it completes, so what the task does next can rely on the
+    /// checkpoint surviving a killed process. The flush holds up the run for its length, roughly 1 to 5 ms on an SSD: a checkpoint is for
+    /// milestones, not for progress. The save publishes no event and changes no snapshot. <see cref="Checkpoint"/> reads the new text
+    /// from the moment the save completes.
+    /// </para>
+    /// <para>
+    /// A save made during the grace period, after a stop, succeeds and is handed back in the next run. One made once the task has settled,
+    /// or after the run has let go of it, throws: nothing would be kept, and the task must not believe otherwise.
+    /// </para>
+    /// <para>
+    /// With <see cref="Journal.None"/> the checkpoint is kept in memory for the run, nothing is written, and the same rules apply.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="text"/> is <see langword="null"/>. It is thrown by the call itself.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="text"/> is over 4,096 bytes as UTF-8, measured in bytes and not characters. It is thrown by the call itself,
+    /// and nothing is saved.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled before the save began. Nothing is saved.</exception>
+    /// <exception cref="InvalidOperationException">The task has settled, or the run has let go of it. Nothing is saved.</exception>
+    /// <exception cref="JournalWriteException">
+    /// The journal could not be written, so the checkpoint may not be on disk. Dagline stops the run, as for any failed journal write, and
+    /// the exception carries the snapshot as of the failed save.
+    /// </exception>
+    public Task SaveCheckpointAsync(string text, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (Encoding.UTF8.GetByteCount(text) > _checkpointBytes)
+        {
+            throw new ArgumentException(
+                $"A checkpoint is at most {_checkpointBytes} bytes as UTF-8, and this one is {Encoding.UTF8.GetByteCount(text)}.",
+                nameof(text));
+        }
+
+        return ChangeCheckpoint(text, cancellationToken);
+    }
+
+    /// <summary>
+    /// Clears the task's checkpoint, and completes once the clearing is flushed to the disk. A task with no checkpoint writes nothing.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the clearing only if it is signalled before the clearing begins to write.</param>
+    /// <returns>A task that completes once the clearing is on disk, and at once for a run with no journal or a task with no checkpoint.</returns>
+    /// <remarks>
+    /// Clear the checkpoint before reporting a failure when the external work has failed and a later run should start fresh work
+    /// instead of re-attaching to it. It follows the rules of <see cref="SaveCheckpointAsync"/>: it succeeds during the grace period,
+    /// and publishes no event.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled before the clearing began.</exception>
+    /// <exception cref="InvalidOperationException">The task has settled, or the run has let go of it. Nothing is cleared.</exception>
+    /// <exception cref="JournalWriteException">The journal could not be written. Dagline stops the run, as for any failed journal write.</exception>
+    public Task ClearCheckpointAsync(CancellationToken cancellationToken = default) => ChangeCheckpoint("", cancellationToken);
+
+    private Task ChangeCheckpoint(string text, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled(cancellationToken);
+        }
+
+        try
+        {
+            _run.ChangeCheckpoint(_task, text);
+            return Task.CompletedTask;
+        }
+        catch (Exception refused) when (refused is InvalidOperationException or JournalWriteException)
+        {
+            return Task.FromException(refused);
+        }
     }
 
     private async Task CheckUntilDone(

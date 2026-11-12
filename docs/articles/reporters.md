@@ -21,14 +21,14 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.TaskStatusChanged> | Every time a task changes status, pending to ready included. | The task as it is after the change, and the status before and after. |
 | <xref:Dagline.WarningAdded> | When a running task adds a warning that is kept: the first 100 of each task. | The path of the task and the warning. |
 | <xref:Dagline.WaitingChanged> | When a running task begins waiting on an external system and when it stops: once each per wait, however many waiting scopes overlap. | The path of the task, whether it is now waiting, the text saying what it waits for, and when the wait began. |
-| <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it. | The path of the group, its status and its count of tasks per status. |
-| <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
+| <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it, and never for one made only of earlier successes, which is settled from the start. | The path of the group, its status, its count of tasks per status, and `EarlierSuccesses`: how many of its succeeded tasks are earlier successes, counted apart. |
+| <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | Who asked, `By`: the app through its `StopSignal`, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
 | <xref:Dagline.StoppedWaiting> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
-| <xref:Dagline.RunEnded> | Last, once per run. | The run outcome. |
+| <xref:Dagline.RunEnded> | Last, once per run. | Exactly one of the run outcome and an error: a run whose journal could no longer be written ends with a `JournalWriteException` in `Error` and a null `Outcome`. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
-Nothing an event carries is ever null, except the text of a wait the task gave none for. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same.
+Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same. `RunEnded` is the exception: its constructor takes exactly one of `Outcome` and `Error` and throws `ArgumentException` when given both or neither, and a `with` expression cannot change either.
 
 ### The order within one step
 
@@ -84,6 +84,19 @@ A snapshot also answers the questions a summary asks, each in declaration order,
 - <xref:Dagline.Snapshot.NeverReached> lists the tasks a stopped run never started, which stay pending or ready. It is empty until the run has ended.
 - <xref:Dagline.Snapshot.WarningCount> counts every warning added, and <xref:Dagline.Snapshot.WithWarnings> lists the tasks that have any. Each task keeps its first 100 warnings in <xref:Dagline.NodeSnapshot.Warnings> and counts the rest in <xref:Dagline.NodeSnapshot.WarningsOmitted>.
 - <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line.
+
+### A run on a journal
+
+A run that continues a [journal](journals.md) begins with its earlier successes already succeeded. They are in the first snapshot, the one handed with `RunStarted`, and no event is ever published for them, so an event always means something happened in this run. What the snapshot says about the journal is fixed for the run:
+
+- <xref:Dagline.Snapshot.Journal> names the journal: its id, its description and which run of it this is, counting from 1. It is null for a run with `Journal.None`, and a new journal's id is known only from here.
+- <xref:Dagline.Snapshot.EarlierSuccesses> counts the earlier successes. They are among the succeeded in `Counts`, and <xref:Dagline.NodeSnapshot.IsEarlierSuccess> marks each one. A group's <xref:Dagline.NodeSnapshot.EarlierSuccesses> counts those beneath it, and `GroupSettled` carries the same number, so a reporter can show how much this run did.
+- <xref:Dagline.Snapshot.SetAside> lists the tasks whose earlier success this run set aside, in declaration order. They start pending and run again.
+- <xref:Dagline.Snapshot.JournalPathsNotInGraph> counts the paths the journal holds that this graph does not have as a task, and <xref:Dagline.Snapshot.JournalPathsNotInGraphUnsucceeded> how many of those have not succeeded.
+
+An earlier success keeps its whole outcome, warnings included, so `WarningCount` and `WithWarnings` cover every task in the graph. A reporter that lists warnings in its summary can tell those of earlier runs apart by `IsEarlierSuccess`.
+
+A run whose journal can no longer be written is stopped by Dagline: `StopRequested` has `By` set to `StopRequester.Dagline`, unless the app had already asked for a stop, whose `StopRequested` stays the only one, with `By` set to `StopRequester.App`. Either way `RunEnded` carries the `JournalWriteException` in `Error` with no run outcome. The final snapshot has an end time and no `Outcome`.
 
 ## What a reporter may rely on
 
@@ -301,13 +314,35 @@ cancelled: 2
 
 `job` ended because of the stop. `slow` was still running when the grace period was over, so the run let go of it. `tidy` and `report` were never reached: `tidy` stays pending, since a cancelled task never blocks, and `report` became ready and was not started.
 
+A run on a [journal](journals.md) names it, and says what it kept from earlier runs. Take a first run with the description `all shards` and the tasks `a` (it succeeded with a warning), `b` (it failed), `report` (after `b`; it succeeded), `old` (it failed) and `gone` (it succeeded). A second run continues it with a graph of `a`, `b` and `report`, and `b` now succeeds. `a` is an earlier success, `report` is set aside because `b` runs again, and `old` and `gone` are journal paths the graph no longer has, one of them not succeeded. The second run prints:
+
+```text
+2026-11-11T05:00:00Z run started: 3 tasks, 1 earlier success, 1 set aside, 2 journal paths not in graph (1 not succeeded)
+2026-11-11T05:00:00Z journal 20261111T041200Z-a3f9c2 run 2: all shards
+2026-11-11T05:00:00Z started b
+2026-11-11T05:00:04Z succeeded b in 4.0s
+2026-11-11T05:00:04Z started report
+2026-11-11T05:00:05Z succeeded report in 1.0s: 2 of 2 checks passed
+2026-11-11T05:00:05Z run ended: complete in 5.0s
+journal: 20261111T041200Z-a3f9c2 run 2: all shards
+tasks: 3 succeeded (1 earlier)
+warnings: 1
+  from earlier runs, not listed again: 1 on 1 task
+set aside: 1
+  report
+journal paths not in graph: 2 (1 not succeeded)
+```
+
+A run with `Journal.None` prints neither the journal line nor any of these parts.
+
 ### The lines of a run
 
 Every line about an event begins with the time of the event, read from the run's clock.
 
 | Line | When |
 | --- | --- |
-| `run started: <n> tasks` | The run starts. |
+| `run started: <n> tasks` | The run starts. On a journal it goes on, each only when it is not zero, with `, <n> earlier successes`, `, <n> set aside` and `, <n> journal paths not in graph (<m> not succeeded)`. |
+| `journal <id> run <n>: <description>` | The run starts on a journal, just after `run started`. With no description it ends after the run number. |
 | `started <path>` | A task starts running. |
 | `succeeded <path> in <duration>: <message>` | A task succeeds. |
 | `failed <path> in <duration>: <message>` | A task fails with a reported failure. Its detail lines follow, indented. |
@@ -317,12 +352,13 @@ Every line about an event begins with the time of the event, read from the run's
 | `warning <path>: <warning>` | A task adds a warning that is kept. |
 | `waiting <path>: <text>` | A task begins waiting on an external system. With no text it reads `waiting <path>`. |
 | `waited <path> for <duration>` | A task stops waiting. The duration is the whole wait. |
-| `stop requested: waiting up to <duration> for <n> running tasks` | The run applies a stop. With an unlimited grace period it reads `stop requested: waiting for <n> running tasks`. |
+| `stop requested: waiting up to <duration> for <n> running tasks` | The run applies a stop. With an unlimited grace period it reads `stop requested: waiting for <n> running tasks`. A stop that Dagline asked for, because the journal could no longer be written, begins `stop requested by Dagline, journal write failed:` and goes on the same way. |
 | `stopped waiting: grace period over, <n> tasks still running` | The grace period is over with tasks still running. A cancelled line for each follows. |
 | `stopped waiting: second stop, <n> tasks still running` | A second stop ends the wait with tasks still running. A cancelled line for each follows. |
 | `group <path> <status>: <counts>` | The last task beneath a group settles. |
 | `tasks: <counts>` | Nothing has been printed for a minute. |
 | `run ended: <run outcome> in <duration>` | The run ends. The summary follows. |
+| `run ended: journal write failed after <duration>: <message>` | The run ends with an error because its journal could no longer be written. The message is that of the cause. The summary follows. |
 
 What to know about them:
 
@@ -339,21 +375,25 @@ What to know about them:
 - **Times** are in UTC, as `2026-11-11T04:12:03Z`, whatever the time zone of the machine.
 - **Numbers** are written in the invariant culture with no grouping: `1234567`.
 - **A duration** is `3.1s` under a minute, `1m15s` under an hour and `2h14m` from there, always rounded down.
-- **A list of counts** names each status that has at least one task, in the order pending, ready, running, succeeded, failed, blocked, cancelled. When there are no tasks at all it reads `no tasks`.
+- **A list of counts** names each status that has at least one task, in the order pending, ready, running, succeeded, failed, blocked, cancelled. When there are no tasks at all it reads `no tasks`. Earlier successes are among the succeeded, and follow that count in brackets when there are any, as in `3 succeeded (1 earlier)`: in the summary, on the line of counts and on a group's line.
 - **Lines that were not kept.** Dagline keeps the first 100 detail lines and the first 100 warnings of a task. Where there were more, a line such as `and 3 more` follows the ones that were kept, at the same indent.
 
 ### The summary
 
-The summary follows the `run ended` line and has no timestamps. It has up to four sections. A section with nothing in it is left out, so a complete run with no warnings ends with the counts alone.
+The summary follows the `run ended` line and has no timestamps. A section with nothing in it is left out, so a complete run with no journal and no warnings ends with the counts alone.
 
-1. **The counts**: `tasks:` and the count of tasks per status. The tasks a stopped run never reached are counted here as pending and ready, and are not listed anywhere else.
-2. **The failures**: `failed:` and the number of failed tasks, then each of them in declaration order. The first line of a failure has the path, the kind of failure (`reported` or `unexpected`), when the task failed and how long it had run. Beneath it, each only when there is something to show:
+1. **The journal**: on a run with a journal, `journal:` and the same text as the line after `run started`.
+2. **The counts**: `tasks:` and the count of tasks per status. The tasks a stopped run never reached are counted here as pending and ready, and are not listed anywhere else.
+3. **The failures**: `failed:` and the number of failed tasks, then each of them in declaration order. The first line of a failure has the path, the kind of failure (`reported` or `unexpected`), when the task failed and how long it had run. Beneath it, each only when there is something to show:
    - `progress:` the progress the task had reported when it failed. It reads `<text>`, `<count>`, `<count> of <total>`, or the text and the count joined by a comma. It is always one line: a line break in the status text is printed as a space.
    - `message:` its message.
    - `detail:` its detail lines, one to a line.
    - `blocked <n> tasks:` what the failure blocked, named by its roots: the highest nodes whose every task it blocked. A failure that blocked every task beneath a group names that one group.
-3. **The cancelled tasks**: `cancelled:` and the number of cancelled tasks, then each of them in declaration order, in the shape of a failure without its kind: the path, when the task was cancelled and how long it had run, then its `progress:`, `message:` and `detail:` lines, each only when there is something to show. A cancelled task blocks nothing, so it has no `blocked` line.
-4. **The warnings**: `warnings:` and the number of warnings added in the run, kept or not, then each task that has any, in declaration order, with the warnings that were kept beneath it.
+4. **The cancelled tasks**: `cancelled:` and the number of cancelled tasks, then each of them in declaration order, in the shape of a failure without its kind: the path, when the task was cancelled and how long it had run, then its `progress:`, `message:` and `detail:` lines, each only when there is something to show. A cancelled task blocks nothing, so it has no `blocked` line.
+5. **The warnings**: `warnings:` and the number of warnings of every task in the graph, kept or not, then each task that added any in this run, in declaration order, with the warnings that were kept beneath it. The warnings of earlier successes were listed by the run that added them, so they are one line after those: `from earlier runs, not listed again: <n> on <m> tasks`. They stay on each node in the snapshot.
+6. **What is left**: on a run with a journal, `left for a later run: <n> tasks`, the tasks that have not succeeded. A complete run has none.
+7. **The set-asides**: `set aside:` and the number of tasks whose earlier success was set aside, then each path.
+8. **The journal paths not in the graph**: `journal paths not in graph: <n> (<m> not succeeded)`.
 
 ### The writer and the clock
 

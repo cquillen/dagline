@@ -30,7 +30,8 @@ public static class EventLine
             StopRequested => "stop requested",
             StoppedWaiting { Reason: StoppedWaitingReason.SecondStop } => "stopped waiting: second stop",
             StoppedWaiting => "stopped waiting: grace period over",
-            RunEnded ended => $"run ended: {Lower(ended.Outcome)}",
+            RunEnded { Outcome: { } outcome } => $"run ended: {Lower(outcome)}",
+            RunEnded ended => $"run ended: {ended.Error!.GetType().Name}",
             _ => runEvent.ToString(),
         };
     }

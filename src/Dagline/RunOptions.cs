@@ -87,7 +87,10 @@ public sealed record RunOptions
     /// </remarks>
     public TimeSpan GracePeriod { get; init; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>The journal choice of the run. <see cref="Journal.None"/> runs with no journal.</summary>
+    /// <summary>
+    /// The journal choice of the run: <see cref="Journal.New"/>, <see cref="Journal.Continue"/>, or <see cref="Journal.None"/>
+    /// to run with no journal.
+    /// </summary>
     /// <exception cref="ArgumentNullException">The value set is <see langword="null"/>.</exception>
     public required Journal Journal
     {

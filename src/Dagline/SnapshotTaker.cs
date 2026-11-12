@@ -20,7 +20,12 @@ namespace Dagline;
 /// <param name="atTheStart">Every node as it is when the run starts, in declaration order.</param>
 /// <param name="positions">The position of each node among the graph's nodes, by path.</param>
 /// <param name="slots">The run's slots, which give the size of the cap and of each limit.</param>
-internal sealed class SnapshotTaker(IEnumerable<NodeSnapshot> atTheStart, FrozenDictionary<NodePath, int> positions, Slots slots)
+/// <param name="journal">What every snapshot of the run says about its journal, which is fixed for the run.</param>
+internal sealed class SnapshotTaker(
+    IEnumerable<NodeSnapshot> atTheStart,
+    FrozenDictionary<NodePath, int> positions,
+    Slots slots,
+    SnapshotJournal journal)
 {
     private readonly Queue<NodeChange> _untaken = new();
 
@@ -75,6 +80,25 @@ internal sealed class SnapshotTaker(IEnumerable<NodeSnapshot> atTheStart, Frozen
             positions,
             StatusCounts.ToDictionary(change.Tally),
             slots.CapIn(slotsInUse),
-            slots.LimitsIn(slotsInUse));
+            slots.LimitsIn(slotsInUse),
+            journal);
     }
+}
+
+/// <summary>
+/// What a run's snapshots say about its journal. It is fixed when the run starts, so it is given to the
+/// <see cref="SnapshotTaker"/> once and not carried on each <see cref="SnapshotChange"/>.
+/// </summary>
+/// <param name="Info">The journal the run is on, or <see langword="null"/> for a run with no journal.</param>
+/// <param name="EarlierSuccesses">How many tasks of the graph are earlier successes.</param>
+internal sealed record SnapshotJournal(JournalInfo? Info, int EarlierSuccesses)
+{
+    /// <summary>The paths of the earlier successes the run set aside, in declaration order.</summary>
+    public IReadOnlyList<NodePath> SetAside { get; init; } = [];
+
+    /// <summary>How many journal paths the run did not find in its graph.</summary>
+    public int JournalPathsNotInGraph { get; init; }
+
+    /// <summary>How many of the journal paths not in the graph have not succeeded.</summary>
+    public int JournalPathsNotInGraphUnsucceeded { get; init; }
 }

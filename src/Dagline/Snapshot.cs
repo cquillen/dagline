@@ -28,7 +28,8 @@ public sealed class Snapshot
         FrozenDictionary<NodePath, int> positions,
         IReadOnlyDictionary<NodeStatus, int> counts,
         LimitUse cap,
-        IReadOnlyDictionary<string, LimitUse> limits)
+        IReadOnlyDictionary<string, LimitUse> limits,
+        SnapshotJournal journal)
     {
         Started = started;
         Ended = ended;
@@ -39,6 +40,11 @@ public sealed class Snapshot
         Counts = counts;
         Cap = cap;
         Limits = limits;
+        Journal = journal.Info;
+        EarlierSuccesses = journal.EarlierSuccesses;
+        SetAside = journal.SetAside;
+        JournalPathsNotInGraph = journal.JournalPathsNotInGraph;
+        JournalPathsNotInGraphUnsucceeded = journal.JournalPathsNotInGraphUnsucceeded;
     }
 
     /// <summary>When the run started, read from the run's <see cref="RunOptions.TimeProvider"/>.</summary>
@@ -82,6 +88,50 @@ public sealed class Snapshot
     /// </remarks>
     public IReadOnlyDictionary<string, LimitUse> Limits { get; }
 
+    /// <summary>
+    /// The journal the run is on, or <see langword="null"/> for a run with <see cref="Dagline.Journal.None"/>.
+    /// It is the same in every snapshot of the run, from the one handed with <see cref="RunStarted"/> on.
+    /// </summary>
+    /// <remarks>A run on a new journal is run 1, and its id is known only from here.</remarks>
+    public JournalInfo? Journal { get; }
+
+    /// <summary>
+    /// How many tasks of the graph are earlier successes: tasks that an earlier run of the journal recorded as succeeded, which
+    /// this run kept and does not run. Zero for a run with no journal and for a new journal.
+    /// </summary>
+    /// <remarks>
+    /// Earlier successes are counted as succeeded in <see cref="Counts"/>, from the first snapshot on. The number is fixed for the run.
+    /// </remarks>
+    public int EarlierSuccesses { get; }
+
+    /// <summary>
+    /// The paths of the tasks whose earlier success this run set aside, in declaration order. Empty for a run with no journal,
+    /// for a new journal, and when every success on record was kept.
+    /// </summary>
+    /// <remarks>
+    /// A task the journal records as succeeded is set aside when it is <em>after</em> a node that is not an earlier success in this
+    /// run: a task that is not one, or a group with such a task beneath it. A <em>requires</em> dependency never sets a success aside.
+    /// A task set aside starts pending and runs again. The set-asides are written to the journal before any task starts, and from
+    /// then on the task has no success on record, in this run and in later ones, until it succeeds again. The list is fixed for the run.
+    /// </remarks>
+    public IReadOnlyList<NodePath> SetAside { get; }
+
+    /// <summary>
+    /// How many paths the journal holds that this run's graph does not have as a task: a path no longer in the graph, or one that is
+    /// a group in the graph. Zero for a run with no journal and for a new journal.
+    /// </summary>
+    /// <remarks>
+    /// Such a path is left in the journal untouched and is not part of the run: it has no node, no event and no part in the run
+    /// outcome. When a later run's graph has it as a task again, what the journal holds for it applies again. The number is fixed for the run.
+    /// </remarks>
+    public int JournalPathsNotInGraph { get; }
+
+    /// <summary>
+    /// How many of the <see cref="JournalPathsNotInGraph"/> have not succeeded: the journal holds no success for the path, or the
+    /// success was set aside. This is the work a run on a smaller graph leaves behind, which a complete run does not show.
+    /// </summary>
+    public int JournalPathsNotInGraphUnsucceeded { get; }
+
     /// <summary>Every failed task, in declaration order. Empty when no task has failed.</summary>
     /// <remarks>
     /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read
@@ -124,7 +174,7 @@ public sealed class Snapshot
     /// How many warnings the tasks of the run have added so far, whatever the status of each task: those kept in
     /// <see cref="NodeSnapshot.Warnings"/> and those only counted in <see cref="NodeSnapshot.WarningsOmitted"/>.
     /// </summary>
-    public int WarningCount => WithWarnings.Sum(task => task.Warnings.Count + task.WarningsOmitted);
+    public int WarningCount => WithWarnings.Sum(task => task.WarningsAdded);
 
     /// <summary>Every task that has added at least one warning, in declaration order. Empty when no task has.</summary>
     /// <remarks>
