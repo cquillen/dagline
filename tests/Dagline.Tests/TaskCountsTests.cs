@@ -266,4 +266,107 @@ public class TaskCountsTests
         result.Snapshot[quiet.Path].WarningCount.ShouldBe(1);
         result.Snapshot.WarningCount.ShouldBe(102);
     }
+
+    [Test]
+    public async Task A_warning_beyond_the_number_kept_is_counted_at_once_in_a_group_two_levels_above_its_task_and_publishes_nothing()
+    {
+        var warning = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var tenant = shard.Group("tenant-a");
+        var noisy = tenant.Task("noisy", warning.Body);
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var source = await reporter.Source;
+        var context = await warning.Started;
+        for (var entity = 1; entity <= 100; entity++)
+        {
+            context.Warn($"entity {entity} has no region");
+        }
+
+        var atTheNumberKept = source.Current;
+        context.Warn("entity 101 has no region");
+        context.Warn("entity 102 has no region");
+        var beyondIt = source.Current;
+        warning.Release();
+        var result = await run;
+
+        atTheNumberKept[shard.Path].WarningCount.ShouldBe(100);
+        beyondIt[shard.Path].WarningCount.ShouldBe(102);
+        beyondIt[tenant.Path].WarningCount.ShouldBe(102);
+        beyondIt[noisy.Path].WarningsOmitted.ShouldBe(2);
+        reporter.Events.OfType<WarningAdded>().Count().ShouldBe(100);
+        reporter.Events.OfType<GroupSettled>().Select(group => group.Path).ShouldBe([tenant.Path, shard.Path]);
+        reporter.Snapshots[^1][shard.Path].WarningCount.ShouldBe(102);
+        result.Snapshot[shard.Path].WarningCount.ShouldBe(102);
+    }
+
+    [Test]
+    public async Task A_continuing_run_counts_the_warnings_of_its_earlier_successes_in_every_group_above_them_from_its_start()
+    {
+        using var temporary = new TemporaryDirectory();
+        var fail = true;
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var tenant = shard.Group("tenant-a");
+        tenant.Task("load", context =>
+        {
+            for (var entity = 1; entity <= 101; entity++)
+            {
+                context.Warn($"entity {entity} has no region");
+            }
+
+            return Task.CompletedTask;
+        });
+        var verify = tenant.Task("verify", context =>
+        {
+            context.Warn("entity 7 has no owner");
+            return fail ? throw context.Fail("bad data") : Task.CompletedTask;
+        });
+        var graph = builder.Build();
+
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        fail = false;
+        var reporter = new RecordingReporter();
+        var second = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
+
+        var start = reporter.Snapshots[0];
+        start[tenant.Path].WarningCount.ShouldBe(101);
+        start[shard.Path].WarningCount.ShouldBe(101);
+        start[verify.Path].WarningCount.ShouldBe(0);
+        second.Snapshot[tenant.Path].WarningCount.ShouldBe(102);
+        second.Snapshot[shard.Path].WarningCount.ShouldBe(102);
+    }
+
+    [Test]
+    public async Task A_group_keeps_one_counts_value_while_its_counts_are_unchanged_and_a_new_one_once_they_change()
+    {
+        var warning = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var noisy = shard.Task("noisy", warning.Body);
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var source = await reporter.Source;
+        var context = await warning.Started;
+        var beforeTheWarnings = source.Current;
+        context.Warn("entity 1 has no region");
+        var afterOneWarning = source.Current;
+        context.Warn("entity 2 has no region");
+        var afterTwoWarnings = source.Current;
+        warning.Release();
+        var result = await run;
+
+        afterOneWarning[shard.Path].WarningCount.ShouldBe(1);
+        afterTwoWarnings[shard.Path].WarningCount.ShouldBe(2);
+        afterOneWarning[shard.Path].Counts.ShouldBeSameAs(beforeTheWarnings[shard.Path].Counts);
+        afterTwoWarnings[shard.Path].Counts.ShouldBeSameAs(beforeTheWarnings[shard.Path].Counts);
+        result.Snapshot[shard.Path].Counts.ShouldNotBeSameAs(beforeTheWarnings[shard.Path].Counts);
+        result.Snapshot[shard.Path].Counts[NodeStatus.Succeeded].ShouldBe(1);
+        result.Snapshot[noisy.Path].WarningCount.ShouldBe(2);
+    }
 }
