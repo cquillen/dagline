@@ -10,8 +10,8 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// The run owns the lock, the current snapshot, the grace-period timer, the registration on the stop signal, the source of the token
-/// every task sees, the task bodies, delivery to reporters and the end result. Its <see cref="JournalRecorder"/> owns the journal. It reads the clock once each time it takes the lock,
-/// and passes that time to the steps, except for a report that is never an event, which needs no time. No consumer code runs under the lock: task bodies are started on the thread pool,
+/// every task sees, the task bodies, delivery to reporters and the end result. Its <see cref="JournalRecorder"/> owns the journal.
+/// It reads the clock once each time it takes the lock, and passes that time to the steps, except for a report that is never an event, which needs no time. No consumer code runs under the lock: task bodies are started on the thread pool,
 /// and reporters are called by <see cref="ReporterDelivery"/>.
 /// </para>
 /// <para>
