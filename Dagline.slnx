@@ -18,6 +18,9 @@
     <Project Path="tests/Dagline.Testing.Tests/Dagline.Testing.Tests.csproj" />
     <Project Path="tests/Dagline.TestSupport/Dagline.TestSupport.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Dagline.Benchmarks/Dagline.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Dagline.Samples.Basic/Dagline.Samples.Basic.csproj" />
     <Project Path="samples/Dagline.Samples.Batch/Dagline.Samples.Batch.csproj" />

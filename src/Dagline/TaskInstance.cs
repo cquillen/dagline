@@ -74,7 +74,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     private bool IsRunning => Status is NodeStatus.Running;
 
     /// <summary>The task as a snapshot shows it now. Each call makes a new one.</summary>
-    public NodeSnapshot ToNodeSnapshot() => new(task, Status, StatusCounts.OfOneTask(Status))
+    public NodeSnapshot ToNodeSnapshot() => new(task, Status, TaskCounts.OfOneTask(Status, waiting: _waitingSince is not null, _isEarlierSuccess))
     {
         Failure = _failure,
         BlockedBy = _blockedBy,
@@ -90,8 +90,6 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         WaitingText = _waitingText,
         Started = _started,
         Settled = _settled,
-        IsEarlierSuccess = _isEarlierSuccess,
-        EarlierSuccesses = _isEarlierSuccess ? 1 : 0,
     };
 
     /// <summary>Moves the task from pending to ready: every dependency is met.</summary>
@@ -143,7 +141,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return [EndWaiting(now), SettleWith(outcome, now)];
     }
 
-    /// <summary>Sets the status text of the task's progress. Progress is never an event.</summary>
+    /// <summary>
+    /// Sets the status text of the task's progress, as given, or clears it when the text is empty. Progress is never an event.
+    /// </summary>
     public TaskChange? SetStatusText(string? text)
     {
         if (!IsRunning)
@@ -151,7 +151,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
             return null;
         }
 
-        _statusText = text;
+        // Kept as given, line breaks included: measured on #98, making it one line here cost a task that reports progress in a
+        // tight loop about a tenth more time, so each reporter flattens it as it prints.
+        _statusText = string.IsNullOrEmpty(text) ? null : text;
 
         return Changed();
     }
@@ -194,7 +196,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return new TaskChange(ToNodeSnapshot(), new WarningAdded(now, task.Path, kept));
     }
 
-    /// <summary>Sets the message, as one line. It is never an event.</summary>
+    /// <summary>Sets the message, as one line, or clears it when the message is empty. It is never an event.</summary>
     public TaskChange? SetMessage(string message)
     {
         if (!IsRunning)
@@ -239,7 +241,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
-    /// Opens one waiting scope. The first open scope begins the wait, with its text and <paramref name="now"/>,
+    /// Opens one waiting scope. The first open scope begins the wait, with its text as one line (none when empty) and <paramref name="now"/>,
     /// and produces <see cref="WaitingChanged"/>. A scope that overlaps one already open produces nothing.
     /// </summary>
     public TaskChange? OpenWaitingScope(string? text, DateTimeOffset now)
@@ -256,9 +258,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         }
 
         _waitingSince = now;
-        _waitingText = text;
+        _waitingText = LineBreaks.OneLineOrNone(text);
 
-        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: true, text, Since: now));
+        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: true, _waitingText, Since: now));
     }
 
     /// <summary>
@@ -360,7 +362,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return new TaskChange(moved, new TaskStatusChanged(now, moved, from, Status));
     }
 
-    private void ReplaceMessage(string message) => _message = LineBreaks.OneLine(message);
+    private void ReplaceMessage(string message) => _message = LineBreaks.OneLineOrNone(message);
 
     private void AddDetailLines(IEnumerable<string> texts)
     {

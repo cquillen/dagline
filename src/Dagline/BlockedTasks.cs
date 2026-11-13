@@ -71,7 +71,7 @@ public sealed record BlockedTasks(NodePath Cause, IReadOnlyList<NodeSnapshot> Ta
             ];
         }
 
-        int TasksBeneath(NodePath group) => nodes[positions[group]].Counts.Values.Sum();
+        int TasksBeneath(NodePath group) => nodes[positions[group]].Counts.Total;
     }
 
     private static IEnumerable<NodePath> GroupsThatHold(NodePath path)

@@ -106,7 +106,10 @@ public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warni
 /// <param name="At">When the marker began or ended.</param>
 /// <param name="Path">The path of the task.</param>
 /// <param name="Waiting"><see langword="true"/> when the wait began, <see langword="false"/> when it ended.</param>
-/// <param name="Text">What the task is waiting for, as given to the scope that began the wait, or <see langword="null"/> when it gave none.</param>
+/// <param name="Text">
+/// What the task is waiting for, as given to the scope that began the wait, on one line: each line break is a space.
+/// <see langword="null"/> when that scope gave no text or empty text.
+/// </param>
 /// <param name="Since">When the wait began. On a begin it equals <paramref name="At"/>; on an end it is the begin's time.</param>
 public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) : RunEvent(At);
 
@@ -133,27 +136,24 @@ public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiti
 /// else blocked if any is blocked, else succeeded.
 /// </param>
 /// <param name="Counts">
-/// How many tasks beneath the group, at any depth, have each status. Every status is present, in lifecycle order.
+/// How many tasks beneath the group, at any depth, have each status, with their sums and sub-counts, as the group's
+/// <see cref="NodeSnapshot.Counts"/> gives them in the snapshot handed with this event.
 /// </param>
-public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus Status, IReadOnlyDictionary<NodeStatus, int> Counts)
+public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus Status, TaskCounts Counts)
     : RunEvent(At)
 {
     /// <summary>
-    /// How many tasks beneath the group, at any depth, have each status. Every status is present, in lifecycle order.
-    /// </summary>
-    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
-    public IReadOnlyDictionary<NodeStatus, int> Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
-
-    /// <summary>
-    /// How many of the tasks beneath the group, at any depth, are earlier successes: kept from an earlier run of the journal
-    /// and not run in this one. They are among the succeeded in <see cref="Counts"/>, counted apart here so that a reporter can show
-    /// how much this run did. Zero for a run with no journal.
+    /// How many tasks beneath the group, at any depth, have each status, with their sums and sub-counts.
+    /// <see cref="TaskCounts.EarlierSuccesses"/> counts the earlier successes among the succeeded, so that a reporter can show
+    /// how much this run did, and none of the tasks is running, so none is waiting.
     /// </summary>
     /// <remarks>
     /// A group made only of earlier successes is settled from the start of the run and gets no event, so a group that settles in a
-    /// run always has at least one task beneath it that settled in that run.
+    /// run always has at least one task beneath it that settled in that run. The event does not carry the warnings beneath the group:
+    /// read the group's <see cref="NodeSnapshot.WarningCount"/> from the snapshot handed with it.
     /// </remarks>
-    public int EarlierSuccesses { get; init; }
+    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
+    public TaskCounts Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
 }
 
 /// <summary>

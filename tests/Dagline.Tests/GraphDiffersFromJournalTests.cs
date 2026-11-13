@@ -63,7 +63,7 @@ public class GraphDiffersFromJournalTests
 
         second.Snapshot.JournalPathsNotInGraph.ShouldBe(2);
         second.Snapshot.JournalPathsNotInGraphUnsucceeded.ShouldBe(0);
-        second.Snapshot.EarlierSuccesses.ShouldBe(0);
+        second.Snapshot.Counts.EarlierSuccesses.ShouldBe(0);
         second.Snapshot[ax.Path].Started.ShouldNotBeNull();
         second.Snapshot[b.Path].Started.ShouldNotBeNull();
     }

@@ -46,9 +46,9 @@ internal sealed class SnapshotTaker(
     /// </summary>
     public SnapshotChange Close(RunMilestones milestones, StatusCounts counts)
     {
-        var tally = new int[StatusCounts.TallyLength + slots.TallyLength];
+        var tally = new int[TaskCounts.TallyLength + slots.TallyLength];
         counts.CopyTo(tally);
-        slots.CopyTo(tally.AsSpan(StatusCounts.TallyLength));
+        slots.CopyTo(tally.AsSpan(TaskCounts.TallyLength));
 
         foreach (var (position, node) in _sinceLastChange)
         {
@@ -70,7 +70,7 @@ internal sealed class SnapshotTaker(
         }
 
         var (started, stop, ended, outcome) = change.Milestones;
-        var slotsInUse = change.Tally.AsSpan(StatusCounts.TallyLength);
+        var slotsInUse = change.Tally.AsSpan(TaskCounts.TallyLength);
         return new Snapshot(
             started,
             ended,
@@ -78,7 +78,7 @@ internal sealed class SnapshotTaker(
             stop,
             _nodes,
             positions,
-            StatusCounts.ToDictionary(change.Tally),
+            TaskCounts.From(change.Tally),
             slots.CapIn(slotsInUse),
             slots.LimitsIn(slotsInUse),
             journal);
@@ -90,8 +90,7 @@ internal sealed class SnapshotTaker(
 /// <see cref="SnapshotTaker"/> once and not carried on each <see cref="SnapshotChange"/>.
 /// </summary>
 /// <param name="Info">The journal the run is on, or <see langword="null"/> for a run with no journal.</param>
-/// <param name="EarlierSuccesses">How many tasks of the graph are earlier successes.</param>
-internal sealed record SnapshotJournal(JournalInfo? Info, int EarlierSuccesses)
+internal sealed record SnapshotJournal(JournalInfo? Info)
 {
     /// <summary>The paths of the earlier successes the run set aside, in declaration order.</summary>
     public IReadOnlyList<NodePath> SetAside { get; init; } = [];

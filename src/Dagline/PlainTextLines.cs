@@ -47,7 +47,7 @@ internal static class PlainTextLines
         [
             At(
                 runEvent.At,
-                $"group {settled.Path} {NameText.Of(settled.Status)}: {CountsText.PerStatus(settled.Counts, settled.EarlierSuccesses)}"),
+                $"group {settled.Path} {NameText.Of(settled.Status)}: {CountsText.PerStatus(settled.Counts)}"),
         ],
         RunEnded ended => [At(runEvent.At, Ended(ended, ended.At - snapshot.Started)), .. Summary(snapshot)],
         _ => [],
@@ -69,20 +69,18 @@ internal static class PlainTextLines
 
     private static string Timestamp(DateTimeOffset at) => at.UtcDateTime.ToString(_timestampFormat, CultureInfo.InvariantCulture);
 
-    private static string Counts(Snapshot snapshot) => $"tasks: {CountsText.PerStatus(snapshot.Counts, snapshot.EarlierSuccesses)}";
+    private static string Counts(Snapshot snapshot) => $"tasks: {CountsText.PerStatus(snapshot.Counts)}";
 
-    private static int Running(Snapshot snapshot) => snapshot.Counts.GetValueOrDefault(NodeStatus.Running);
-
-    private static int AllTasks(Snapshot snapshot) => snapshot.Counts.Values.Sum();
+    private static int Running(Snapshot snapshot) => snapshot.Counts[NodeStatus.Running];
 
     /// <summary>The parts of the <c>run started</c> line: the number of tasks, then each count of what the journal gave that is not zero.</summary>
     private static IEnumerable<string> Starting(Snapshot snapshot)
     {
-        yield return CountsText.Tasks(AllTasks(snapshot));
+        yield return CountsText.Tasks(snapshot.Counts.Total);
 
-        if (snapshot.EarlierSuccesses > 0)
+        if (snapshot.Counts.EarlierSuccesses > 0)
         {
-            yield return CountsText.Of(snapshot.EarlierSuccesses, "earlier success", "earlier successes");
+            yield return CountsText.Of(snapshot.Counts.EarlierSuccesses, "earlier success", "earlier successes");
         }
 
         if (snapshot.SetAside.Count > 0)
@@ -116,8 +114,7 @@ internal static class PlainTextLines
 
     private static string Began(WaitingChanged began)
         => began.Text is { } text
-            // The text is kept as the task gave it, line breaks included, and here it has one line to fit on.
-            ? $"waiting {began.Path}: {LineBreaks.OneLine(text)}"
+            ? $"waiting {began.Path}: {text}"
             : $"waiting {began.Path}";
 
     private static string Requested(StopRequested requested, int running)
@@ -144,22 +141,20 @@ internal static class PlainTextLines
     private static string Settled(NodeSnapshot task)
     {
         var unexpected = task.Failure is FailureKind.Unexpected ? $" ({NameText.Of(FailureKind.Unexpected)})" : "";
-        var message = task.Message is { Length: > 0 } set ? $": {set}" : "";
+        var message = task.Message is { } set ? $": {set}" : "";
 
         return $"{NameText.Of(task.Status)} {task.Path} in {Ran(task)}{unexpected}{message}";
     }
 
-    private static string Ran(NodeSnapshot task) => DurationText.Of((task.Settled - task.Started) ?? TimeSpan.Zero);
+    private static string Ran(NodeSnapshot task) => DurationText.Of(task.Ran ?? TimeSpan.Zero);
 
     private static IEnumerable<string> Summary(Snapshot snapshot)
     {
-        var blockedBy = snapshot.Blocked.ToDictionary(blocked => blocked.Cause);
-
         return
         [
             .. snapshot.Journal is { } journal ? [$"journal: {Named(journal)}"] : Array.Empty<string>(),
             Counts(snapshot),
-            .. Section("failed", snapshot.Failed, task => Entry(task, blockedBy.GetValueOrDefault(task.Path))),
+            .. Section("failed", snapshot.Failed, task => Entry(task, snapshot.TryGetBlocked(task.Path, out var blocked) ? blocked : null)),
             .. Section("cancelled", snapshot.Cancelled, task => Entry(task, blocked: null)),
             .. Warnings(snapshot),
             .. LeftForALaterRun(snapshot),
@@ -180,7 +175,7 @@ internal static class PlainTextLines
     /// </summary>
     private static IEnumerable<string> LeftForALaterRun(Snapshot snapshot)
     {
-        var left = AllTasks(snapshot) - snapshot.Counts.GetValueOrDefault(NodeStatus.Succeeded);
+        var left = snapshot.Counts.Unsucceeded;
         return snapshot.Journal is null || left == 0 ? [] : [$"left for a later run: {CountsText.Tasks(left)}"];
     }
 
@@ -199,7 +194,7 @@ internal static class PlainTextLines
             yield return $"    progress: {progress}";
         }
 
-        if (task.Message is { Length: > 0 } message)
+        if (task.Message is { } message)
         {
             yield return $"    message: {message}";
         }
@@ -230,7 +225,7 @@ internal static class PlainTextLines
             _ => null,
         };
 
-        if (task.StatusText is not { Length: > 0 } given)
+        if (task.StatusText is not { } given)
         {
             return count;
         }
@@ -266,7 +261,7 @@ internal static class PlainTextLines
                 :
                 [
                     Invariant(
-                        $"  from earlier runs, not listed again: {earlier.Sum(task => task.WarningsAdded)} on {CountsText.Tasks(earlier.Count)}"),
+                        $"  from earlier runs, not listed again: {earlier.Sum(task => task.WarningCount)} on {CountsText.Tasks(earlier.Count)}"),
                 ],
         ];
     }

@@ -22,9 +22,14 @@ internal static class DisplayText
     public static string Time(DateTimeOffset at) => at.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Text a task gave, such as its status text or waiting text, on one line: each line break is printed as a space, as the plain-text
-    /// reporter prints it.
+    /// Status text on one line: each line break is printed as a space, as the plain-text reporter prints it. A message and
+    /// waiting text already arrive as one line.
     /// </summary>
+    /// <remarks>
+    /// It is a copy of the core's internal <c>LineBreaks.OneLine</c>: the package boundary keeps that rule internal. Status text
+    /// keeps its line breaks in the snapshot, as #98 decided after measuring the cost of making it one line where a task
+    /// reports it, so each reporter flattens it as it prints.
+    /// </remarks>
     public static string OneLine(string text) => text.ReplaceLineEndings(" ");
 
     /// <summary>

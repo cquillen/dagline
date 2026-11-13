@@ -73,7 +73,7 @@ public class ContinueTests
         var kept = second.Snapshot[load.Path];
         kept.Status.ShouldBe(NodeStatus.Succeeded);
         kept.IsEarlierSuccess.ShouldBeTrue();
-        kept.EarlierSuccesses.ShouldBe(1);
+        kept.Counts.EarlierSuccesses.ShouldBe(1);
         kept.Message.ShouldBe("loaded 3 files");
         kept.Detail.ShouldBe(["file-1", "file-2", "file-3"]);
         kept.Warnings.ShouldBe(["file-2 was empty"]);
@@ -129,7 +129,7 @@ public class ContinueTests
         reporter.Snapshots[0].Nodes.Select(node => node.Status).ShouldAllBe(status => status == NodeStatus.Pending);
         second.Outcome.ShouldBe(RunOutcome.Complete);
         ran.Order().ShouldBe(["check", "later", "load", "wait"]);
-        second.Snapshot.EarlierSuccesses.ShouldBe(0);
+        second.Snapshot.Counts.EarlierSuccesses.ShouldBe(0);
     }
 
     [Test]
@@ -165,7 +165,7 @@ public class ContinueTests
         ]);
         reporter.Lines.Skip(8).Order().ShouldBe(["publish: running -> succeeded", "report: running -> succeeded", "run ended: complete"]);
         reporter.Snapshots[0][load.Path].IsEarlierSuccess.ShouldBeTrue();
-        reporter.Snapshots[0].EarlierSuccesses.ShouldBe(1);
+        reporter.Snapshots[0].Counts.EarlierSuccesses.ShouldBe(1);
         reporter.Snapshots[0].Counts[NodeStatus.Succeeded].ShouldBe(1);
         reporter.Snapshots[0].Counts[NodeStatus.Pending].ShouldBe(3);
     }
@@ -193,7 +193,7 @@ public class ContinueTests
             new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
 
         var settled = reporter.Events.OfType<GroupSettled>().ToList();
-        settled.Select(group => (group.Path, group.Status, group.EarlierSuccesses)).ShouldBe(
+        settled.Select(group => (group.Path, group.Status, group.Counts.EarlierSuccesses)).ShouldBe(
         [
             (mixed.Path, NodeStatus.Succeeded, 1),
             (shard.Path, NodeStatus.Succeeded, 3),
@@ -202,13 +202,13 @@ public class ContinueTests
         var start = reporter.Snapshots[0];
         start[done.Path].Status.ShouldBe(NodeStatus.Succeeded);
         start[done.Path].IsEarlierSuccess.ShouldBeTrue();
-        start[done.Path].EarlierSuccesses.ShouldBe(2);
+        start[done.Path].Counts.EarlierSuccesses.ShouldBe(2);
         start[mixed.Path].IsEarlierSuccess.ShouldBeFalse();
-        start[mixed.Path].EarlierSuccesses.ShouldBe(1);
+        start[mixed.Path].Counts.EarlierSuccesses.ShouldBe(1);
         start[shard.Path].IsEarlierSuccess.ShouldBeFalse();
-        start[shard.Path].EarlierSuccesses.ShouldBe(3);
-        second.Snapshot.EarlierSuccesses.ShouldBe(3);
-        second.Snapshot[shard.Path].EarlierSuccesses.ShouldBe(3);
+        start[shard.Path].Counts.EarlierSuccesses.ShouldBe(3);
+        second.Snapshot.Counts.EarlierSuccesses.ShouldBe(3);
+        second.Snapshot[shard.Path].Counts.EarlierSuccesses.ShouldBe(3);
     }
 
     [Test]
@@ -287,7 +287,7 @@ public class ContinueTests
 
         second.Outcome.ShouldBe(RunOutcome.Complete);
         second.Snapshot.Cap.Size.ShouldBe(1);
-        second.Snapshot.EarlierSuccesses.ShouldBe(1);
+        second.Snapshot.Counts.EarlierSuccesses.ShouldBe(1);
     }
 
     [Test]
@@ -326,7 +326,7 @@ public class ContinueTests
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
 
         result.Snapshot.Journal.ShouldBeNull();
-        result.Snapshot.EarlierSuccesses.ShouldBe(0);
+        result.Snapshot.Counts.EarlierSuccesses.ShouldBe(0);
         result.Snapshot[load.Path].IsEarlierSuccess.ShouldBeFalse();
     }
 }

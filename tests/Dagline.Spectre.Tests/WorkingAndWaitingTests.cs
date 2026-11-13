@@ -175,7 +175,8 @@ public class WorkingAndWaitingTests
         {
             (waits[2], "waiting load/w3: job 3"),
             (waits[0], "waiting load/w1: job 1"),
-            (waits[1], "waiting load/w2: job 2\nqueued"),
+            // The event carries the waiting text as one line.
+            (waits[1], "waiting load/w2: job 2 queued"),
             (waits[3], "waiting load/w4: job 4"),
             (waits[4], "waiting load/w5: job 5"),
             (waits[5], "waiting load/w6: job 6"),
@@ -208,6 +209,23 @@ public class WorkingAndWaitingTests
         ]);
 
         static string Row(string left, string time) => left + new string(' ', 80 - left.Length - time.Length) + time;
+    }
+
+    [Test]
+    public async Task A_waiting_task_whose_status_text_was_set_empty_shows_its_waiting_text()
+    {
+        var wait = new WaitingBody("job 17", status: "");
+        var builder = new GraphBuilder();
+        builder.Task("poll", wait.Body);
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 24);
+        wait.Begin();
+        await display.Handled("waiting poll: job 17");
+        var frame = display.NextFrame();
+        wait.Release();
+        await display.Run;
+
+        frame.ShouldContain(line => line.StartsWith("◌ poll  job 17 ", StringComparison.Ordinal));
     }
 
     [Test]

@@ -325,4 +325,4 @@ Once all of them have settled, the group is settled too. It is:
 
 An empty group is succeeded from the start of the run.
 
-A snapshot gives each group its status and <xref:Dagline.NodeSnapshot.Counts>: how many of the tasks beneath it have each status. When the last task beneath a group settles, reporters receive a <xref:Dagline.GroupSettled> event with the group's status and counts. Nested groups that settle together are reported deepest first. A group that was settled from the start gets no event.
+A snapshot gives each group its status and <xref:Dagline.NodeSnapshot.Counts>: how many of the tasks beneath it have each status, with their total, the settled, and the waiting and working among the running. A group also answers for the tasks beneath it with <xref:Dagline.NodeSnapshot.WarningCount>, <xref:Dagline.NodeSnapshot.IsWaiting> and <xref:Dagline.NodeSnapshot.IsWorking>: see [Reporters](reporters.md#counts). When the last task beneath a group settles, reporters receive a <xref:Dagline.GroupSettled> event with the group's status and counts. Nested groups that settle together are reported deepest first. A group that was settled from the start gets no event.

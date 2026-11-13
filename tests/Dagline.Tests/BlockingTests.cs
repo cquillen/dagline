@@ -197,7 +197,7 @@ public class BlockingTests
         result.Snapshot[archive.Path].Status.ShouldBe(NodeStatus.Succeeded);
         result.Snapshot[loadSettledTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
         result.Snapshot[publish.Path].Status.ShouldBe(NodeStatus.Blocked);
-        result.Snapshot.Counts.ShouldBe(new Dictionary<NodeStatus, int>
+        result.Snapshot.Counts.ByStatus().ShouldBe(new Dictionary<NodeStatus, int>
         {
             [NodeStatus.Pending] = 0,
             [NodeStatus.Ready] = 0,

@@ -45,7 +45,7 @@ public class SnapshotTests
         midRun.Nodes.Select(node => node.Status).ShouldBe([NodeStatus.Running, NodeStatus.Pending]);
         midRun.Ended.ShouldBeNull();
         midRun.Outcome.ShouldBeNull();
-        midRun.Counts.ShouldBe(new Dictionary<NodeStatus, int>
+        midRun.Counts.ByStatus().ShouldBe(new Dictionary<NodeStatus, int>
         {
             [NodeStatus.Pending] = 1,
             [NodeStatus.Ready] = 0,
@@ -66,7 +66,7 @@ public class SnapshotTests
 
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
 
-        result.Snapshot.Counts.ShouldBe(new Dictionary<NodeStatus, int>
+        result.Snapshot.Counts.ByStatus().ShouldBe(new Dictionary<NodeStatus, int>
         {
             [NodeStatus.Pending] = 0,
             [NodeStatus.Ready] = 0,
@@ -123,7 +123,7 @@ public class SnapshotTests
         var tasks = atTheStart.Nodes.Where(node => !node.IsGroup).ToDictionary(task => task.Path);
         var beneath = atTheStart.Nodes.Where(node => node.IsGroup).ToDictionary(
             group => group.Path,
-            group => group.Counts.ToDictionary(count => count.Key, count => count.Value));
+            group => group.Counts.ByStatus());
         List<string> wrong = [];
         foreach (var (runEvent, snapshot) in reporter.Events.Zip(reporter.Snapshots))
         {

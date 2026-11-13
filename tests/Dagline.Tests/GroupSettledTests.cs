@@ -71,7 +71,7 @@ public class GroupSettledTests
         var events = reporter.Events.ToList();
         var settled = events.OfType<GroupSettled>().Single(groupSettled => groupSettled.Path == shard.Path);
         settled.Status.ShouldBe(NodeStatus.Succeeded);
-        settled.Counts.ShouldBe(new Dictionary<NodeStatus, int>
+        settled.Counts.ByStatus().ShouldBe(new Dictionary<NodeStatus, int>
         {
             [NodeStatus.Pending] = 0,
             [NodeStatus.Ready] = 0,
@@ -86,8 +86,8 @@ public class GroupSettledTests
         settled.At.ShouldBe(lastTaskEvent.At);
         var handedWithIt = reporter.Snapshots[events.IndexOf(settled)];
         handedWithIt[shard.Path].Status.ShouldBe(NodeStatus.Succeeded);
-        handedWithIt[shard.Path].Counts.ShouldBe(settled.Counts);
-        result.Snapshot[shard.Path].Counts.ShouldBe(settled.Counts);
+        handedWithIt[shard.Path].Counts.ByStatus().ShouldBe(settled.Counts.ByStatus());
+        result.Snapshot[shard.Path].Counts.ByStatus().ShouldBe(settled.Counts.ByStatus());
     }
 
     [Test]

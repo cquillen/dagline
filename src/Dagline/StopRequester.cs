@@ -1,6 +1,6 @@
 namespace Dagline;
 
-/// <summary>Who asked for a stop, as <see cref="StopRequested.By"/> gives it.</summary>
+/// <summary>Who asked for a stop, as <see cref="StopRequested.By"/> and <see cref="StopState.By"/> give it.</summary>
 public enum StopRequester
 {
     /// <summary>The app, through the <see cref="StopSignal"/> it gave the run.</summary>

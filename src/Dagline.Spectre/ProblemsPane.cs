@@ -83,14 +83,13 @@ internal static class ProblemsPane
 
     private static IEnumerable<Entry> Failures(Snapshot snapshot, int width, Glyphs glyphs)
     {
-        var blocks = snapshot.Blocked.ToDictionary(entry => entry.Cause, entry => entry.Tasks.Count);
         foreach (var task in NewestFirst(snapshot.Failed))
         {
             var when = StyledLine.Empty;
-            if (blocks.TryGetValue(task.Path, out var blocked))
+            if (snapshot.TryGetBlocked(task.Path, out var blocked))
             {
                 var mark = StatusMark.For(NodeStatus.Blocked, glyphs);
-                when = when.Add($"{mark.Glyph} blocks {DisplayText.Number(blocked)}", mark.Style).Add(DisplayText.Between);
+                when = when.Add($"{mark.Glyph} blocks {DisplayText.Number(blocked.Tasks.Count)}", mark.Style).Add(DisplayText.Between);
             }
 
             when = when.Add(SettledAt(task), Palette.Dim);

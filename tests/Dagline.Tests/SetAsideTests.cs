@@ -29,7 +29,7 @@ public class SetAsideTests
         first.Snapshot[summary.Path].Status.ShouldBe(NodeStatus.Succeeded);
         reporter.Snapshots[0][summary.Path].Status.ShouldBe(NodeStatus.Pending);
         reporter.Snapshots[0].SetAside.ShouldBe([summary.Path]);
-        reporter.Snapshots[0].EarlierSuccesses.ShouldBe(0);
+        reporter.Snapshots[0].Counts.EarlierSuccesses.ShouldBe(0);
         summaries.ShouldBe(2);
         second.Outcome.ShouldBe(RunOutcome.Complete);
         second.Snapshot.SetAside.ShouldBe([summary.Path]);
@@ -54,7 +54,7 @@ public class SetAsideTests
 
         second.Snapshot[summary.Path].IsEarlierSuccess.ShouldBeTrue();
         second.Snapshot.SetAside.ShouldBeEmpty();
-        second.Snapshot.EarlierSuccesses.ShouldBe(2);
+        second.Snapshot.Counts.EarlierSuccesses.ShouldBe(2);
     }
 
     [Test]
