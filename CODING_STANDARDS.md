@@ -65,7 +65,7 @@ _Tests use the public surface_ (above) and the test rules in `AGENTS.md` apply a
 - **Frames come from the display.** A frame is asserted as lines of text by forcing the display on over a captured output of a fixed size. The snapshot behind it comes from a real run whose task bodies are paused, never from one built by hand.
 - **Shared support is not shipped.** A helper that both test projects use and a consumer would not lives in `tests/Dagline.TestSupport`, which holds no tests and is never packed. A helper a consumer would want belongs in `Dagline.Testing`.
 
-One path is knowingly untested: a journal write that fails during a run. No real file can be made to fail on every platform, and a seam for it would be public surface that no consumer needs. Keep that path short enough to review by eye.
+One path is knowingly untested: a journal write that fails during a run. No real file can be made to fail on every platform, and a seam for it would be public surface that no consumer needs. That path lives in `JournalRecorder` in `src/Dagline`, which owns every write of a run's journal and what follows a failed one; the step core only hears that a write failed. Keep it short enough to review by eye.
 
 ## Endorsed patterns
 

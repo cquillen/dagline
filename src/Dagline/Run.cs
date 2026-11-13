@@ -10,23 +10,24 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// The run owns the lock, the current snapshot, the grace-period timer, the registration on the stop signal, the source of the token
-/// every task sees, the task bodies, delivery to reporters and the end result. It reads the clock once each time it takes the lock,
-/// and passes that time to the steps, except for a report that is never an event, which needs no time. No consumer code runs under the lock: task bodies are started on the thread pool,
+/// every task sees, the task bodies, delivery to reporters and the end result. Its <see cref="JournalRecorder"/> owns the journal.
+/// It reads the clock once each time it takes the lock, and passes that time to the steps, except for a report that is never an event, which needs no time. No consumer code runs under the lock: task bodies are started on the thread pool,
 /// and reporters are called by <see cref="ReporterDelivery"/>.
 /// </para>
 /// <para>
-/// Each step is carried out under the lock, in this order: the step's journal entries are written in one write, flushed to the disk
-/// if the step asks; the tasks' token is signalled, if the step asks; if the step ends the run, the registration on the signal,
-/// the timer and the journal are released; the events are published in order, each with its snapshot, which is
-/// taken then and made the current snapshot before the event is handed to reporters; the bodies of the
+/// Each step is carried out under the lock, in this order: the step is handed to the recorder, which writes its journal entries and,
+/// if the step ends the run, closes the journal; the tasks' token is signalled, if the step asks; if the step ends the run, the
+/// registration on the signal and the timer are released; the events are published in order, each with its snapshot, which is
+/// taken then and made the current snapshot before the event is handed to reporters, and for a run that ends with no outcome its
+/// <see cref="RunEnded"/> is published last, with the final snapshot; the bodies of the
 /// tasks the step starts are started; the grace-period timer is started, if the step asks; and if the step ends the run, the wait for
 /// reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
 /// So the token is signalled before the run can end, and the wait for reporters listens before the run's end is set.
 /// </para>
 /// <para>
 /// Each input that can settle a task or apply a stop is followed, under the same lock and with the same time, by the journal write
-/// failed input when a write failed while it was carried out, and then by the end input, which ends the run when nothing is left to do.
-/// After a write fails nothing more is written, and the run ends with a <see cref="JournalWriteException"/>.
+/// failed input when the recorder says a write failed while it was carried out, and then by the end input, which ends the run when
+/// nothing is left to do. A run whose steps heard of a failed write ends with a <see cref="JournalWriteException"/>.
 /// </para>
 /// </remarks>
 [SuppressMessage(
@@ -43,11 +44,8 @@ internal sealed class Run : ISnapshotSource
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly StopSignal? _signal;
     private readonly CancellationTokenSource _stopping = new();
+    private readonly JournalRecorder _recorder;
 
-    private JournalFile? _journal;
-    private Exception? _writeFailure;
-    private bool _writeFailureGiven;
-    private JournalWriteException? _endedWith;
     private IDisposable? _hearsTheSignal;
     private ITimer? _gracePeriodTimer;
     private volatile Snapshot? _current;
@@ -57,9 +55,9 @@ internal sealed class Run : ISnapshotSource
     /// <param name="delivery">Delivery of the run's events to its reporters.</param>
     /// <param name="signal">The signal through which the app stops the run, if it can.</param>
     /// <param name="journal">
-    /// The journal the run is on, already held, opened and read, or <see langword="null"/> for none. The run owns it from here,
-    /// and closes it and lets go of its lock in the step that ends the run, so that a later run can continue it as soon as this one
-    /// has ended.
+    /// The journal the run is on, already held, opened and read, or <see langword="null"/> for none. The run's recorder owns it from
+    /// here, and closes it and lets go of its lock in the step that ends the run, so that a later run can continue it as soon as this
+    /// one has ended.
     /// </param>
     public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, StopSignal? signal, JournalFile? journal)
     {
@@ -67,8 +65,9 @@ internal sealed class Run : ISnapshotSource
         _graph = graph;
         _timeProvider = settings.TimeProvider;
         _delivery = delivery;
-        _journal = journal;
-        _steps = new RunSteps(graph, settings, journal is null ? null : RunJournal.Of(journal));
+        var continuation = Continuation.Of(graph, journal?.Fold);
+        _recorder = JournalRecorder.For(journal, graph, settings, continuation);
+        _steps = new RunSteps(graph, settings, journal?.Fold, continuation);
     }
 
     public Snapshot Current => _current ?? TakeCurrent();
@@ -196,9 +195,9 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Saves a task's checkpoint, or clears it when <paramref name="text"/> is empty. Its entry is written and flushed to the disk
-    /// under the lock, so that the order of the file is the order of the run's decisions and a save never lands after its task's settle.
-    /// The clock is read once for the entry, and not at all for a run with no journal.
+    /// Saves a task's checkpoint, or clears it when <paramref name="text"/> is empty. The recorder writes its entry and flushes it to
+    /// the disk under the lock, so that the order of the file is the order of the run's decisions and a save never lands after its
+    /// task's settle.
     /// </summary>
     /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
     /// <exception cref="JournalWriteException">
@@ -210,16 +209,15 @@ internal sealed class Run : ISnapshotSource
         Exception? failed;
         lock (_gate)
         {
-            var now = _journal is null ? default : _timeProvider.GetUtcNow();
-            if (_steps.ChangeCheckpoint(task, text, now) is { } entry)
+            if (_steps.ChangeCheckpoint(task, text))
             {
-                Write([entry], JournalFlush.ToDisk);
+                _recorder.ChangeCheckpoint(task, text);
             }
 
-            failed = _journal is null ? null : _writeFailure;
+            failed = _recorder.Failure;
             if (failed is not null)
             {
-                EndTheInput(now);
+                EndTheInput(_timeProvider.GetUtcNow());
             }
         }
 
@@ -263,40 +261,19 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Ends an input, under the lock and with its time: gives the steps the journal write failed input, once, if a write has failed,
-    /// then the end input, which ends the run when nothing is left to do.
+    /// Ends an input, under the lock and with its time: gives the steps the journal write failed input, once, if the recorder says a
+    /// write has failed, then the end input, which ends the run when nothing is left to do. A write that fails mid-input waits for
+    /// the input to end, and whatever else the input decided is still carried out, since its events and starts are already facts
+    /// of the run.
     /// </summary>
     private void EndTheInput(DateTimeOffset now)
     {
-        if (_writeFailure is { } cause && !_writeFailureGiven)
+        if (_recorder.TakeNewFailure())
         {
-            _writeFailureGiven = true;
-            CarryOut(_steps.JournalWriteFailed(cause, now));
+            CarryOut(_steps.JournalWriteFailed(now));
         }
 
         CarryOut(_steps.EndIfDone(now));
-    }
-
-    /// <summary>
-    /// Writes entries to the journal, if the run has one and no write to it has failed. When the write fails, nothing more is
-    /// written, though the journal stays held until the run ends, and the failure waits for the input to end. Whatever else the
-    /// input decided is still carried out, since its events and starts are already facts of the run.
-    /// </summary>
-    private void Write(IReadOnlyList<JournalEntry> entries, JournalFlush flush)
-    {
-        if (_journal is null || _writeFailure is not null)
-        {
-            return;
-        }
-
-        try
-        {
-            _journal.Append(entries, flush);
-        }
-        catch (Exception cause) when (FileSystemFailure.Is(cause))
-        {
-            _writeFailure = cause;
-        }
     }
 
     /// <summary>Carries out the steps one input caused, under the lock and in order.</summary>
@@ -312,11 +289,7 @@ internal sealed class Run : ISnapshotSource
     /// <summary>Carries out one step, under the lock, in the order the remarks of this type give.</summary>
     private void CarryOut(Step step)
     {
-        if (step.Entries.Count > 0)
-        {
-            Write(step.Entries, step.Flush);
-        }
-
+        _recorder.Record(step);
         if (step.SignalsTheTasks)
         {
             SignalTheTasks();
@@ -327,11 +300,10 @@ internal sealed class Run : ISnapshotSource
             // Neither Dispose waits for a callback that is running, which may be waiting for this lock.
             _hearsTheSignal?.Dispose();
             _gracePeriodTimer?.Dispose();
-            _journal?.Dispose();
-            _journal = null;
         }
 
         Publish(step);
+        var endedWith = step.Ends is { Outcome: null } ? PublishEndedByFailedWrite() : null;
         foreach (var task in step.Starts)
         {
             _ = Task.Run(() => RunBodyAsync(task));
@@ -352,13 +324,13 @@ internal sealed class Run : ISnapshotSource
             // but RunEnded is still to come would leave that reporter to be waited for.
             _delivery.ListenBeyond(end.RequestsApplied);
             _delivery.Complete();
-            if (_endedWith is { } error)
+            if (end.Outcome is { } outcome)
             {
-                _ended.SetException(error);
+                _ended.SetResult(outcome);
             }
             else
             {
-                _ended.SetResult(end.Outcome!.Value);
+                _ended.SetException(endedWith!);
             }
         }
     }
@@ -396,18 +368,22 @@ internal sealed class Run : ISnapshotSource
         {
             var snapshot = _steps.SnapshotAfter(events[i]);
             _current = snapshot;
-            _delivery.Publish(events[i].Event ?? EndedByFailedWrite(step.Ends!.Value.WriteFailure!, snapshot), snapshot);
+            _delivery.Publish(events[i].Event, snapshot);
         }
     }
 
     /// <summary>
-    /// The <see cref="RunEnded"/> of a run whose journal write failed, built once its final snapshot exists, with the one
-    /// <see cref="JournalWriteException"/> that the event carries and the run ends with.
+    /// Publishes the <see cref="RunEnded"/> of a run that ends with no outcome because a journal write failed. It is built here,
+    /// once the final snapshot is taken, since the <see cref="JournalWriteException"/> it carries holds that snapshot.
     /// </summary>
-    private RunEnded EndedByFailedWrite(Exception cause, Snapshot final)
+    /// <returns>The exception the event carries and the run ends with.</returns>
+    private JournalWriteException PublishEndedByFailedWrite()
     {
-        _endedWith = new JournalWriteException(cause, final);
-        return new RunEnded(final.Ended!.Value, null, _endedWith);
+        var final = _steps.TakeSnapshot();
+        _current = final;
+        var endedWith = new JournalWriteException(_recorder.Failure!, final);
+        _delivery.Publish(new RunEnded(final.Ended!.Value, null, endedWith), final);
+        return endedWith;
     }
 
     // No token: a run is stopped through its signal, and a task body takes none.
