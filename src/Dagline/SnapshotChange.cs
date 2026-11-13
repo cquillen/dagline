@@ -11,7 +11,7 @@ namespace Dagline;
 /// <param name="NodeChanges">How many of the node changes recorded but not yet taken belong to this change, from the oldest.</param>
 /// <param name="Milestones">When the run started, the stop it has applied, and when and how it ended.</param>
 /// <param name="Tally">
-/// The run's counts by status, as <see cref="StatusCounts.CopyTo"/> writes them, then its slots in use, as <see cref="Slots.CopyTo"/>
+/// The run's counts by status, as <see cref="RollUp.CopyRunCountsTo"/> writes them, then its slots in use, as <see cref="Slots.CopyTo"/>
 /// writes them. Nothing changes it.
 /// </param>
 internal readonly record struct SnapshotChange(int NodeChanges, RunMilestones Milestones, int[] Tally);
