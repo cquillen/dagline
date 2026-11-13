@@ -104,6 +104,10 @@ _Avoid_: Skipped, cancelled
 The status of a task that was running when the run was stopped and either ended because of it or was left behind when the run stopped waiting for it.
 _Avoid_: Stopped, aborted, interrupted
 
+**Roll-up**:
+A group's status, counts, waiting and warnings, derived from the tasks beneath it; and the run's, derived from all its tasks.
+_Avoid_: Aggregate, totals, tally
+
 ### Outcomes
 
 **Outcome**:

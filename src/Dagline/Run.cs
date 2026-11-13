@@ -126,12 +126,7 @@ internal sealed class Run : ISnapshotSource
 
     /// <summary>Adds a warning to a task. A warning that is kept is published.</summary>
     public void Warn(BuiltTask task, string warning)
-    {
-        lock (_gate)
-        {
-            CarryOut(_steps.Warn(task, warning, _timeProvider.GetUtcNow()));
-        }
-    }
+        => Report(task, warning, static (instance, warning, now) => instance.Warn(warning, now));
 
     /// <summary>Sets the message of a task's outcome.</summary>
     public void SetMessage(BuiltTask task, string message) => Report(task, instance => instance.SetMessage(message));
@@ -149,13 +144,15 @@ internal sealed class Run : ISnapshotSource
     /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
     /// </summary>
     /// <returns><see langword="true"/> when the scope was opened: the task is running.</returns>
-    public bool OpenWaitingScope(BuiltTask task, string? text) => Report(task, (instance, now) => instance.OpenWaitingScope(text, now));
+    public bool OpenWaitingScope(BuiltTask task, string? text)
+        => Report(task, text, static (instance, text, now) => instance.OpenWaitingScope(text, now));
 
     /// <summary>
     /// Closes one waiting scope of a task. Its last open scope ends the marker. Once the task has settled this changes nothing,
     /// since settling ended the marker.
     /// </summary>
-    public void CloseWaitingScope(BuiltTask task) => Report(task, (instance, now) => instance.CloseWaitingScope(now));
+    public void CloseWaitingScope(BuiltTask task)
+        => Report(task, task, static (instance, _, now) => instance.CloseWaitingScope(now));
 
     /// <summary>
     /// Gives the steps a report that is never an event, such as progress, and carries out the step it caused, if any.
@@ -171,14 +168,16 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Gives the steps a report that may be an event, with the time read once for it, and carries out the step it caused, if any.
+    /// Gives the steps a report that may be an event, such as a warning, with what the task reports and the time read once for it,
+    /// and carries out the step it caused, if any. What the task reports is passed on as <paramref name="argument"/>, so that
+    /// <paramref name="report"/> can be a static lambda and a task that reports often costs no closure for each report.
     /// </summary>
     /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
-    private bool Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
+    private bool Report<TArgument>(BuiltTask task, TArgument argument, Func<TaskInstance, TArgument, DateTimeOffset, TaskChange?> report)
     {
         lock (_gate)
         {
-            var steps = _steps.Report(task, report, _timeProvider.GetUtcNow());
+            var steps = _steps.Report(task, argument, report, _timeProvider.GetUtcNow());
             CarryOut(steps);
 
             return steps.Count > 0;

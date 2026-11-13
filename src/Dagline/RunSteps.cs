@@ -1,5 +1,3 @@
-using System.Collections.Frozen;
-
 namespace Dagline;
 
 /// <summary>
@@ -9,7 +7,8 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It owns the task instances, the ready set, the slots, the counts by status, the stop and the end rule. It builds no journal
+/// It owns the task instances, the ready set, the slots, the stop and the end rule. It tells <see cref="RollUp"/> of every change
+/// to a task, and asks it for the run's counts, a group's status and the groups that settled. It builds no journal
 /// entry: <see cref="JournalRecorder"/> builds them from the events of each step, and all this type learns of the journal is that a
 /// write to it failed, through <see cref="JournalWriteFailed"/>. It holds no lock,
 /// no disposable object and no thread, and never reads a clock: each input that can cause an event carries the time,
@@ -31,9 +30,7 @@ internal sealed class RunSteps
 {
     private readonly Graph _graph;
     private readonly TimeSpan _gracePeriod;
-    private readonly StatusCounts _counts;
-    private readonly FrozenDictionary<int, StatusCounts> _groupCounts;
-    private readonly List<BuiltGroup> _settledInThisStep = [];
+    private readonly RollUp _rollUp;
     private readonly SortedSet<int> _ready = [];
     private readonly TaskInstance?[] _instances;
     private readonly Slots _slots;
@@ -44,12 +41,6 @@ internal sealed class RunSteps
     private readonly List<Step> _decided = [];
     private readonly SnapshotTaker _snapshots;
     private readonly JournalFold? _earlier;
-    // How many warnings the tasks beneath each group hold, indexed by position among the nodes, so a task's place is unused.
-    private readonly int[] _warningsBeneath;
-
-    // The positions of the groups changed since the last event. Each is recorded once, as it is when that change is closed:
-    // a task given many warnings between two events would otherwise cost a new snapshot of every group above it for each.
-    private readonly HashSet<int> _groupsChanged = [];
     private readonly Continuation _continuation;
 
     private StepUnderWay? _step;
@@ -75,16 +66,14 @@ internal sealed class RunSteps
         _continuation = continuation;
         _instances = InstancesAtTheStart();
 
-        var earlierSuccesses = EarlierSuccessesByPosition();
-        var earlierInRun = graph.Tasks.Sum(task => earlierSuccesses[task.Position]);
-        _counts = new StatusCounts(pending: graph.Tasks.Length - earlierInRun, earlierSuccesses: earlierInRun);
-        _groupCounts = graph.Nodes.OfType<BuiltGroup>().ToFrozenDictionary(
-            group => group.Position,
-            group => new StatusCounts(
-                pending: group.TaskCount - earlierSuccesses[group.Position],
-                earlierSuccesses: earlierSuccesses[group.Position]));
-        _warningsBeneath = WarningsOfEarlierSuccessesBeneath();
-        _snapshots = SnapshotsAtTheStart();
+        var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
+        foreach (var task in graph.Tasks)
+        {
+            atTheStart[task.Position] = InstanceOf(task).ToNodeSnapshot();
+        }
+
+        _rollUp = new RollUp(graph, atTheStart);
+        _snapshots = SnapshotsAtTheStart(atTheStart);
     }
 
     /// <summary>
@@ -144,36 +133,28 @@ internal sealed class RunSteps
         => Reported(task, report(InstanceOf(task)));
 
     /// <summary>
-    /// A running task reports something about itself that may be an event, such as a warning, through its <see cref="TaskContext"/>.
-    /// The report is one step, with the event it produced, or with none when it changed only the snapshot.
+    /// A running task reports something about itself that may be an event, such as a warning or the begin of a wait, through its
+    /// <see cref="TaskContext"/>. The report is one step, with the event it produced, or with none when it changed only the snapshot.
     /// A report on a task that is not running gives no step.
     /// </summary>
     /// <param name="task">The task that reports.</param>
-    /// <param name="report">The operation on the task's instance, given the time.</param>
+    /// <param name="argument">What the task reports, such as the warning, passed on to <paramref name="report"/>.</param>
+    /// <param name="report">
+    /// The operation on the task's instance, given <paramref name="argument"/> and the time. It is passed the argument so that it can be
+    /// a static lambda, which allocates nothing on a path a task may take very often.
+    /// </param>
     /// <param name="now">When the task reports.</param>
-    public IReadOnlyList<Step> Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report, DateTimeOffset now)
-        => Reported(task, report(InstanceOf(task), now));
-
-    /// <summary>
-    /// A running task is given a warning through its <see cref="TaskContext"/>. Every group above the task counts it, and is recorded
-    /// again for the next snapshot, whether the warning is kept and published or, beyond the number kept, only counted.
-    /// A warning to a task that is not running gives no step.
-    /// </summary>
-    public IReadOnlyList<Step> Warn(BuiltTask task, string warning, DateTimeOffset now)
-    {
-        var warned = InstanceOf(task).Warn(warning, now);
-        if (warned is not null)
-        {
-            ChangeEachGroupAbove(task, 0, static (steps, group, _) => steps._warningsBeneath[group]++);
-        }
-
-        return Reported(task, warned);
-    }
+    public IReadOnlyList<Step> Report<TArgument>(
+        BuiltTask task,
+        TArgument argument,
+        Func<TaskInstance, TArgument, DateTimeOffset, TaskChange?> report,
+        DateTimeOffset now)
+        => Reported(task, report(InstanceOf(task), argument, now));
 
     /// <summary>
     /// The step a report caused, given what it changed, if anything. A task may report progress millions of times,
-    /// so a report that produced no event allocates nothing here beyond the task as it now is:
-    /// it is recorded for the next snapshot, and the step it answers with is shared by all such reports.
+    /// so a report that produced no event allocates nothing here beyond the task as it now is: it is recorded for the next
+    /// snapshot, the roll-up is told of it, and the step it answers with is shared by all such reports.
     /// </summary>
     private IReadOnlyList<Step> Reported(BuiltTask task, TaskChange? reported)
     {
@@ -185,6 +166,7 @@ internal sealed class RunSteps
         if (change.Event is null)
         {
             _snapshots.Record(task.Position, change.Task);
+            _rollUp.TaskChanged(task, change);
             return _changedOnlyTheSnapshot;
         }
 
@@ -255,7 +237,7 @@ internal sealed class RunSteps
     /// </summary>
     public IReadOnlyList<Step> EndIfDone(DateTimeOffset now)
     {
-        if (!HasEnded && NothingIsRunning && (HasStopped || _counts[NodeStatus.Ready] == 0))
+        if (!HasEnded && NothingIsRunning && (HasStopped || _rollUp.InRun(NodeStatus.Ready) == 0))
         {
             End(now);
         }
@@ -287,10 +269,10 @@ internal sealed class RunSteps
 
     /// <summary>
     /// The status, as it is now, of the node at <paramref name="position"/>: a task's is its instance's,
-    /// and a group's is derived from the counts of the tasks beneath it.
+    /// and a group's is the roll-up's.
     /// </summary>
     public NodeStatus StatusAt(int position)
-        => _instances[position] is { } instance ? instance.Status : _groupCounts[position].GroupStatus;
+        => _instances[position] is { } instance ? instance.Status : _rollUp.StatusOf(position);
 
     /// <summary>
     /// The snapshot of the run just after an event of a decided step: as it was then, however far the run has got since.
@@ -310,7 +292,7 @@ internal sealed class RunSteps
     // From the end time, not the outcome: a run that ends with an error has none.
     private bool HasEnded => _milestones.Ended is not null;
 
-    private bool NothingIsRunning => _counts[NodeStatus.Running] == 0;
+    private bool NothingIsRunning => _rollUp.InRun(NodeStatus.Running) == 0;
 
     /// <summary>
     /// Applies the first request: from this step on nothing starts. The step signals the token every task sees,
@@ -438,7 +420,7 @@ internal sealed class RunSteps
     /// </summary>
     private IEnumerable<BuiltTask> DependentsOf(IEnumerable<BuiltTask> settled)
         => settled
-            .Concat<BuiltNode>(_settledInThisStep)
+            .Concat<BuiltNode>(_rollUp.Settled)
             .SelectMany(node => node.Dependents)
             .Distinct()
             .Order()
@@ -482,16 +464,13 @@ internal sealed class RunSteps
     private bool DependenciesAreMet(BuiltTask task)
         => task.Upstreams.All(upstream => StatusAt(upstream.Position).Meets(upstream.Kind));
 
-    /// <summary>Publishes one event for each group the current step settled: the deepest first, then in declaration order.</summary>
+    /// <summary>Publishes one event for each group the current step settled, in the order the roll-up gives them.</summary>
     private void AnnounceSettledGroups(DateTimeOffset now)
     {
-        foreach (var group in _settledInThisStep.OrderByDescending(group => group.Depth).ThenBy(group => group.Position))
+        foreach (var settled in _rollUp.TakeSettled(now))
         {
-            var counts = _groupCounts[group.Position];
-            Publish(new GroupSettled(now, group.Path, counts.GroupStatus, counts.ToTaskCounts()));
+            Publish(settled);
         }
-
-        _settledInThisStep.Clear();
     }
 
     /// <summary>
@@ -532,7 +511,7 @@ internal sealed class RunSteps
     {
         Begin();
         RunOutcome? outcome = _journalWriteFailed ? null
-            : _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete
+            : _rollUp.InRun(NodeStatus.Succeeded) == _graph.Tasks.Length ? RunOutcome.Complete
             : HasStopped ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
         _milestones = _milestones with { Ended = now, Outcome = outcome };
@@ -544,56 +523,16 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Records a task as it is after a change to its instance, for the next snapshot. A change of status, and the begin or end
-    /// of a wait, is counted in the run and in every group that holds the task. The event the change produced is published in the
-    /// step under way.
+    /// Records a task as it is after a change to its instance, for the next snapshot, and tells the roll-up of the change.
+    /// The event the change produced is published in the step under way.
     /// </summary>
     private void Apply(BuiltTask task, TaskChange change)
     {
         _snapshots.Record(task.Position, change.Task);
-        if (change.Event is TaskStatusChanged moved)
-        {
-            _counts.Move(moved.From, moved.To);
-            ChangeEachGroupAbove(task, moved, static (steps, group, move) => steps.MoveBeneath(group, move.From, move.To));
-        }
-        else if (change.Event is WaitingChanged waited)
-        {
-            _counts.Count(waited);
-            ChangeEachGroupAbove(task, waited, static (steps, group, wait) => steps._groupCounts[group].Count(wait));
-        }
-
+        _rollUp.TaskChanged(task, change);
         if (change.Event is { } produced)
         {
             Publish(produced);
-        }
-    }
-
-    /// <summary>
-    /// Applies a change of a task to every group above it, nearest first, and marks each group to be recorded again for the next
-    /// snapshot. The change is passed as <paramref name="change"/> so that <paramref name="apply"/> can be a static lambda,
-    /// which allocates nothing on a path a task may take very often.
-    /// </summary>
-    private void ChangeEachGroupAbove<TChange>(BuiltTask task, TChange change, Action<RunSteps, int, TChange> apply)
-    {
-        foreach (var group in task.Groups)
-        {
-            apply(this, group, change);
-            _groupsChanged.Add(group);
-        }
-    }
-
-    /// <summary>
-    /// Counts one task's change of status in a group that holds it.
-    /// Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
-    /// </summary>
-    private void MoveBeneath(int group, NodeStatus from, NodeStatus to)
-    {
-        var counts = _groupCounts[group];
-        counts.Move(from, to);
-
-        if (counts.GroupStatus.IsSettled())
-        {
-            _settledInThisStep.Add(_graph.GroupAt(group));
         }
     }
 
@@ -615,47 +554,13 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// The earlier successes at each node's position, at the start of the run: one for a task that is an earlier success, and for a
-    /// group the count of those beneath it.
+    /// The run's snapshots, starting from every node as it is at the start, each group as the roll-up hands it over, and the journal
+    /// as the run continues it.
     /// </summary>
-    private int[] EarlierSuccessesByPosition()
-    {
-        var earlierSuccesses = new int[_graph.Nodes.Length];
-        foreach (var task in _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Succeeded))
-        {
-            earlierSuccesses[task.Position] = 1;
-            foreach (var group in task.Groups)
-            {
-                earlierSuccesses[group]++;
-            }
-        }
-
-        return earlierSuccesses;
-    }
-
-    /// <summary>
-    /// The warnings beneath each group at the start of the run, indexed by position among the nodes: those the earlier successes
-    /// beneath it succeeded with. No other task has been given one yet.
-    /// </summary>
-    private int[] WarningsOfEarlierSuccessesBeneath()
-    {
-        var warnings = new int[_graph.Nodes.Length];
-        foreach (var task in _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Succeeded))
-        {
-            var given = InstanceOf(task).ToNodeSnapshot().WarningCount;
-            foreach (var group in task.Groups)
-            {
-                warnings[group] += given;
-            }
-        }
-
-        return warnings;
-    }
-
-    /// <summary>The run's snapshots, starting from every node as it is at the start and the journal as the run continues it.</summary>
-    private SnapshotTaker SnapshotsAtTheStart()
+    /// <param name="tasksAtTheStart">Each task as it is at the start, indexed by position among the nodes, so a group's place is empty.</param>
+    private SnapshotTaker SnapshotsAtTheStart(NodeSnapshot?[] tasksAtTheStart)
         => new(
-            _graph.Nodes.Select(AtTheStart),
+            _graph.Nodes.Select(node => tasksAtTheStart[node.Position] ?? _rollUp.SnapshotOf((BuiltGroup)node)),
             _graph.Positions,
             _slots,
             new SnapshotJournal(_earlier?.NextRun)
@@ -665,23 +570,6 @@ internal sealed class RunSteps
                 JournalPathsNotInGraphUnsucceeded = _continuation.PathsNotInGraphUnsucceeded,
             });
 
-    private NodeSnapshot AtTheStart(BuiltNode node)
-        => node is BuiltGroup group ? NodeSnapshotOf(group) : InstanceOf((BuiltTask)node).ToNodeSnapshot();
-
-    /// <summary>
-    /// A group as a snapshot shows it now: its status, counts and warnings are those of the tasks beneath it, and nothing else is
-    /// attached to it.
-    /// </summary>
-    private NodeSnapshot NodeSnapshotOf(BuiltGroup group)
-    {
-        var counts = _groupCounts[group.Position];
-
-        return new NodeSnapshot(group, counts.GroupStatus, counts.ToTaskCounts())
-        {
-            WarningsBeneath = _warningsBeneath[group.Position],
-        };
-    }
-
     // Indexed by position among the nodes, so a group's place is empty.
     private TaskInstance InstanceOf(BuiltTask task) => _instances[task.Position]!;
 
@@ -690,13 +578,8 @@ internal sealed class RunSteps
     /// <summary>What has changed in the snapshot since the last event, which from now on is part of the snapshot taken next.</summary>
     private SnapshotChange ChangeSinceLastEvent()
     {
-        foreach (var group in _groupsChanged)
-        {
-            _snapshots.Record(group, NodeSnapshotOf(_graph.GroupAt(group)));
-        }
-
-        _groupsChanged.Clear();
-        return _snapshots.Close(_milestones, _counts);
+        _rollUp.HandOverChanged(_snapshots);
+        return _snapshots.Close(_milestones, _rollUp);
     }
 
     /// <summary>Begins a new step, once the step under way, if any, is decided.</summary>
