@@ -170,6 +170,36 @@ public class SetAsideTests
     }
 
     [Test]
+    public async Task A_runs_set_asides_are_recorded_after_its_start_and_before_its_first_task_starts()
+    {
+        using var temporary = new TemporaryDirectory();
+        var fail = true;
+        var builder = new GraphBuilder();
+        var check = builder.Task("check", context => fail ? throw context.Fail("bad data") : Task.CompletedTask);
+        builder.Task("summary", _ => Task.CompletedTask).After(check);
+        var graph = builder.Build();
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        fail = false;
+        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
+
+        List<JournalSummary> listed = [];
+        foreach (var cut in JournalCutter.Cut(Directory.GetFiles(temporary.Path, "*.journal").Single()).Where(cut => !cut.InsideALine))
+        {
+            using var copy = new TemporaryDirectory();
+            cut.WriteTo(copy.Path);
+            listed.Add((await Journals.ListAsync(copy.Path)).Single());
+        }
+
+        var secondRunStarted = listed.FindIndex(summary => summary.Runs == 2);
+        var (started, setAside, checkStarted) = (listed[secondRunStarted], listed[secondRunStarted + 1], listed[secondRunStarted + 2]);
+        started.Counts[NodeStatus.Pending].ShouldBe(0);
+        started.Counts[NodeStatus.Succeeded].ShouldBe(1);
+        setAside.Counts[NodeStatus.Pending].ShouldBe(1);
+        setAside.Counts[NodeStatus.Running].ShouldBe(0);
+        checkStarted.Counts[NodeStatus.Running].ShouldBe(1);
+    }
+
+    [Test]
     public async Task Set_asides_are_on_disk_before_any_task_starts()
     {
         using var temporary = new TemporaryDirectory();
