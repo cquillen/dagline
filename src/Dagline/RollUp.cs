@@ -3,7 +3,7 @@ namespace Dagline;
 /// <summary>
 /// The roll-up of one run: the run's counts, derived from all its tasks, and each group's status, counts, waiting and warnings,
 /// derived from the tasks beneath it. <see cref="RunSteps"/> tells it each change to a task, and asks it what the run's counts are,
-/// what status a group has, which groups settled and how each changed group now looks.
+/// what status and counts a group has, which groups settled and how each changed group now looks.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -90,8 +90,14 @@ internal sealed class RollUp
     /// <summary>How many of the run's tasks have <paramref name="status"/> now.</summary>
     public int InRun(NodeStatus status) => _run[status];
 
-    /// <summary>Writes the run's counts as they are now to the start of <paramref name="tally"/>, as <see cref="TaskCounts"/> reads them.</summary>
-    public void CopyRunCountsTo(Span<int> tally) => _run.CopyTo(tally);
+    /// <summary>
+    /// The run's counts as they are now. Until they next change, every call gives the same copy, so the snapshots of events that
+    /// change no count share one.
+    /// </summary>
+    public TaskCounts RunCounts => _run.ToTaskCounts();
+
+    /// <summary>A group's counts as they are now, from the tasks beneath it at any depth.</summary>
+    public TaskCounts CountsOf(BuiltGroup group) => _groupCounts[group.Position]!.ToTaskCounts();
 
     /// <summary>
     /// The status of a group, from the tasks beneath it at any depth (ADR 0003). While any task has not settled: running if any is
@@ -118,58 +124,81 @@ internal sealed class RollUp
     /// and nothing else is attached to it. While the group's counts are unchanged, its snapshots share one counts value.
     /// </summary>
     public NodeSnapshot SnapshotOf(BuiltGroup group)
-        => new(group, StatusOf(group.Position), _groupCounts[group.Position]!.ToTaskCounts())
+        => new(group, StatusOf(group.Position), CountsOf(group))
         {
             WarningsBeneath = _warningsBeneath[group.Position],
         };
 
     /// <summary>
     /// A task has changed: <paramref name="change"/> holds the task as it is now and the event the change produced, if any.
-    /// A change of status, and the begin or end of a wait, is counted in the run and in every group above the task. A warning,
-    /// whether kept or beyond the number kept, is counted in every group above the task. Each group so changed is recorded,
-    /// once, for <see cref="HandOverChanged"/>, and each one the change settled for <see cref="TakeSettled"/>.
+    /// The kind of change is decided once, from its event: a change of status, or the begin or end of a wait, is counted in the run
+    /// and in every group above the task. A warning, whether kept or beyond the number kept, is then counted in every group above
+    /// the task, from the task's warning count. Each group so changed is recorded, once, for <see cref="HandOverChanged"/>, and each
+    /// one a change of status settled for <see cref="TakeSettled"/>.
     /// </summary>
     public void TaskChanged(BuiltTask task, TaskChange change)
     {
-        var warned = change.Task.WarningCount - _warningsOf[task.Position];
-        if (change.Event is TaskStatusChanged moved)
+        switch (change.Event)
         {
-            _run.Move(moved.From, moved.To);
+            case TaskStatusChanged moved:
+                CountMove(task, moved);
+                break;
+            case WaitingChanged waited:
+                CountWait(task, waited);
+                break;
         }
-        else if (change.Event is WaitingChanged waited)
+
+        CountWarnings(task, change.Task.WarningCount);
+    }
+
+    private void CountMove(BuiltTask task, TaskStatusChanged moved)
+    {
+        _run.Move(moved.From, moved.To);
+        foreach (var group in task.Groups)
         {
-            _run.Count(waited);
+            _groupCounts[group]!.Move(moved.From, moved.To);
+            MarkChanged(group);
+
+            // Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
+            if (StatusOf(group).IsSettled())
+            {
+                _settled.Add(_graph.GroupAt(group));
+            }
         }
-        else if (warned == 0)
+    }
+
+    private void CountWait(BuiltTask task, WaitingChanged waited)
+    {
+        _run.Count(waited);
+        foreach (var group in task.Groups)
+        {
+            _groupCounts[group]!.Count(waited);
+            MarkChanged(group);
+        }
+    }
+
+    private void CountWarnings(BuiltTask task, int warningCount)
+    {
+        var warned = warningCount - _warningsOf[task.Position];
+        if (warned == 0)
         {
             return;
         }
 
-        _warningsOf[task.Position] += warned;
+        _warningsOf[task.Position] = warningCount;
         foreach (var group in task.Groups)
         {
-            var counts = _groupCounts[group]!;
-            if (change.Event is TaskStatusChanged statusChanged)
-            {
-                counts.Move(statusChanged.From, statusChanged.To);
-
-                // Only a task that had not settled changes status, so a group that comes out settled has settled with this change.
-                if (StatusOf(group).IsSettled())
-                {
-                    _settled.Add(_graph.GroupAt(group));
-                }
-            }
-            else if (change.Event is WaitingChanged waitingChanged)
-            {
-                counts.Count(waitingChanged);
-            }
-
             _warningsBeneath[group] += warned;
-            if (!_isChanged[group])
-            {
-                _isChanged[group] = true;
-                _changed.Add(group);
-            }
+            MarkChanged(group);
+        }
+    }
+
+    private void MarkChanged(int group)
+    {
+        if (!_isChanged[group])
+        {
+            _isChanged[group] = true;
+            _changed.Add(group);
         }
     }
 
@@ -189,29 +218,18 @@ internal sealed class RollUp
     }
 
     /// <summary>
-    /// The groups that have settled since this was last asked, as the events that announce them: the deepest first, then in
-    /// declaration order, each with the group's status and counts. It forgets them.
+    /// The groups that have settled since this was last asked, in the order they are announced: the deepest first, then in
+    /// declaration order. It forgets them.
     /// </summary>
-    /// <param name="now">When the groups settled, which each event carries.</param>
-    public IReadOnlyList<GroupSettled> TakeSettled(DateTimeOffset now)
+    public IReadOnlyList<BuiltGroup> TakeSettled()
     {
         if (_settled.Count == 0)
         {
             return [];
         }
 
-        List<GroupSettled> announced =
-        [
-            .. _settled
-                .OrderByDescending(group => group.Depth)
-                .ThenBy(group => group.Position)
-                .Select(group => new GroupSettled(
-                    now,
-                    group.Path,
-                    StatusOf(group.Position),
-                    _groupCounts[group.Position]!.ToTaskCounts())),
-        ];
+        List<BuiltGroup> settled = [.. _settled.OrderByDescending(group => group.Depth).ThenBy(group => group.Position)];
         _settled.Clear();
-        return announced;
+        return settled;
     }
 }

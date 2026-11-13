@@ -106,7 +106,7 @@ _Avoid_: Stopped, aborted, interrupted
 
 **Roll-up**:
 A group's status, counts, waiting and warnings, derived from the tasks beneath it; and the run's, derived from all its tasks.
-_Avoid_: Aggregate, totals, tally
+_Avoid_: Aggregate, totals
 
 ### Outcomes
 

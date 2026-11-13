@@ -8,11 +8,11 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// It owns the task instances, the ready set, the slots, the stop and the end rule. It tells <see cref="RollUp"/> of every change
-/// to a task, and asks it for the run's counts, a group's status and the groups that settled. It builds no journal
-/// entry: <see cref="JournalRecorder"/> builds them from the events of each step, and all this type learns of the journal is that a
-/// write to it failed, through <see cref="JournalWriteFailed"/>. It holds no lock,
-/// no disposable object and no thread, and never reads a clock: each input that can cause an event carries the time,
-/// which every event of its steps shares.
+/// to a task, and asks it for the run's counts, a group's status and counts, and the groups that settled, so that it can announce
+/// them. It builds no journal entry: <see cref="JournalRecorder"/> builds them from the events of each step, and all this type
+/// learns of the journal is that a write to it failed, through <see cref="JournalWriteFailed"/>. It holds no lock, no disposable
+/// object and no thread, and never reads a clock: each input that can cause an event carries the time, which every event of its
+/// steps shares.
 /// It is not thread-safe: the run gives it one input at a time, under its lock.
 /// </para>
 /// <para>
@@ -215,11 +215,17 @@ internal sealed class RunSteps
     /// <summary>
     /// A write to the journal failed. Unless a stop has been applied, Dagline applies one itself, in a step of its own that signals
     /// the tasks, and the grace period is bounded as for any stop. The run then ends with no run outcome, and so with a
-    /// <see cref="JournalWriteException"/>. The run gives this input once, before the end input, and never once the run has ended.
+    /// <see cref="JournalWriteException"/>. The run gives this input once, before the end input. Heard after the run has ended, it
+    /// gives no step and changes nothing: the run keeps the outcome it ended with.
     /// </summary>
     /// <param name="now">When the write failed.</param>
     public IReadOnlyList<Step> JournalWriteFailed(DateTimeOffset now)
     {
+        if (HasEnded)
+        {
+            return [];
+        }
+
         _journalWriteFailed = true;
         if (!HasStopped)
         {
@@ -464,12 +470,15 @@ internal sealed class RunSteps
     private bool DependenciesAreMet(BuiltTask task)
         => task.Upstreams.All(upstream => StatusAt(upstream.Position).Meets(upstream.Kind));
 
-    /// <summary>Publishes one event for each group the current step settled, in the order the roll-up gives them.</summary>
+    /// <summary>
+    /// Publishes one event for each group the current step settled, in the order the roll-up gives them, each with the group's
+    /// status and counts.
+    /// </summary>
     private void AnnounceSettledGroups(DateTimeOffset now)
     {
-        foreach (var settled in _rollUp.TakeSettled(now))
+        foreach (var group in _rollUp.TakeSettled())
         {
-            Publish(settled);
+            Publish(new GroupSettled(now, group.Path, _rollUp.StatusOf(group.Position), _rollUp.CountsOf(group)));
         }
     }
 
@@ -510,16 +519,19 @@ internal sealed class RunSteps
     private void End(DateTimeOffset now)
     {
         Begin();
-        RunOutcome? outcome = _journalWriteFailed ? null
-            : _rollUp.InRun(NodeStatus.Succeeded) == _graph.Tasks.Length ? RunOutcome.Complete
+        if (_journalWriteFailed)
+        {
+            _milestones = _milestones with { Ended = now };
+            _step!.Ends = new RunEnd.ByFailedWrite(_requestsApplied);
+            return;
+        }
+
+        var outcome = _rollUp.InRun(NodeStatus.Succeeded) == _graph.Tasks.Length ? RunOutcome.Complete
             : HasStopped ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
         _milestones = _milestones with { Ended = now, Outcome = outcome };
-        _step!.Ends = new RunEnd(outcome, _requestsApplied);
-        if (outcome is { } reached)
-        {
-            Publish(new RunEnded(now, reached));
-        }
+        _step!.Ends = new RunEnd.WithOutcome(outcome, _requestsApplied);
+        Publish(new RunEnded(now, outcome));
     }
 
     /// <summary>
@@ -579,7 +591,7 @@ internal sealed class RunSteps
     private SnapshotChange ChangeSinceLastEvent()
     {
         _rollUp.HandOverChanged(_snapshots);
-        return _snapshots.Close(_milestones, _rollUp);
+        return _snapshots.Close(_milestones, _rollUp.RunCounts);
     }
 
     /// <summary>Begins a new step, once the step under way, if any, is decided.</summary>

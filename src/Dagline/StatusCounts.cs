@@ -4,7 +4,10 @@ namespace Dagline;
 /// How many tasks have each status, how many of them are earlier successes and how many are waiting, kept up to date as tasks
 /// change. One of these counts the tasks of a whole run, and one counts the tasks beneath each group.
 /// </summary>
-/// <remarks>It is the mutable tally of <see cref="RollUp"/>. A snapshot shows it as <see cref="TaskCounts"/>, which copies it.</remarks>
+/// <remarks>
+/// <see cref="RollUp"/> owns every one, and is the only code that changes them. A snapshot shows it as <see cref="TaskCounts"/>,
+/// which copies it.
+/// </remarks>
 internal sealed class StatusCounts
 {
     // Laid out as TaskCounts reads a tally: the count of each status, then the earlier successes, then the waiting.
@@ -37,9 +40,6 @@ internal sealed class StatusCounts
         _tally[TaskCounts.WaitingAt] += waited.Waiting ? 1 : -1;
         _shown = null;
     }
-
-    /// <summary>Writes the counts as they are now to the start of <paramref name="tally"/>, as <see cref="TaskCounts"/> reads them.</summary>
-    public void CopyTo(Span<int> tally) => _tally.CopyTo(tally);
 
     /// <summary>
     /// The counts as they are now, copied. Until they next change, every call gives the same copy: a group whose counts stay the

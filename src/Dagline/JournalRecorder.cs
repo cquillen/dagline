@@ -40,13 +40,18 @@ internal abstract class JournalRecorder
 
     /// <summary>
     /// Records a task's checkpoint saved, or cleared when <paramref name="text"/> is empty, flushed to the disk before this returns.
-    /// It reads the clock for the entry. A run with no journal records nothing and reads no clock.
+    /// It reads the clock once, for the entry. A run with no journal records nothing and reads no clock.
     /// </summary>
-    public abstract void ChangeCheckpoint(BuiltTask task, string text);
+    /// <returns>
+    /// The time of the entry when it was not written, because this write failed or an earlier one had, so that the run can end its
+    /// input with that time and read no clock of its own; otherwise <see langword="null"/>.
+    /// </returns>
+    public abstract DateTimeOffset? ChangeCheckpoint(BuiltTask task, string text);
 
     /// <summary>
     /// Whether a write has failed that the run has not yet been told of. It answers <see langword="true"/> once for the failure, so
-    /// the run gives its steps the journal write failed input once.
+    /// the run gives its steps the journal write failed input once. A failed write of the run's end is never told, so the run keeps
+    /// its outcome.
     /// </summary>
     public abstract bool TakeNewFailure();
 
@@ -61,9 +66,7 @@ internal abstract class JournalRecorder
         {
         }
 
-        public override void ChangeCheckpoint(BuiltTask task, string text)
-        {
-        }
+        public override DateTimeOffset? ChangeCheckpoint(BuiltTask task, string text) => null;
 
         public override bool TakeNewFailure() => false;
     }
@@ -77,15 +80,14 @@ internal abstract class JournalRecorder
         private readonly string _machine = Environment.MachineName;
         private readonly int _cap;
         private readonly Dictionary<string, int> _limits;
-        private readonly int _pathsNotInGraph;
-        private readonly int _pathsNotInGraphUnsucceeded;
-        private readonly string[] _setAside;
+        private readonly Continuation _continuation;
 
         // Reused for each step, so a step allocates no list of its own.
         private readonly List<JournalEntry> _entries = [];
 
         private Exception? _failure;
         private bool _failureTold;
+        private bool _runHasEnded;
 
         public OnFile(JournalFile file, Graph graph, RunSettings settings, Continuation continuation)
         {
@@ -95,9 +97,7 @@ internal abstract class JournalRecorder
             _limits = graph.LimitNames
                 .Zip(settings.Sizes.Limits)
                 .ToDictionary(limit => limit.First.Text, limit => limit.Second, LimitName.TextComparer);
-            _pathsNotInGraph = continuation.PathsNotInGraph;
-            _pathsNotInGraphUnsucceeded = continuation.PathsNotInGraphUnsucceeded;
-            _setAside = [.. continuation.SetAside.Select(task => task.Path.ToString())];
+            _continuation = continuation;
         }
 
         public override Exception? Failure => _failure;
@@ -114,36 +114,32 @@ internal abstract class JournalRecorder
             {
                 // Every entry but a start is flushed, and entries written together share one flush, so one is enough for the step.
                 var flush = _entries.Exists(static entry => entry is not TaskStartedEntry) ? JournalFlush.ToDisk : JournalFlush.None;
-                var failed = !TryWrite(_entries, flush);
+                TryWrite(_entries, flush);
                 _entries.Clear();
-
-                // The one exception to a failed write stopping the run is the last write of a run, its end. By then every task's work
-                // is done and its settle is on disk, and the run outcome is decided with nothing left to stop. Failing the run would
-                // tell the app that a finished run failed, so the run keeps its outcome and only the journal shows the failure: it
-                // records no end.
-                if (failed && step.Ends is not null)
-                {
-                    _failureTold = true;
-                }
             }
 
             if (step.Ends is not null)
             {
+                _runHasEnded = true;
                 _file.Dispose();
             }
         }
 
-        public override void ChangeCheckpoint(BuiltTask task, string text)
+        public override DateTimeOffset? ChangeCheckpoint(BuiltTask task, string text)
         {
             var path = task.Path.ToString();
             var now = _clock.GetUtcNow();
             JournalEntry entry = text.Length == 0 ? new CheckpointClearedEntry(path, now) : new CheckpointSavedEntry(path, now, text);
-            TryWrite([entry], JournalFlush.ToDisk);
+            return TryWrite([entry], JournalFlush.ToDisk) ? null : now;
         }
 
         public override bool TakeNewFailure()
         {
-            if (_failure is null || _failureTold)
+            // The one exception to a failed write stopping the run is the last write of a run, its end, and once the run has ended
+            // no other write is made. By then every task's work is done and its settle is on disk, and the run outcome is decided
+            // with nothing left to stop. Failing the run would tell the app that a finished run failed, so the run is never told of
+            // that failure and keeps its outcome, and only the journal shows the failure: it records no end.
+            if (_failure is null || _failureTold || _runHasEnded)
             {
                 return false;
             }
@@ -158,12 +154,19 @@ internal abstract class JournalRecorder
             switch (change)
             {
                 case RunStarted started:
-                    _entries.Add(new RunStartedEntry(started.At, _user, _machine, _cap, _limits, _pathsNotInGraph, _pathsNotInGraphUnsucceeded));
+                    _entries.Add(new RunStartedEntry(
+                        started.At,
+                        _user,
+                        _machine,
+                        _cap,
+                        _limits,
+                        _continuation.PathsNotInGraph,
+                        _continuation.PathsNotInGraphUnsucceeded));
 
                     // A run decides its set-asides before it starts, and flushes them with its start, before any task starts.
-                    foreach (var path in _setAside)
+                    foreach (var task in _continuation.SetAside)
                     {
-                        _entries.Add(new SetAsideEntry(path, started.At));
+                        _entries.Add(new SetAsideEntry(task.Path.ToString(), started.At));
                     }
 
                     break;

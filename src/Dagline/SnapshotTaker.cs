@@ -43,20 +43,21 @@ internal sealed class SnapshotTaker(
 
     /// <summary>
     /// Closes the node changes recorded since the last change into a new one, with everything else the snapshot holds.
-    /// The run's counts and the slots in use are copied, so the change keeps them as they are now.
+    /// The slots in use are copied, so the change keeps them as they are now.
     /// </summary>
-    public SnapshotChange Close(RunMilestones milestones, RollUp rollUp)
+    /// <param name="milestones">When the run started, the stop it has applied, and when and how it ended.</param>
+    /// <param name="runCounts">The run's counts as they are now.</param>
+    public SnapshotChange Close(RunMilestones milestones, TaskCounts runCounts)
     {
-        var tally = new int[TaskCounts.TallyLength + slots.TallyLength];
-        rollUp.CopyRunCountsTo(tally);
-        slots.CopyTo(tally.AsSpan(TaskCounts.TallyLength));
+        var slotsInUse = new int[slots.TallyLength];
+        slots.CopyTo(slotsInUse);
 
         foreach (var (position, node) in _sinceLastChange)
         {
             _untaken.Enqueue(new NodeChange(position, node));
         }
 
-        SnapshotChange change = new(_sinceLastChange.Count, milestones, tally);
+        SnapshotChange change = new(_sinceLastChange.Count, milestones, runCounts, slotsInUse);
         _sinceLastChange.Clear();
         return change;
     }
@@ -71,7 +72,6 @@ internal sealed class SnapshotTaker(
         }
 
         var (started, stop, ended, outcome) = change.Milestones;
-        var slotsInUse = change.Tally.AsSpan(TaskCounts.TallyLength);
         return new Snapshot(
             started,
             ended,
@@ -79,9 +79,9 @@ internal sealed class SnapshotTaker(
             stop,
             _nodes,
             positions,
-            TaskCounts.From(change.Tally),
-            slots.CapIn(slotsInUse),
-            slots.LimitsIn(slotsInUse),
+            change.RunCounts,
+            slots.CapIn(change.SlotsInUse),
+            slots.LimitsIn(change.SlotsInUse),
             journal);
     }
 }

@@ -11,17 +11,19 @@ namespace Dagline;
 /// <para>
 /// The run owns the lock, the current snapshot, the grace-period timer, the registration on the stop signal, the source of the token
 /// every task sees, the task bodies, delivery to reporters and the end result. Its <see cref="JournalRecorder"/> owns the journal.
-/// It reads the clock once each time it takes the lock, and passes that time to the steps, except for a report that is never an event, which needs no time. No consumer code runs under the lock: task bodies are started on the thread pool,
-/// and reporters are called by <see cref="ReporterDelivery"/>.
+/// It reads the clock at most once each time it takes the lock, and passes that time on: to the steps for each input, except for a
+/// report that is never an event, which needs no time; and for a checkpoint change, the recorder reads it for the entry and hands it
+/// back when the write failed, so that the input ends with that time, and a run with no journal reads none. No consumer code runs
+/// under the lock: task bodies are started on the thread pool, and reporters are called by <see cref="ReporterDelivery"/>.
 /// </para>
 /// <para>
 /// Each step is carried out under the lock, in this order: the step is handed to the recorder, which writes its journal entries and,
 /// if the step ends the run, closes the journal; the tasks' token is signalled, if the step asks; if the step ends the run, the
 /// registration on the signal and the timer are released; the events are published in order, each with its snapshot, which is
-/// taken then and made the current snapshot before the event is handed to reporters, and for a run that ends with no outcome its
-/// <see cref="RunEnded"/> is published last, with the final snapshot; the bodies of the
-/// tasks the step starts are started; the grace-period timer is started, if the step asks; and if the step ends the run, the wait for
-/// reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
+/// taken then and made the current snapshot before the event is handed to reporters; the bodies of the tasks the step starts are
+/// started; the grace-period timer is started, if the step asks; and if the step ends the run, which it does in a step that starts
+/// nothing, then for a run stopped by a failed write its <see cref="RunEnded"/> is published last, with the final snapshot, the
+/// wait for reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
 /// So the token is signalled before the run can end, and the wait for reporters listens before the run's end is set.
 /// </para>
 /// <para>
@@ -152,7 +154,7 @@ internal sealed class Run : ISnapshotSource
     /// since settling ended the marker.
     /// </summary>
     public void CloseWaitingScope(BuiltTask task)
-        => Report(task, task, static (instance, _, now) => instance.CloseWaitingScope(now));
+        => Report(task, static (instance, now) => instance.CloseWaitingScope(now));
 
     /// <summary>
     /// Gives the steps a report that is never an event, such as progress, and carries out the step it caused, if any.
@@ -184,6 +186,13 @@ internal sealed class Run : ISnapshotSource
         }
     }
 
+    /// <summary>
+    /// Gives the steps a report that may be an event and takes nothing but the time, such as the close of a waiting scope.
+    /// <paramref name="report"/> is passed on as the argument of the report that takes one, so a static lambda costs no closure.
+    /// </summary>
+    private void Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
+        => Report(task, report, static (instance, report, now) => report(instance, now));
+
     /// <summary>The checkpoint of a task as it is now: empty when there is none.</summary>
     public string CheckpointOf(BuiltTask task)
     {
@@ -208,16 +217,12 @@ internal sealed class Run : ISnapshotSource
         Exception? failed;
         lock (_gate)
         {
-            if (_steps.ChangeCheckpoint(task, text))
+            if (_steps.ChangeCheckpoint(task, text) && _recorder.ChangeCheckpoint(task, text) is { } failedAt)
             {
-                _recorder.ChangeCheckpoint(task, text);
+                EndTheInput(failedAt);
             }
 
             failed = _recorder.Failure;
-            if (failed is not null)
-            {
-                EndTheInput(_timeProvider.GetUtcNow());
-            }
         }
 
         if (failed is not null)
@@ -302,7 +307,6 @@ internal sealed class Run : ISnapshotSource
         }
 
         Publish(step);
-        var endedWith = step.Ends is { Outcome: null } ? PublishEndedByFailedWrite() : null;
         foreach (var task in step.Starts)
         {
             _ = Task.Run(() => RunBodyAsync(task));
@@ -317,21 +321,29 @@ internal sealed class Run : ISnapshotSource
                 Timeout.InfiniteTimeSpan);
         }
 
-        if (step.Ends is { } end)
+        switch (step.Ends)
         {
-            // Only once RunEnded is queued, as ListenBeyond requires: a request heard while a reporter has handled every event
-            // but RunEnded is still to come would leave that reporter to be waited for.
-            _delivery.ListenBeyond(end.RequestsApplied);
-            _delivery.Complete();
-            if (end.Outcome is { } outcome)
-            {
-                _ended.SetResult(outcome);
-            }
-            else
-            {
-                _ended.SetException(endedWith!);
-            }
+            case RunEnd.WithOutcome reached:
+                CompleteDelivery(reached);
+                _ended.SetResult(reached.Outcome);
+                break;
+            case RunEnd.ByFailedWrite byFailedWrite:
+                var endedWith = PublishEndedByFailedWrite();
+                CompleteDelivery(byFailedWrite);
+                _ended.SetException(endedWith);
+                break;
         }
+    }
+
+    /// <summary>
+    /// Has the wait for reporters listen for stop requests beyond those the run applied, and completes delivery. It is called only
+    /// once the run's <see cref="RunEnded"/> is queued, as <see cref="ReporterDelivery.ListenBeyond"/> requires: a request heard
+    /// while a reporter has handled every event but <see cref="RunEnded"/> is still to come would leave that reporter to be waited for.
+    /// </summary>
+    private void CompleteDelivery(RunEnd end)
+    {
+        _delivery.ListenBeyond(end.RequestsApplied);
+        _delivery.Complete();
     }
 
     /// <summary>
