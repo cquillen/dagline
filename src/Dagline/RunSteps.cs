@@ -9,8 +9,9 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It owns the task instances, the ready set, the slots, the counts by status, the stop, the end rule and which journal entries
-/// each step records. It holds no lock,
+/// It owns the task instances, the ready set, the slots, the counts by status, the stop and the end rule. It builds no journal
+/// entry: <see cref="JournalRecorder"/> builds them from the events of each step, and all this type learns of the journal is that a
+/// write to it failed, through <see cref="JournalWriteFailed"/>. It holds no lock,
 /// no disposable object and no thread, and never reads a clock: each input that can cause an event carries the time,
 /// which every event of its steps shares.
 /// It is not thread-safe: the run gives it one input at a time, under its lock.
@@ -38,12 +39,11 @@ internal sealed class RunSteps
     private readonly Slots _slots;
     // Nothing changes a step once it is decided, so every report that produced no event answers with this one.
     private static readonly IReadOnlyList<Step> _changedOnlyTheSnapshot =
-        [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null, Entries: [], Flush: JournalFlush.None)];
+        [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null)];
 
     private readonly List<Step> _decided = [];
     private readonly SnapshotTaker _snapshots;
-    private readonly RunSettings _settings;
-    private readonly RunJournal? _journal;
+    private readonly JournalFold? _earlier;
     // How many warnings the tasks beneath each group hold, indexed by position among the nodes, so a task's place is unused.
     private readonly int[] _warningsBeneath;
 
@@ -55,25 +55,24 @@ internal sealed class RunSteps
     private StepUnderWay? _step;
     private RunMilestones _milestones = new(Started: default, Stop: null, Ended: null, Outcome: null);
     private int _requestsApplied;
-    private bool _recording;
-    private bool _stoppedByDagline;
-    private Exception? _writeFailure;
+    private bool _journalWriteFailed;
 
     /// <param name="graph">The graph the run runs.</param>
     /// <param name="settings">The settings of the run: the sizes of its slots and its grace period.</param>
-    /// <param name="journal">
-    /// The journal the run is on, as it was when opened, or <see langword="null"/> for a run with no journal, whose steps record nothing.
-    /// A task the journal holds as an earlier success begins succeeded and is never made ready, unless the run sets it aside.
+    /// <param name="earlier">
+    /// The journal the run is on, as it was folded when opened, or <see langword="null"/> for a run with no journal. It gives each
+    /// task the checkpoint it begins with, and the journal as the run's snapshots show it.
     /// </param>
-    public RunSteps(Graph graph, RunSettings settings, RunJournal? journal)
+    /// <param name="continuation">
+    /// What the run takes from the journal. A task it holds as an earlier success begins succeeded and is never made ready.
+    /// </param>
+    public RunSteps(Graph graph, RunSettings settings, JournalFold? earlier, Continuation continuation)
     {
         _graph = graph;
-        _settings = settings;
-        _journal = journal;
-        _recording = journal is not null;
+        _earlier = earlier;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
-        _continuation = Continuation.Of(graph, journal?.Earlier);
+        _continuation = continuation;
         _instances = InstancesAtTheStart();
 
         var earlierSuccesses = EarlierSuccessesByPosition();
@@ -99,7 +98,6 @@ internal sealed class RunSteps
     {
         _milestones = _milestones with { Started = now };
         Begin();
-        RecordRunStarted(now);
         Publish(new RunStarted(now, source));
         MakeReady(_graph.Tasks, now);
         AnnounceSettledGroups(now);
@@ -198,7 +196,7 @@ internal sealed class RunSteps
     /// <summary>
     /// The run's signal has had <paramref name="requests"/> requests. The first is a stop: from its step on nothing starts,
     /// and the run ends once nothing is running. The second also lets go of the running tasks, and so does any new request once
-    /// Dagline has stopped the run itself.
+    /// Dagline has stopped the run itself, as the stop's facts say.
     /// Since it reads the count, requests are applied in order and once, however many calls it takes to hear them.
     /// A request already applied, or heard after the run has ended, gives no step: the wait for reporters hears it.
     /// </summary>
@@ -211,7 +209,7 @@ internal sealed class RunSteps
 
         var heardNew = requests > _requestsApplied;
         _requestsApplied = requests;
-        if (_stoppedByDagline && heardNew)
+        if (heardNew && _milestones.Stop?.By is StopRequester.Dagline)
         {
             LetGo(StoppedWaitingReason.SecondStop, now);
             return Decided();
@@ -233,24 +231,16 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// A write to the journal failed. From here on no step records an entry. Unless a stop has been applied, Dagline applies one
-    /// itself, in a step of its own that signals the tasks, and the grace period is bounded as for any stop. The run then ends with
-    /// a <see cref="JournalWriteException"/> and no run outcome. Heard after the run has ended, it gives no step.
+    /// A write to the journal failed. Unless a stop has been applied, Dagline applies one itself, in a step of its own that signals
+    /// the tasks, and the grace period is bounded as for any stop. The run then ends with no run outcome, and so with a
+    /// <see cref="JournalWriteException"/>. The run gives this input once, before the end input, and never once the run has ended.
     /// </summary>
-    /// <param name="cause">The file system's exception.</param>
     /// <param name="now">When the write failed.</param>
-    public IReadOnlyList<Step> JournalWriteFailed(Exception cause, DateTimeOffset now)
+    public IReadOnlyList<Step> JournalWriteFailed(DateTimeOffset now)
     {
-        _recording = false;
-        if (HasEnded)
-        {
-            return [];
-        }
-
-        _writeFailure = cause;
+        _journalWriteFailed = true;
         if (!HasStopped)
         {
-            _stoppedByDagline = true;
             Begin();
             ApplyStop(StopRequester.Dagline, now);
             BoundTheGracePeriod(now);
@@ -289,22 +279,11 @@ internal sealed class RunSteps
     /// </summary>
     /// <param name="task">The task whose checkpoint changes.</param>
     /// <param name="text">The checkpoint, or empty to clear it.</param>
-    /// <param name="now">When the checkpoint changes. A run with no journal records nothing, and need not read the clock for it.</param>
     /// <returns>
-    /// The entry to write and flush before the call returns, or <see langword="null"/> when there is nothing to write: the run has no journal,
-    /// or the task cleared a checkpoint it did not have.
+    /// Whether the checkpoint changed, and so is to be recorded: <see langword="false"/> when the task cleared a checkpoint it did not have.
     /// </returns>
     /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
-    public JournalEntry? ChangeCheckpoint(BuiltTask task, string text, DateTimeOffset now)
-    {
-        if (!InstanceOf(task).ChangeCheckpoint(text) || !_recording)
-        {
-            return null;
-        }
-
-        var path = task.Path.ToString();
-        return text.Length == 0 ? new CheckpointClearedEntry(path, now) : new CheckpointSavedEntry(path, now, text);
-    }
+    public bool ChangeCheckpoint(BuiltTask task, string text) => InstanceOf(task).ChangeCheckpoint(text);
 
     /// <summary>
     /// The status, as it is now, of the node at <paramref name="position"/>: a task's is its instance's,
@@ -546,29 +525,22 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Ends the run, in a step of its own whose one event is <see cref="RunEnded"/>: with the error of a failed journal write if
-    /// there was one, and with its run outcome otherwise.
+    /// Ends the run, in a step of its own. With a run outcome, its one event is <see cref="RunEnded"/>. After a failed journal write
+    /// it has no outcome and no event: the run publishes that <see cref="RunEnded"/> itself, with the error it ends with.
     /// </summary>
     private void End(DateTimeOffset now)
     {
         Begin();
-        if (_writeFailure is { } cause)
-        {
-            _milestones = _milestones with { Ended = now };
-            _step!.Ends = new RunEnd(null, cause, _requestsApplied);
-
-            // The run builds this RunEnded as it publishes it: its exception carries the final snapshot.
-            _step.Events.Add(new StepEvent(null, ChangeSinceLastEvent()));
-            return;
-        }
-
-        var outcome = _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete
+        RunOutcome? outcome = _journalWriteFailed ? null
+            : _counts[NodeStatus.Succeeded] == _graph.Tasks.Length ? RunOutcome.Complete
             : HasStopped ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
         _milestones = _milestones with { Ended = now, Outcome = outcome };
-        _step!.Ends = new RunEnd(outcome, null, _requestsApplied);
-        Record(new RunEndedEntry(now, outcome));
-        Publish(new RunEnded(now, outcome));
+        _step!.Ends = new RunEnd(outcome, _requestsApplied);
+        if (outcome is { } reached)
+        {
+            Publish(new RunEnded(now, reached));
+        }
     }
 
     /// <summary>
@@ -581,7 +553,6 @@ internal sealed class RunSteps
         _snapshots.Record(task.Position, change.Task);
         if (change.Event is TaskStatusChanged moved)
         {
-            RecordStatusChange(moved);
             _counts.Move(moved.From, moved.To);
             ChangeEachGroupAbove(task, moved, static (steps, group, move) => steps.MoveBeneath(group, move.From, move.To));
         }
@@ -637,7 +608,7 @@ internal sealed class RunSteps
         {
             instances[task.Position] = _continuation.EarlierSuccessOf(task) is { } recorded
                 ? TaskInstance.EarlierSuccess(task, recorded)
-                : new TaskInstance(task, _journal?.Earlier.CheckpointAt(task.Path) ?? "");
+                : new TaskInstance(task, _earlier?.CheckpointAt(task.Path) ?? "");
         }
 
         return instances;
@@ -687,7 +658,7 @@ internal sealed class RunSteps
             _graph.Nodes.Select(AtTheStart),
             _graph.Positions,
             _slots,
-            new SnapshotJournal(_journal?.Info)
+            new SnapshotJournal(_earlier?.NextRun)
             {
                 SetAside = [.. _continuation.SetAside.Select(task => task.Path)],
                 JournalPathsNotInGraph = _continuation.PathsNotInGraph,
@@ -709,56 +680,6 @@ internal sealed class RunSteps
         {
             WarningsBeneath = _warningsBeneath[group.Position],
         };
-    }
-
-    /// <summary>
-    /// Records the run-started entry in the step under way, with the cap, the size of each limit the graph names and the two
-    /// journal-path counts, then the set-asides, which a run decides before it starts.
-    /// </summary>
-    private void RecordRunStarted(DateTimeOffset now)
-    {
-        if (_journal is null)
-        {
-            return;
-        }
-
-        var limits = _graph.LimitNames
-            .Zip(_settings.Sizes.Limits)
-            .ToDictionary(limit => limit.First.Text, limit => limit.Second, LimitName.TextComparer);
-        Record(new RunStartedEntry(
-            now,
-            _journal.User,
-            _journal.Machine,
-            _settings.Sizes.Cap,
-            limits,
-            _continuation.PathsNotInGraph,
-            _continuation.PathsNotInGraphUnsucceeded));
-        foreach (var task in _continuation.SetAside)
-        {
-            Record(new SetAsideEntry(task.Path.ToString(), now));
-        }
-    }
-
-    /// <summary>Records a task's start or settle in the step under way. Becoming ready and being pending are never recorded.</summary>
-    private void RecordStatusChange(TaskStatusChanged moved)
-    {
-        if (moved.To is NodeStatus.Running)
-        {
-            Record(new TaskStartedEntry(moved.Node.Path.ToString(), moved.At));
-        }
-        else if (moved.To.IsSettled())
-        {
-            Record(TaskSettledEntry.Of(moved.Node, moved.At));
-        }
-    }
-
-    /// <summary>Adds an entry to those the step under way records, when the run is on a journal and no write to it has failed.</summary>
-    private void Record(JournalEntry entry)
-    {
-        if (_recording)
-        {
-            _step!.Entries.Add(entry);
-        }
     }
 
     // Indexed by position among the nodes, so a group's place is empty.
@@ -816,13 +737,6 @@ internal sealed class RunSteps
 
         public RunEnd? Ends { get; set; }
 
-        public List<JournalEntry> Entries { get; } = [];
-
-        // Every entry but a start is flushed, and entries written together share one flush, so one is enough for the whole step.
-        public Step Decided()
-            => new(Events, Starts, SignalsTheTasks, GracePeriodTimer, Ends, Entries, Flush: FlushOf(Entries));
-
-        private static JournalFlush FlushOf(List<JournalEntry> entries)
-            => entries.Exists(entry => entry is not TaskStartedEntry) ? JournalFlush.ToDisk : JournalFlush.None;
+        public Step Decided() => new(Events, Starts, SignalsTheTasks, GracePeriodTimer, Ends);
     }
 }
