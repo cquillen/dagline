@@ -29,11 +29,23 @@ internal sealed record Step(
 /// <param name="Change">What the event changed in the run's snapshot.</param>
 internal readonly record struct StepEvent(RunEvent Event, SnapshotChange Change);
 
-/// <summary>How a run ends: its outcome, if it has one, and how many stop requests it applied, so that the wait for reporters hears only later ones.</summary>
-/// <param name="Outcome">
-/// The run outcome, published in the step's <see cref="RunEnded"/>; or <see langword="null"/> when a journal write failed. The step
-/// then has no event, and the run publishes the <see cref="RunEnded"/> itself, with the <see cref="JournalWriteException"/> it ends
-/// with, since that exception carries the final snapshot, which the run takes only then.
-/// </param>
+/// <summary>
+/// How a run ends: with a run outcome, or stopped by a failed journal write; and how many stop requests it applied, so that the
+/// wait for reporters hears only later ones.
+/// </summary>
 /// <param name="RequestsApplied">How many stop requests the run applied.</param>
-internal readonly record struct RunEnd(RunOutcome? Outcome, int RequestsApplied);
+internal abstract record RunEnd(int RequestsApplied)
+{
+    /// <summary>The run ends with a run outcome, which the step's <see cref="RunEnded"/> carries.</summary>
+    /// <param name="Outcome">The run outcome.</param>
+    /// <param name="RequestsApplied">How many stop requests the run applied.</param>
+    public sealed record WithOutcome(RunOutcome Outcome, int RequestsApplied) : RunEnd(RequestsApplied);
+
+    /// <summary>
+    /// The run ends with no run outcome, because a journal write failed. The step has no event: the run publishes the
+    /// <see cref="RunEnded"/> itself, with the <see cref="JournalWriteException"/> it ends with, since that exception carries the
+    /// final snapshot, which the run takes only then.
+    /// </summary>
+    /// <param name="RequestsApplied">How many stop requests the run applied.</param>
+    public sealed record ByFailedWrite(int RequestsApplied) : RunEnd(RequestsApplied);
+}
