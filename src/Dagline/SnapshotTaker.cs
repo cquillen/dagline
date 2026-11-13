@@ -8,7 +8,8 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="RunSteps"/> records each change to a node as it makes it, and closes the changes recorded so far into a
+/// <see cref="RunSteps"/> records each change to a task as it makes it, <see cref="RollUp"/> hands over each changed group as a
+/// finished node, and <see cref="RunSteps"/> closes the changes recorded so far into a
 /// <see cref="SnapshotChange"/> with each event. A snapshot is built only when it is taken, so the changes a step has decided
 /// cost one small entry for each node an event changed, not a list of every node each, until the step is carried out.
 /// </para>
@@ -42,20 +43,21 @@ internal sealed class SnapshotTaker(
 
     /// <summary>
     /// Closes the node changes recorded since the last change into a new one, with everything else the snapshot holds.
-    /// The counts and the slots in use are copied, so the change keeps them as they are now.
+    /// The slots in use are copied, so the change keeps them as they are now.
     /// </summary>
-    public SnapshotChange Close(RunMilestones milestones, StatusCounts counts)
+    /// <param name="milestones">When the run started, the stop it has applied, and when and how it ended.</param>
+    /// <param name="runCounts">The run's counts as they are now.</param>
+    public SnapshotChange Close(RunMilestones milestones, TaskCounts runCounts)
     {
-        var tally = new int[TaskCounts.TallyLength + slots.TallyLength];
-        counts.CopyTo(tally);
-        slots.CopyTo(tally.AsSpan(TaskCounts.TallyLength));
+        var slotsInUse = new int[slots.TallyLength];
+        slots.CopyTo(slotsInUse);
 
         foreach (var (position, node) in _sinceLastChange)
         {
             _untaken.Enqueue(new NodeChange(position, node));
         }
 
-        SnapshotChange change = new(_sinceLastChange.Count, milestones, tally);
+        SnapshotChange change = new(_sinceLastChange.Count, milestones, runCounts, slotsInUse);
         _sinceLastChange.Clear();
         return change;
     }
@@ -70,7 +72,6 @@ internal sealed class SnapshotTaker(
         }
 
         var (started, stop, ended, outcome) = change.Milestones;
-        var slotsInUse = change.Tally.AsSpan(TaskCounts.TallyLength);
         return new Snapshot(
             started,
             ended,
@@ -78,9 +79,9 @@ internal sealed class SnapshotTaker(
             stop,
             _nodes,
             positions,
-            TaskCounts.From(change.Tally),
-            slots.CapIn(slotsInUse),
-            slots.LimitsIn(slotsInUse),
+            change.RunCounts,
+            slots.CapIn(change.SlotsInUse),
+            slots.LimitsIn(change.SlotsInUse),
             journal);
     }
 }

@@ -265,6 +265,40 @@ public class StopTests
     }
 
     [Test]
+    public async Task A_settled_group_is_failed_before_cancelled_and_cancelled_before_blocked()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var firstSlow = new StoppedBody();
+            var secondSlow = new StoppedBody();
+            var builder = new GraphBuilder();
+            var check = builder.Task("check", context => throw context.Fail("bad data"));
+            var failedAndCancelled = builder.Group("shard-1");
+            failedAndCancelled.Task("verify", context => throw context.Fail("entity 3 has a bad date"));
+            failedAndCancelled.Task("load", firstSlow.Body);
+            var cancelledAndBlocked = builder.Group("shard-2");
+            cancelledAndBlocked.Task("load", secondSlow.Body);
+            cancelledAndBlocked.Task("publish", _ => Task.CompletedTask).Requires(check);
+            var stop = new StopSignal();
+            var reporter = new RecordingReporter();
+            var watched = new WatchedReporter(reporter);
+
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, stop);
+            await Task.WhenAll(firstSlow.Started, secondSlow.Started);
+            await watched.Handled("shard-2/publish: pending -> blocked");
+            await watched.Handled("shard-1/verify: running -> failed");
+            stop.Request();
+            var result = await run;
+
+            result.Snapshot[failedAndCancelled.Path].Status.ShouldBe(NodeStatus.Failed);
+            result.Snapshot[cancelledAndBlocked.Path].Status.ShouldBe(NodeStatus.Cancelled);
+            reporter.Lines.ShouldContain("group shard-1 settled: failed");
+            reporter.Lines.ShouldContain("group shard-2 settled: cancelled");
+            result.Snapshot[check.Path].Status.ShouldBe(NodeStatus.Failed);
+        }
+    }
+
+    [Test]
     public async Task A_run_in_which_every_task_succeeds_despite_a_stop_is_complete()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)

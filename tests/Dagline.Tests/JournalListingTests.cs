@@ -5,6 +5,7 @@ namespace Dagline.Tests;
 
 public class JournalListingTests
 {
+    private const int _repeats = 50;
     private static readonly DateTimeOffset _created = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
     [Test]
@@ -73,6 +74,40 @@ public class JournalListingTests
         summary.Finished.ShouldBeFalse();
         summary.Counts.Values.Sum().ShouldBe(0);
         summary.Counts.Keys.ShouldBe(Enum.GetValues<NodeStatus>(), ignoreOrder: true);
+    }
+
+    [Test]
+    [NotInParallel(DiskHeavy.Key)]
+    public async Task A_stopped_run_records_a_task_that_succeeds_in_the_grace_period_and_one_it_lets_go_of_as_cancelled()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            using var temporary = new TemporaryDirectory();
+            var stop = new StopSignal();
+            var finish = new StoppedBody(onStop: _ => { });
+            var hang = new PausedBody();
+            var watched = new WatchedReporter(new RecordingReporter());
+            var builder = new GraphBuilder();
+            var finishing = builder.Task("finish", finish.Body);
+            builder.Task("hang", hang.Body);
+            var graph = builder.Build();
+
+            var running = Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path), Reporters = [watched] }, stop);
+            await finish.Started;
+            await hang.Started;
+            stop.Request();
+            await watched.Handled("finish: running -> succeeded");
+            stop.Request();
+            var first = await running;
+            hang.Release();
+            var summary = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
+            var next = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
+
+            summary.Ending.ShouldBe(JournalEnding.Stopped);
+            summary.Counts[NodeStatus.Succeeded].ShouldBe(1);
+            summary.Counts[NodeStatus.Cancelled].ShouldBe(1);
+            next.Snapshot[finishing.Path].IsEarlierSuccess.ShouldBeTrue();
+        }
     }
 
     [Test]

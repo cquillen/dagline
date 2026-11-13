@@ -159,6 +159,33 @@ public class ProgressTests
     }
 
     [Test]
+    public async Task Progress_leaves_every_group_above_its_task_as_it_was()
+    {
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var tenant = shard.Group("tenant-a");
+        var loadTask = tenant.Task("load", load.Body);
+        var reporter = new RecordingReporter();
+
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var source = await reporter.Source;
+        var context = await load.Started;
+        var beforeTheProgress = source.Current;
+        context.Status("loading entities");
+        context.Count(17, 40);
+        var afterTheProgress = source.Current;
+        load.Release();
+        await run;
+
+        afterTheProgress[loadTask.Path].StatusText.ShouldBe("loading entities");
+        afterTheProgress[tenant.Path].ShouldBeSameAs(beforeTheProgress[tenant.Path]);
+        afterTheProgress[shard.Path].ShouldBeSameAs(beforeTheProgress[shard.Path]);
+        afterTheProgress[shard.Path].StatusText.ShouldBeNull();
+        afterTheProgress[shard.Path].Count.ShouldBeNull();
+    }
+
+    [Test]
     public async Task A_task_that_reports_no_progress_and_a_group_have_no_status_text_and_no_count()
     {
         var builder = new GraphBuilder();
