@@ -168,6 +168,11 @@ public static class Journals
                 .Select(id => JournalLocation.Of(directory, id))
                 .ToList();
         }
+        // On Linux and macOS a path naming a file also throws DirectoryNotFoundException, where Windows throws IOException.
+        catch (DirectoryNotFoundException cannotList) when (File.Exists(directory))
+        {
+            throw JournalAccessException.DirectoryNotListed(directory, cannotList);
+        }
         catch (DirectoryNotFoundException)
         {
             return [];
