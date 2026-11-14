@@ -55,9 +55,9 @@ Reporters see a <xref:Dagline.WaitingChanged> when the wait begins and another w
 
 ### A waiting task keeps its slots
 
-A waiting task holds its slot of the cap and of each of its limits for the whole wait, as any running task does. A limit on triggered work therefore bounds the work that is in flight in the external system, not only the moment of triggering it: with a limit of 4, no more than four jobs are ever waited on at once.
+A waiting task holds its slot of the max running tasks and of each of its limits for the whole wait, as any running task does. A limit on triggered work therefore bounds the work that is in flight in the external system, not only the moment of triggering it: with a limit of 4, no more than four jobs are ever waited on at once.
 
-The cost is that idle tasks take up the cap. A run with many long waits wants a high <xref:Dagline.RunOptions.Cap>, so that waiting tasks do not keep working tasks from starting, and a [limit](defining-a-graph.md) on the heavy local work, so that a high cap does not let too much of it run at once.
+The cost is that idle tasks count towards the max running tasks. A run with many long waits wants a high <xref:Dagline.RunOptions.MaxRunningTasks>, so that waiting tasks do not keep working tasks from starting, and a [limit](defining-a-graph.md) on the heavy local work, so that a high max running tasks does not let too much of it run at once.
 
 ## When a check fails
 

@@ -265,7 +265,7 @@ public class WaitingTests
         waiting[shard.Path].Status.ShouldBe(NodeStatus.Running);
         waiting[shard.Path].Counts[NodeStatus.Running].ShouldBe(1);
         waiting.Counts[NodeStatus.Running].ShouldBe(1);
-        waiting.Cap.InUse.ShouldBe(1);
+        waiting.RunningTasks.InUse.ShouldBe(1);
         result.Outcome.ShouldBe(RunOutcome.Complete);
         result.Snapshot[shard.Path].Status.ShouldBe(NodeStatus.Succeeded);
     }

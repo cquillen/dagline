@@ -203,7 +203,7 @@ public class SpaceTests
                 bad.Task($"f{i}", context => throw context.Fail("broken"));
             }
 
-            var display = await DisplayRun.StartAsync(builder.Build(), 80, height, new RunOptions { Journal = Journal.None, Cap = 96 });
+            var display = await DisplayRun.StartAsync(builder.Build(), 80, height, new RunOptions { Journal = Journal.None, MaxRunningTasks = 96 });
             foreach (var body in bodies)
             {
                 await body.Started;

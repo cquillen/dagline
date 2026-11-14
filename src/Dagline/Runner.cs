@@ -28,13 +28,13 @@ public static class Runner
     /// </para>
     /// <para>
     /// When the run starts, and whenever a task settles after that, the ready tasks are tried in declaration order.
-    /// Each one that finds a slot free in the cap and in every limit it holds takes them all and is started on the thread pool.
+    /// Each one that finds a slot free in the max running tasks and in every limit it holds takes them all and is started on the thread pool.
     /// One that does not fit takes none, is passed over and stays ready, so it never holds up the tasks behind it.
     /// There are no priorities and no fairness: a task that needs two busy limits can be passed over many times.
     /// A task gives its slots back when it settles, whatever its status.
     /// </para>
     /// <para>
-    /// The options are checked before anything else happens: <see cref="RunOptions.Cap"/> and every size in
+    /// The options are checked before anything else happens: <see cref="RunOptions.MaxRunningTasks"/> and every size in
     /// <see cref="RunOptions.Limits"/> must be at least 1, every limit the graph names must have a size, and
     /// <see cref="RunOptions.GracePeriod"/> must be from zero up to <see cref="uint.MaxValue"/> - 1 milliseconds (about 49.7 days),
     /// or <see cref="Timeout.InfiniteTimeSpan"/>.
@@ -52,7 +52,7 @@ public static class Runner
     /// on it has been applied, which publishes <see cref="StopRequested"/>, nothing starts, <em>after</em> tasks included,
     /// and <see cref="TaskContext.CancellationToken"/> is signalled on every running task. The run then waits for its running tasks
     /// to end, for at most <see cref="RunOptions.GracePeriod"/> on the run's clock, and a second request on <paramref name="stop"/>
-    /// ends the wait at once. When the wait ends with tasks still running, <see cref="StoppedWaiting"/> is published, each of them
+    /// ends the wait at once. When the wait ends with tasks still running, <see cref="GraceEnded"/> is published, each of them
     /// is recorded as cancelled in declaration order, and the run lets go of it: this method returns while its body may still be
     /// running, and nothing the body does afterwards changes the run. While it waits a task that succeeds still makes its dependents ready, where they stay,
     /// and a task that fails still blocks its dependents. <see cref="TaskContext.CancellationToken"/> says how a task ends
@@ -92,7 +92,7 @@ public static class Runner
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="RunConfigurationException">
-    /// The cap or a size is below 1, the graph names a limit that the options give no size, or the grace period is below zero
+    /// <see cref="RunOptions.MaxRunningTasks"/> or a size is below 1, the graph names a limit that the options give no size, or the grace period is below zero
     /// or above <see cref="uint.MaxValue"/> - 1 milliseconds and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
     /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
     /// </exception>
@@ -102,7 +102,7 @@ public static class Runner
     /// <exception cref="JournalNotFoundException">
     /// <see cref="RunOptions.Journal"/> continues a journal that is not in its directory.
     /// </exception>
-    /// <exception cref="JournalOpenException">
+    /// <exception cref="JournalAccessException">
     /// The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written.
     /// </exception>
     /// <exception cref="JournalFormatException">

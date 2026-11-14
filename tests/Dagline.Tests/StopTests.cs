@@ -85,7 +85,7 @@ public class StopTests
             var stop = new StopSignal();
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Cap = 2, Reporters = [reporter] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 2, Reporters = [reporter] }, stop);
             await honour.Started;
             await finish.Started;
             stop.Request();

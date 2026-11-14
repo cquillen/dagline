@@ -14,9 +14,9 @@ namespace Dagline;
 /// been called. <see cref="Exception.InnerException"/> is the file system's own exception.
 /// </para>
 /// </remarks>
-public sealed class JournalOpenException : DaglineException
+public sealed class JournalAccessException : DaglineException
 {
-    internal JournalOpenException(string path, Exception innerException)
+    internal JournalAccessException(string path, Exception innerException)
         : base($"The journal file '{path}' cannot be opened: {innerException.Message}", innerException)
     {
     }

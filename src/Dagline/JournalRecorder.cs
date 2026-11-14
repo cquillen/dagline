@@ -26,7 +26,7 @@ internal abstract class JournalRecorder
     /// </summary>
     /// <param name="file">The journal the run is on, already held, opened and read. The recorder owns it from here.</param>
     /// <param name="graph">The graph the run runs.</param>
-    /// <param name="settings">The settings of the run: the cap, the limit sizes and the clock that times a checkpoint change.</param>
+    /// <param name="settings">The settings of the run: the max running tasks, the limit sizes and the clock that times a checkpoint change.</param>
     /// <param name="continuation">What the run takes from the journal: the set-asides and the counts of journal paths not in the graph.</param>
     public static JournalRecorder For(JournalFile? file, Graph graph, RunSettings settings, Continuation continuation)
         => file is null ? NoJournal.Instance : new OnFile(file, graph, settings, continuation);
@@ -78,7 +78,7 @@ internal abstract class JournalRecorder
         private readonly TimeProvider _clock;
         private readonly string _user = Environment.UserName;
         private readonly string _machine = Environment.MachineName;
-        private readonly int _cap;
+        private readonly int _maxRunningTasks;
         private readonly Dictionary<string, int> _limits;
         private readonly Continuation _continuation;
 
@@ -93,7 +93,7 @@ internal abstract class JournalRecorder
         {
             _file = file;
             _clock = settings.TimeProvider;
-            _cap = settings.Sizes.Cap;
+            _maxRunningTasks = settings.Sizes.MaxRunningTasks;
             _limits = graph.LimitNames
                 .Zip(settings.Sizes.Limits)
                 .ToDictionary(limit => limit.First.Text, limit => limit.Second, LimitName.TextComparer);
@@ -158,7 +158,7 @@ internal abstract class JournalRecorder
                         started.At,
                         _user,
                         _machine,
-                        _cap,
+                        _maxRunningTasks,
                         _limits,
                         _continuation.PathsNotInGraph,
                         _continuation.PathsNotInGraphUnsucceeded));

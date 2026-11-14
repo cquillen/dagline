@@ -52,7 +52,7 @@ pending --> ready --> running --> succeeded
    \------> blocked
 ```
 
-A task starts **pending**. It becomes **ready** once its dependencies are met, and **running** when the run starts it, which may be later when the cap or a limit is full. From there it ends **succeeded** or **failed**, or **cancelled** when the run is stopped while it runs.
+A task starts **pending**. It becomes **ready** once its dependencies are met, and **running** when the run starts it, which may be later when the max running tasks is reached or a limit is full. From there it ends **succeeded** or **failed**, or **cancelled** when the run is stopped while it runs.
 
 A task becomes **blocked** when something it requires failed or was blocked: it will not run in this run. A failure therefore costs only the work that requires it. Tasks that run *after* the failed one still run, and so does everything unrelated.
 
@@ -74,7 +74,7 @@ More in [Writing tasks](writing-tasks.md). Definitions: [Outcomes](../../GLOSSAR
 
 A **run** is one execution of a graph by one process. You start it with one call and await it. It goes on until no task is running and none is ready.
 
-How much runs at once is bounded in two ways. The **cap** is the most tasks that may be running at any moment. A **limit** is a named ceiling that the graph puts on some of its tasks, and each run gives it a size.
+How much runs at once is bounded in two ways. The **max running tasks** is the most tasks that may be running at any moment. A **limit** is a named ceiling that the graph puts on some of its tasks, and each run gives it a size.
 
 A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, and **stopped** when the run was asked to stop and at least one task had not succeeded. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
 

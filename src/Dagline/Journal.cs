@@ -44,7 +44,7 @@ public abstract record Journal
     /// </para>
     /// <para>
     /// The journal's first line is written and flushed to the disk while it is created, before the run exists. Its lock file,
-    /// <c>&lt;id&gt;.lock</c>, is created beside it. <see cref="Runner.RunAsync"/> throws <see cref="JournalOpenException"/> when the
+    /// <c>&lt;id&gt;.lock</c>, is created beside it. <see cref="Runner.RunAsync"/> throws <see cref="JournalAccessException"/> when the
     /// directory, the lock file or the journal cannot be created, or the first line cannot be written.
     /// </para>
     /// </remarks>
@@ -80,12 +80,12 @@ public abstract record Journal
     /// are those of every task that is not an earlier success, set-aside tasks included.
     /// </para>
     /// <para>
-    /// The run may use a different cap and different limit sizes from the runs before it. A journal whose latest run was complete
+    /// The run may use a different <see cref="RunOptions.MaxRunningTasks"/> and different limit sizes from the runs before it. A journal whose latest run was complete
     /// can be continued like any other: with an unchanged graph the run is complete at once, and a path the graph gained runs.
     /// </para>
     /// <para>
     /// <see cref="Runner.RunAsync"/> throws <see cref="JournalNotFoundException"/> when the directory has no journal with the id,
-    /// <see cref="JournalInUseException"/> when another run holds it, <see cref="JournalOpenException"/> when it cannot be opened or
+    /// <see cref="JournalInUseException"/> when another run holds it, <see cref="JournalAccessException"/> when it cannot be opened or
     /// read, and <see cref="JournalFormatException"/> when it cannot be read as a journal. <see cref="Journals.ListAsync"/> lists the
     /// journals in a directory, to choose one from.
     /// </para>

@@ -42,7 +42,7 @@ public class JournalHoldingTests
 
         await Should.ThrowAsync<RunConfigurationException>(() => Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.Continue(temporary.Path, id), Cap = 0 }));
+            new RunOptions { Journal = Journal.Continue(temporary.Path, id), MaxRunningTasks = 0 }));
 
         load.Release();
         await holding;
@@ -106,7 +106,7 @@ public class JournalHoldingTests
         builder.Task("load", _ => Task.CompletedTask);
         var reporter = new RecordingReporter();
 
-        await Should.ThrowAsync<JournalOpenException>(() => Runner.RunAsync(
+        await Should.ThrowAsync<JournalAccessException>(() => Runner.RunAsync(
             builder.Build(),
             new RunOptions { Journal = Journal.New(notADirectory), Reporters = [reporter] }));
 

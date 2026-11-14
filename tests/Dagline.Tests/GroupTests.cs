@@ -65,7 +65,7 @@ public class GroupTests
     }
 
     [Test]
-    public async Task A_group_is_ready_while_every_task_beneath_it_is_held_ready_by_a_full_cap()
+    public async Task A_group_is_ready_while_every_task_beneath_it_is_held_ready_by_reaching_the_max_running_tasks()
     {
         var prepare = new PausedBody();
         var builder = new GraphBuilder();
@@ -75,7 +75,7 @@ public class GroupTests
         held.Group("tenant-a").Task("verify", _ => Task.CompletedTask);
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Cap = 1, Reporters = [reporter] });
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 1, Reporters = [reporter] });
         var source = await reporter.Source;
         await prepare.Started;
         var prepareRunning = source.Current;

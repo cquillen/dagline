@@ -23,7 +23,7 @@ static Task PrepareAsync(TaskContext context) => Task.CompletedTask;
 static Task PublishAsync(TaskContext context) => Task.CompletedTask;
 ```
 
-Every task starts pending, except a task that a [journal](journals.md) the run continues records as succeeded and whose success [stands](journals.md#an-after-task-runs-again-when-what-it-is-after-runs-again). A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the cap and its limits](#sizing-the-cap-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
+Every task starts pending, except a task that a [journal](journals.md) the run continues records as succeeded and whose success [stands](journals.md#an-after-task-runs-again-when-what-it-is-after-runs-again). A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the max running tasks and its limits](#sizing-the-max-running-tasks-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
 
 Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock, through which it also reports progress, warnings and its outcome: see [Writing tasks](writing-tasks.md).
 
@@ -38,7 +38,7 @@ The graph is not changed by a run. You can run the same built graph again, and e
 | Option | Default | What it is |
 | --- | --- | --- |
 | `Journal` | none: you must set it | The journal choice of the run. |
-| `Cap` | 16 | The most tasks that may be running at once. |
+| `MaxRunningTasks` | 16 | The most tasks that may be running at once. |
 | `Limits` | no sizes | The size of each limit the graph names. |
 | `TimeProvider` | `TimeProvider.System` | The clock of the run. |
 | `GracePeriod` | 30 seconds | How long a stopped run waits for its running tasks. See [the grace period](#the-grace-period). |
@@ -77,11 +77,11 @@ The list is read once when the run starts. A reporter cannot change the run, and
 
 The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Create()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
 
-## Sizing the cap and limits
+## Sizing the max running tasks and limits
 
 Two options bound how much runs at once.
 
-The **cap** is the most tasks that may be running at once, whatever limits they hold. It defaults to 16. The default is fixed and not derived from the processor count, because a task mostly waits on other systems.
+The **max running tasks**, <xref:Dagline.RunOptions.MaxRunningTasks>, is the most tasks that may be running at once, whatever limits they hold. It defaults to 16. The default is fixed and not derived from the processor count, because a task mostly waits on other systems.
 
 A **limit** is a ceiling on the tasks that hold it. The graph [names limits](defining-a-graph.md#limits) on tasks and on groups, and the run gives each one a size:
 
@@ -89,7 +89,7 @@ A **limit** is a ceiling on the tasks that hold it. The graph [names limits](def
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = Journal.None,
-    Cap = 32,
+    MaxRunningTasks = 32,
     Limits = new Dictionary<string, int>
     {
         ["database"] = 4,
@@ -101,25 +101,25 @@ var result = await Runner.RunAsync(graph, new RunOptions
 Sizes belong to the run and not to the graph because they are tuning: the graph is the same work whatever machine runs it.
 
 - Every limit the graph names needs a size. A missing one is an [error before the run starts](#errors-before-a-run-starts), so a misspelt limit name cannot silently remove a bound.
-- The cap and every size must be at least 1.
+- The max running tasks and every size must be at least 1.
 - A size for a limit the graph does not name is ignored, so one set of sizes can serve several graphs.
 - Names are compared exactly: `database` and `Database` are two limits.
 
 ### How ready tasks start
 
-A running task holds one slot of the cap and one slot of each of its limits, from the moment it starts until it settles, whatever its status. That includes the time it spends waiting on another system. If your tasks wait a lot, set a high cap and put limits on the heavy work.
+A running task holds one slot of the max running tasks and one slot of each of its limits, from the moment it starts until it settles, whatever its status. That includes the time it spends waiting on another system. If your tasks wait a lot, set a high max running tasks and put limits on the heavy work.
 
-When the run starts, and whenever a task settles after that, Dagline tries the ready tasks in declaration order. Each one that finds a free slot in the cap and in every one of its limits takes them all and starts. One that does not fit takes none and is passed over: it stays ready, and the tasks behind it are still tried. A task held by a full limit therefore never holds up a task that does not need that limit.
+When the run starts, and whenever a task settles after that, Dagline tries the ready tasks in declaration order. Each one that finds a free slot in the max running tasks and in every one of its limits takes them all and starts. One that does not fit takes none and is passed over: it stays ready, and the tasks behind it are still tried. A task held by a full limit therefore never holds up a task that does not need that limit.
 
 There are no priorities and no fairness. A task that needs two busy limits can be passed over many times.
 
 ### How full they are
 
-A snapshot shows how busy the run is. <xref:Dagline.Snapshot.Cap> is the cap, and <xref:Dagline.Snapshot.Limits> has every limit the graph names. Each is a <xref:Dagline.LimitUse>: its size and how many of its slots are in use.
+A snapshot shows how busy the run is. <xref:Dagline.Snapshot.RunningTasks> is the max running tasks, and <xref:Dagline.Snapshot.Limits> has every limit the graph names. Each is a <xref:Dagline.LimitUse>: its size and how many of its slots are in use.
 
 ```csharp
 var database = snapshot.Limits["database"];
-Console.WriteLine($"{snapshot.Cap.InUse} of {snapshot.Cap.Size} running, database {database.InUse} of {database.Size}");
+Console.WriteLine($"{snapshot.RunningTasks.InUse} of {snapshot.RunningTasks.Size} running, database {database.InUse} of {database.Size}");
 ```
 
 ## The result
@@ -132,7 +132,7 @@ Console.WriteLine($"{snapshot.Cap.InUse} of {snapshot.Cap.Size} running, databas
 - **Incomplete**: the run went as far as it could and at least one task did not succeed.
 - **Stopped**: the run was [asked to stop](#stopping-a-run) and at least one task did not succeed.
 
-`Snapshot` is the final snapshot of the run: every node in declaration order with its status, its start and settle times and the dependencies and limits declared on it, plus the count of tasks per status, the cap and each limit, the start and end of the run, and the stop if there was one.
+`Snapshot` is the final snapshot of the run: every node in declaration order with its status, its start and settle times and the dependencies and limits declared on it, plus the count of tasks per status, the max running tasks and each limit, the start and end of the run, and the stop if there was one.
 
 ```csharp
 foreach (var node in result.Snapshot.Nodes)
@@ -222,7 +222,7 @@ The wait ends in one of three ways:
 - **The grace period runs out** with tasks still running.
 - **A second stop:** a second `Request` on the same signal ends the wait at once, so an operator who presses Ctrl+C twice is not held for the whole grace period. A third request changes nothing.
 
-In the last two cases the run publishes a <xref:Dagline.StoppedWaiting> event with the reason, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
+In the last two cases the run publishes a <xref:Dagline.GraceEnded> event with the reason, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
 
 Both extremes are a setting:
 
@@ -305,7 +305,7 @@ The mapping is stable: these three codes keep their meaning in every release, so
 
 `RunAsync` throws <xref:Dagline.RunConfigurationException> when the options cannot work for the graph:
 
-- the cap is below 1,
+- `MaxRunningTasks` is below 1,
 - a size in `Limits` is below 1,
 - the graph names a limit that `Limits` gives no size,
 - the grace period is below zero or above about 49.7 days (`uint.MaxValue - 1` milliseconds), and is not `Timeout.InfiniteTimeSpan`.
@@ -314,7 +314,7 @@ Its message lists every problem, one to a line, so you can fix them all in one p
 
 ```text
 The options cannot be used to run the graph:
-- The cap is 0. It must be at least 1.
+- MaxRunningTasks is 0. It must be at least 1.
 - The graph names the limit 'database', and the options give it no size.
 ```
 
@@ -326,7 +326,7 @@ A run on a journal then holds, opens and reads it, also before anything has happ
 | --- | --- |
 | <xref:Dagline.JournalInUseException> | Another run holds the journal, in this process or another. |
 | <xref:Dagline.JournalNotFoundException> | <xref:Dagline.Journal.Continue*> names a journal that is not in its directory. |
-| <xref:Dagline.JournalOpenException> | The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written. |
+| <xref:Dagline.JournalAccessException> | The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written. |
 | <xref:Dagline.JournalFormatException> | The file cannot be read as a journal: its first line is not a journal header, its format version is unknown (in `Version`), or a line other than the last is not an entry. |
 
 See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.

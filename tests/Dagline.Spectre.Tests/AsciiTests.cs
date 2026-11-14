@@ -39,7 +39,7 @@ public class AsciiTests
             await cancel.Body(context);
         });
         builder.Task("later", _ => Task.CompletedTask).Requires(builder.Task("held", _ => Task.CompletedTask));
-        var options = new RunOptions { Journal = Journal.New(temporary.Path, "all shards ✓"), Cap = 3 };
+        var options = new RunOptions { Journal = Journal.New(temporary.Path, "all shards ✓"), MaxRunningTasks = 3 };
 
         await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 30, options, stop, ascii: true);
         await work.Started;

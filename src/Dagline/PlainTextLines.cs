@@ -39,7 +39,7 @@ internal static class PlainTextLines
         WaitingChanged { Waiting: true } began => [At(runEvent.At, Began(began))],
         WaitingChanged ended => [At(runEvent.At, $"waited {ended.Path} for {DurationText.Of(ended.At - ended.Since)}")],
         StopRequested requested => [At(runEvent.At, Requested(requested, Running(snapshot)))],
-        StoppedWaiting stopped =>
+        GraceEnded stopped =>
         [
             At(runEvent.At, $"stopped waiting: {Why(stopped.Reason)}, {CountsText.Tasks(Running(snapshot))} still running"),
         ],
@@ -131,10 +131,10 @@ internal static class PlainTextLines
             : $"{heading}: waiting up to {DurationText.Of(requested.GracePeriod)} for {CountsText.Tasks(running, "running")}";
     }
 
-    private static string Why(StoppedWaitingReason reason) => reason switch
+    private static string Why(GraceEndReason reason) => reason switch
     {
-        StoppedWaitingReason.SecondStop => "second stop",
-        StoppedWaitingReason.GracePeriodOver => "grace period over",
+        GraceEndReason.SecondStop => "second stop",
+        GraceEndReason.GracePeriodOver => "grace period over",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
     };
 

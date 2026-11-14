@@ -81,9 +81,9 @@ Three lines about the whole run.
 
 - **The first** names the run: the journal's description, its id and which run of it this is, as in `Dagline  all shards  journal 20261111T041200Z-a3f9c2 · run 2`, or `no journal`. Two displays side by side can be told apart by it. At the right are the percentage of tasks settled, rounded down, and the time elapsed since the run started. There is no estimate of the time remaining, since the run cannot know it.
 - **The second** is one bar for the whole run, split by status: earlier successes first and dimmer, then the successes of this run, the failed, blocked and cancelled tasks, the working and the waiting ones. The rest of the bar, the tasks not yet started, is empty.
-- **The third** counts the tasks per status: succeeded, working, waiting, ready, pending, failed, blocked, cancelled, then the warnings. Earlier successes follow the succeeded in brackets, as in `✓ 1,560 (1,543 earlier)`, so you can see how much this run did itself. At the right are the cap in use over its size (`cap 55/96`), how many limits are full out of how many (`1 of 11 limits full`), and how many ready tasks are [held](../../GLOSSARY.md#scheduling) (`6 ready, held`), so a busy run can be told from a throttled one.
+- **The third** counts the tasks per status: succeeded, working, waiting, ready, pending, failed, blocked, cancelled, then the warnings. Earlier successes follow the succeeded in brackets, as in `✓ 1,560 (1,543 earlier)`, so you can see how much this run did itself. At the right are the running tasks over the [max running tasks](running-and-stopping.md#sizing-the-max-running-tasks-and-limits) (`cap 55/96`), how many limits are full out of how many (`1 of 11 limits full`), and how many ready tasks are [held](../../GLOSSARY.md#scheduling) (`6 ready, held`), so a busy run can be told from a throttled one.
 
-A count of zero is left out, and so are full limits and held tasks when there are none. The cap is always shown.
+A count of zero is left out, and so are full limits and held tasks when there are none. The running tasks over the max running tasks are always shown.
 
 ### Groups
 

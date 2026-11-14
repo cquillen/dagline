@@ -4,7 +4,7 @@ namespace Dagline;
 internal static class ProblemsText
 {
     /// <summary>
-    /// A heading line, then each problem on a line of its own, as in <c>- The cap is 0. It must be at least 1.</c>
+    /// A heading line, then each problem on a line of its own, as in <c>- MaxRunningTasks is 0. It must be at least 1.</c>
     /// </summary>
     public static string Under(string heading, IEnumerable<string> problems)
         => string.Join(Environment.NewLine, problems.Select(problem => $"- {problem}").Prepend(heading));

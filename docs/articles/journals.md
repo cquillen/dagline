@@ -52,7 +52,7 @@ There is no default directory either, so continuing never depends on where the c
 
 ```csharp
 var journals = await Journals.ListAsync("journals/export");
-var open = journals.LastOrDefault(j => !j.Finished && j.Ending is not JournalEnding.InUse);
+var open = journals.LastOrDefault(j => !j.IsFinished && j.Ending is not JournalEnding.InUse);
 
 var journal = open is null
     ? Journal.New("journals/export", "all shards")
@@ -63,7 +63,7 @@ A directory that does not exist gives an empty list. Each <xref:Dagline.JournalS
 
 - `Id`, `Created` and `Description`: which journal it is.
 - `Runs`: how many runs it has had, and `LatestRun`: when the latest started and ended, and the user and machine that ran it. `LatestRun` is null only when the journal's first run was never recorded.
-- `Ending`: how the latest run ended (see [Endings](#endings)), and `Finished`: true only when the latest run was complete.
+- `Ending`: how the latest run ended (see [Endings](#endings)), and `IsFinished`: true only when the latest run was complete.
 - `Counts`: how many tasks the journal records in each status, by the last status recorded for each path. A task whose success was [set aside](#an-after-task-runs-again-when-what-it-is-after-runs-again) since counts as pending, and one that started and never settled, as when its process was killed, counts as running. Paths that are no longer in your graph count too, since the listing has no graph.
 
 The listing reads each journal with the same code that a continuing run uses, so what it shows is what a run that continues the journal would find.
@@ -86,7 +86,7 @@ Earlier successes count as succeeded everywhere a count is given, and in the run
 
 A journal whose latest run was complete can be continued like any other. With an unchanged graph the run is complete at once, and if the graph gained a path, that task runs.
 
-Each run chooses its own cap and limit sizes. A run that continues a journal may use different ones from the runs before it.
+Each run chooses its own max running tasks and limit sizes. A run that continues a journal may use different ones from the runs before it.
 
 ### An *after* task runs again when what it is after runs again
 
@@ -161,7 +161,7 @@ Dagline never deletes or expires a journal itself. How long a record is kept is 
 
 - <xref:Dagline.JournalInUseException>: another run holds the journal. Wait for it to end, or choose another.
 - <xref:Dagline.JournalNotFoundException>: the directory has no journal with the id.
-- <xref:Dagline.JournalOpenException>: the journal, its lock file or its directory cannot be opened, created or read, for example for lack of permission. Its inner exception is the file system's own.
+- <xref:Dagline.JournalAccessException>: the journal, its lock file or its directory cannot be opened, created or read, for example for lack of permission. Its inner exception is the file system's own.
 - <xref:Dagline.JournalFormatException>: the file is not a journal, a line other than the last cannot be read, or it was written in a format version this Dagline does not know. `Version` carries the version when the header gives one.
 
 `ListAsync` throws `JournalFormatException` too, naming the file, rather than leave a journal out of the list unseen. All of them derive from <xref:Dagline.DaglineException>.

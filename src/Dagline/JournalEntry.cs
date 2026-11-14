@@ -44,7 +44,7 @@ internal sealed record HeaderEntry(int Version, string Id, DateTimeOffset Create
 /// <param name="Time">When the run started.</param>
 /// <param name="User">The operating system user the run's process ran as.</param>
 /// <param name="Machine">The name of the machine the run's process ran on.</param>
-/// <param name="Cap">The cap of the run.</param>
+/// <param name="Cap">The max running tasks of the run. The name is part of the journal format.</param>
 /// <param name="Limits">The size of each limit the run's graph names, by name.</param>
 /// <param name="PathsNotInGraph">How many paths the journal held that are not a task of the run's graph.</param>
 /// <param name="PathsNotInGraphUnsucceeded">How many of those had no success on record, or one that was set aside.</param>

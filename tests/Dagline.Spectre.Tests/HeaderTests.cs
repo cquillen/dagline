@@ -5,7 +5,7 @@ namespace Dagline.Spectre.Tests;
 public class HeaderTests
 {
     [Test]
-    public async Task The_header_shows_no_journal_the_counts_apart_and_the_cap_with_the_held_tasks()
+    public async Task The_header_shows_no_journal_the_counts_apart_and_the_max_running_tasks_with_the_held_tasks()
     {
         var a = new PausedBody();
         var b = new PausedBody();
@@ -18,7 +18,7 @@ public class HeaderTests
         });
         builder.Task("c", _ => Task.CompletedTask).Requires(first);
         builder.Task("d", _ => Task.CompletedTask);
-        var options = new RunOptions { Journal = Journal.None, Cap = 2 };
+        var options = new RunOptions { Journal = Journal.None, MaxRunningTasks = 2 };
 
         await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 24, options);
         await display.Handled("waiting b: job 7");

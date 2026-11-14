@@ -30,7 +30,7 @@ public sealed class Snapshot
         ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
         TaskCounts counts,
-        LimitUse cap,
+        LimitUse runningTasks,
         IReadOnlyDictionary<string, LimitUse> limits,
         SnapshotJournal journal)
     {
@@ -41,7 +41,7 @@ public sealed class Snapshot
         Nodes = nodes;
         _positions = positions;
         Counts = counts;
-        Cap = cap;
+        RunningTasks = runningTasks;
         Limits = limits;
         Journal = journal.Info;
         SetAside = journal.SetAside;
@@ -78,10 +78,10 @@ public sealed class Snapshot
     public TaskCounts Counts { get; }
 
     /// <summary>
-    /// The cap of the run: its size, from <see cref="RunOptions.Cap"/>, and how many of its slots are in use,
-    /// which is the number of tasks running at the instant of this snapshot.
+    /// The max running tasks of the run and how full it is: <see cref="LimitUse.Size"/> is <see cref="RunOptions.MaxRunningTasks"/>,
+    /// and <see cref="LimitUse.InUse"/> is the number of tasks running at the instant of this snapshot.
     /// </summary>
-    public LimitUse Cap { get; }
+    public LimitUse RunningTasks { get; }
 
     /// <summary>
     /// Every limit the graph names, on a task or on a group, by name: its size, from <see cref="RunOptions.Limits"/>,

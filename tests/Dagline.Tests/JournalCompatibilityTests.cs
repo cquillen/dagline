@@ -25,7 +25,7 @@ public class JournalCompatibilityTests
         summary.Runs.ShouldBe(1);
         summary.LatestRun.ShouldBe(new JournalRunSummary(_created, _created.AddSeconds(5), "operator", "build-host"));
         summary.Ending.ShouldBe(JournalEnding.Incomplete);
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
         summary.Counts[NodeStatus.Succeeded].ShouldBe(1);
         summary.Counts[NodeStatus.Failed].ShouldBe(1);
         summary.Counts[NodeStatus.Blocked].ShouldBe(1);
