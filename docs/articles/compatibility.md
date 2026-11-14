@@ -8,6 +8,12 @@ Dagline is an alpha. It runs real work and is tested on every change, but its pu
 - **The plain-text output.** What <xref:Dagline.PlainTextReporter> prints is for people to read: its wording, its layout and the lines it chooses to print may change in any release, 1.0 and later included. Do not parse it. A program that needs to know what happened in a run reads the events and the snapshot through a [reporter](reporters.md) of its own, or the <xref:Dagline.RunResult> that `RunAsync` returns.
 - **The display.** The same holds for what <xref:Dagline.Spectre.SpectreReporter> draws on the terminal, and for the summary it leaves.
 
+## Native AOT and trimming
+
+`Dagline` and `Dagline.Testing` are marked compatible with native AOT and trimming. Every build of them runs the .NET trim, AOT and single-file analyzers, and they report nothing, so an app that publishes with `PublishAot` or `PublishTrimmed` gets no warning from either package. Dagline reads and writes journals without reflection.
+
+`Dagline.Spectre` is not marked: whether it trims cleanly is up to Spectre.Console, which it draws with. Check Spectre.Console's own guidance before you publish an app that uses the display with native AOT.
+
 ## What is stable
 
 ### Exit codes
