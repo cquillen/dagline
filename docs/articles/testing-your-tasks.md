@@ -10,7 +10,7 @@ The examples below use Shouldly for assertions. Any assertion library does the s
 
 ## The harness and its outcome
 
-<xref:Dagline.Testing.TaskHarness.For(Dagline.TaskBody,System.TimeProvider)> wraps one task body, and <xref:Dagline.Testing.TaskHarness.RunAsync> runs it and returns a <xref:Dagline.Testing.TaskOutcome>:
+<xref:Dagline.Testing.TaskHarness.For(Dagline.TaskBody,System.TimeProvider,System.String)> wraps one task body, and <xref:Dagline.Testing.TaskHarness.RunAsync> runs it and returns a <xref:Dagline.Testing.TaskOutcome>:
 
 ```csharp
 [Test]
@@ -34,9 +34,27 @@ The outcome carries everything a task reports:
 | `Message` | The task's one-line message, or the exception's message for an unexpected failure. |
 | `Detail` | The detail lines that were kept. For an unexpected failure they include the exception's type and stack trace. |
 | `Warnings` | The warnings that were kept, whatever the task settled with. |
+| `StatusText` | The status text the task last set with `context.SetStatusText`, as the operator saw it, line breaks included. `null` when it set none or cleared it. |
 | `Waited` | Whether the task began waiting at least once in this run. |
+| `WaitingText` | The text of the last wait the task began in this run, on one line as the operator saw it, kept after the wait has ended. `null` when it began no wait, or that wait gave no text. |
+| `Checkpoint` | The task's checkpoint as the run left it: the one a later run hands the task. Empty when it has none, cleared it or succeeded, since a success discards the checkpoint. |
 
-It has no times, no checkpoint and no counts of lines that were not kept.
+It has no times, no count and total, and no counts of lines that were not kept.
+
+So a test asserts what the operator would have seen, as well as how the task ended:
+
+```csharp
+[Test]
+public async Task The_export_says_what_it_is_waiting_for()
+{
+    await using var harness = TaskHarness.For(context => Export(context, new FakeJobs(finishAfterChecks: 3)));
+
+    var outcome = await harness.RunAsync();
+
+    outcome.StatusText.ShouldBe("17 rows written");
+    outcome.WaitingText.ShouldBe("job-1 to finish");
+}
+```
 
 A run of the harness is a real run through `Runner.RunAsync`: a graph of one task at the root, a journal in a new directory the harness creates under the system's temporary directory, named `dagline-harness-` and random characters (on Unix only you can open it), and a reporter of the harness's own that watches it. The body sees exactly what it would see in your app, so a test proves what a real run will do. Nothing runs and nothing touches the disk until the first run. Disposing the harness deletes the directory. Disposing it twice is harmless, and a run after disposal throws `ObjectDisposedException`.
 
@@ -98,7 +116,29 @@ public async Task A_stopped_export_re_attaches_to_its_job()
 }
 ```
 
-The same holds after a first run that ended failed: the next run hands the task its checkpoint. Once the task has succeeded, a further run does not call the body. It is an earlier success on the journal, so the run returns the same outcome, with `Waited` false.
+`stopped.Checkpoint` is the checkpoint the stopped run left, so the test can also assert what the task saved: `stopped.Checkpoint.ShouldBe("job-1")`.
+
+The same holds after a first run that ended failed: the next run hands the task its checkpoint. Once the task has succeeded, a further run does not call the body. It is an earlier success on the journal, so the run returns the same message, detail lines and warnings, with `Waited` false, no status text and no waiting text, since a journal keeps no progress and the task began no wait in that run. Its `Checkpoint` is empty, as the success left it.
+
+## Starting from a checkpoint
+
+To test how a task re-attaches without a first run to save a checkpoint, pass one to `For`. The task reads it back as `context.Checkpoint` in the first run, as if an earlier run had saved it:
+
+```csharp
+[Test]
+public async Task An_export_handed_its_job_re_attaches_without_submitting()
+{
+    var jobs = new FakeJobs(finishAfterChecks: 3, existing: "job-1");
+    await using var harness = TaskHarness.For(context => Export(context, jobs), checkpoint: "job-1");
+
+    var outcome = await harness.RunAsync();
+
+    outcome.Status.ShouldBe(NodeStatus.Succeeded);
+    jobs.Submitted.ShouldBe(0);
+}
+```
+
+The harness plants the checkpoint by saving it on the task's own context, through `SaveCheckpointAsync`, just before it calls the body, so the journal holds it as it would hold the task's own save, and the save publishes no event. It is planted in the first run only: a later run hands the task the checkpoint the run before it left, the one in that outcome's `Checkpoint`. A `null` or empty checkpoint plants none, since an absent checkpoint is empty text.
 
 ## A task's behaviour on a stop
 
@@ -177,5 +217,3 @@ The harness's graph has one node, so two kinds of task are tested by running a s
 
 - a task that reads the status of a node it depends on through `context.StatusOf`;
 - a task that holds a limit.
-
-The harness also cannot plant a checkpoint or read one directly. Get a task to a checkpoint by running it, and observe the checkpoint by what the task does with it in the next run.

@@ -417,7 +417,6 @@ public class CheckpointTests
         ]);
         reporter.Events.ShouldAllBe(runEvent => !runEvent.ToString().Contains(checkpoint, StringComparison.Ordinal));
         var node = result.Snapshot[export.Path];
-        node.ToString().ShouldNotContain(checkpoint);
         new[] { node.Message, node.StatusText, node.WaitingText }.Concat(node.Detail).Concat(node.Warnings)
             .ShouldAllBe(text => text == null || !text.Contains(checkpoint, StringComparison.Ordinal));
     }

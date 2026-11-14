@@ -102,6 +102,46 @@ public class TaskHarnessTests
     }
 
     [Test]
+    public async Task The_outcome_holds_the_status_text_the_task_last_set()
+    {
+        await using var harness = TaskHarness.For(context =>
+        {
+            context.SetStatusText("reading rows");
+            context.SetStatusText("writing 17 rows");
+            return Task.CompletedTask;
+        });
+
+        var outcome = await harness.RunAsync();
+
+        outcome.StatusText.ShouldBe("writing 17 rows");
+    }
+
+    [Test]
+    public async Task A_task_that_never_sets_status_text_or_waits_has_neither_in_its_outcome()
+    {
+        await using var harness = TaskHarness.For(_ => Task.CompletedTask);
+
+        var outcome = await harness.RunAsync();
+
+        outcome.StatusText.ShouldBeNull();
+        outcome.WaitingText.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task The_outcome_holds_the_text_of_the_last_wait_the_task_began_after_the_wait_has_ended()
+    {
+        await using var harness = TaskHarness.For(async context =>
+        {
+            await context.WaitUntilAsync(TimeSpan.FromMinutes(1), _ => Task.FromResult(true), "the export to start");
+            await context.WaitUntilAsync(TimeSpan.FromMinutes(1), _ => Task.FromResult(true), "the export to finish");
+        });
+
+        var outcome = await harness.RunAsync();
+
+        outcome.WaitingText.ShouldBe("the export to finish");
+    }
+
+    [Test]
     public async Task A_clock_passed_in_is_the_one_the_body_sees()
     {
         var clock = new FakeTimeProvider();
