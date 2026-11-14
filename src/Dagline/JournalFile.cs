@@ -34,16 +34,11 @@ internal sealed class JournalFile : IDisposable
     private readonly Stream _writes;
     private readonly JournalLock _claim;
 
-    private JournalFile(ClaimedFile claimed, JournalFold fold)
-        : this(claimed.Stream, claimed.Stream, claimed.Claim, fold)
+    private JournalFile(ClaimedFile claimed, Func<Stream, Stream> writesThrough, JournalFold fold)
     {
-    }
-
-    private JournalFile(FileStream file, Stream writes, JournalLock claim, JournalFold fold)
-    {
-        _file = file;
-        _writes = writes;
-        _claim = claim;
+        _file = claimed.Stream;
+        _writes = writesThrough(claimed.Stream);
+        _claim = claimed.Claim;
         Fold = fold;
     }
 
@@ -54,12 +49,13 @@ internal sealed class JournalFile : IDisposable
     /// Creates a new journal in <paramref name="directory"/>, creating the directory if it is missing, with an id from the time on
     /// <paramref name="clock"/>, and holds it. The header is written and flushed before this returns, and on Unix systems the
     /// directory's entries too, and those of the parent of each directory created, so that the new file's path survives a crash. If a file with the id drawn
-    /// already exists, or another run has claimed that id, a new suffix is drawn.
+    /// already exists, or another run has claimed that id, a new suffix is drawn. Every write, the header's included, goes through
+    /// the stream <paramref name="writesThrough"/> makes of the file's own: the file's own stream itself, except under the test hook.
     /// </summary>
     /// <exception cref="JournalAccessException">
     /// The directory, the lock file or the journal cannot be created, or the header cannot be written.
     /// </exception>
-    public static JournalFile Create(string directory, string? description, TimeProvider clock)
+    public static JournalFile Create(string directory, string? description, TimeProvider clock, Func<Stream, Stream> writesThrough)
     {
         CreateDirectory(directory);
         var created = clock.GetUtcNow();
@@ -69,25 +65,26 @@ internal sealed class JournalFile : IDisposable
             if (TryClaimNew(location) is { } claimed)
             {
                 var header = new HeaderEntry(_version, location.Id, created, description);
-                return OwningOnSuccess(claimed, () => WithHeader(claimed, header, location));
+                return OwningOnSuccess(claimed, () => WithHeader(claimed, writesThrough, header, location));
             }
         }
     }
 
     /// <summary>
-    /// Claims the journal at <paramref name="location"/>, then opens it, reads and folds it, and readies it for appending.
+    /// Claims the journal at <paramref name="location"/>, then opens it, reads and folds it, and readies it for appending through the
+    /// stream <paramref name="writesThrough"/> makes of the file's own, as <see cref="Create"/> does.
     /// </summary>
     /// <exception cref="JournalNotFoundException">The directory has no journal with that id.</exception>
     /// <exception cref="JournalInUseException">Another run has claimed the journal.</exception>
     /// <exception cref="JournalAccessException">The lock file or the journal cannot be opened or read.</exception>
     /// <exception cref="JournalFormatException">The file cannot be read as a journal.</exception>
-    public static JournalFile Open(JournalLocation location)
+    public static JournalFile Open(JournalLocation location, Func<Stream, Stream> writesThrough)
     {
         // Checked before the lock is taken, so that an id with no journal leaves no lock file behind.
         location.ThrowIfNotFound();
 
         var claimed = ClaimExisting(location);
-        return OwningOnSuccess(claimed, () => ReadForAppending(claimed, location));
+        return OwningOnSuccess(claimed, () => ReadForAppending(claimed, writesThrough, location));
     }
 
     /// <summary>
@@ -143,14 +140,6 @@ internal sealed class JournalFile : IDisposable
             _file.Flush(flushToDisk: true);
         }
     }
-
-    /// <summary>
-    /// This journal, held, opened and read as it is, but writing through a <see cref="FailingWriteStream"/> that fails the first
-    /// append whose text <paramref name="picksWrite"/> picks, with <paramref name="message"/>. The returned file owns the file and
-    /// the claim from here on, and this one is not used again. Only <see cref="Journal.WithFailingWrite"/> calls it.
-    /// </summary>
-    public JournalFile WithFailingWrite(Func<string, bool> picksWrite, string message)
-        => new(_file, new FailingWriteStream(_writes, picksWrite, message), _claim, Fold);
 
     /// <summary>Closes the file and lets go of the journal, so that a later run can continue it at once.</summary>
     public void Dispose()
@@ -222,9 +211,10 @@ internal sealed class JournalFile : IDisposable
     /// so that the new file's name survives a crash.
     /// </summary>
     /// <exception cref="JournalAccessException">The header or the directory's entries cannot be written.</exception>
-    private static JournalFile WithHeader(ClaimedFile claimed, HeaderEntry header, JournalLocation location)
+    private static JournalFile WithHeader(
+        ClaimedFile claimed, Func<Stream, Stream> writesThrough, HeaderEntry header, JournalLocation location)
     {
-        var file = new JournalFile(claimed, JournalFold.Of(header, []));
+        var file = new JournalFile(claimed, writesThrough, JournalFold.Of(header, []));
         try
         {
             file.Append([header], JournalFlush.ToDisk);
@@ -269,7 +259,7 @@ internal sealed class JournalFile : IDisposable
     /// </summary>
     /// <exception cref="JournalAccessException">The file cannot be read.</exception>
     /// <exception cref="JournalFormatException">The file cannot be read as a journal.</exception>
-    private static JournalFile ReadForAppending(ClaimedFile claimed, JournalLocation location)
+    private static JournalFile ReadForAppending(ClaimedFile claimed, Func<Stream, Stream> writesThrough, JournalLocation location)
     {
         var path = location.FilePath;
         var stream = claimed.Stream;
@@ -284,7 +274,7 @@ internal sealed class JournalFile : IDisposable
             var fold = Read(reader, path);
             stream.SetLength(wholeLength);
             stream.Seek(0, SeekOrigin.End);
-            return new JournalFile(claimed, fold);
+            return new JournalFile(claimed, writesThrough, fold);
         }
         catch (Exception cannotRead) when (FileSystemFailure.Is(cannotRead))
         {

@@ -3,16 +3,17 @@ using System.Text;
 namespace Dagline;
 
 /// <summary>
-/// The one internal test hook: a journal's stream that passes every write and flush through to the real file, except the first
-/// write whose text <c>picksWrite</c> picks, which throws an <see cref="IOException"/> with <c>message</c> and writes nothing.
+/// The one internal test hook: a journal's stream that passes every write through to the real file, except the first write for
+/// whose text <c>failureOf</c> gives an <see cref="IOException"/>, which throws it and writes nothing.
 /// <see cref="Journal.WithFailingWrite"/> puts it under one journal, for the shared test support alone, and nothing else uses it.
 /// </summary>
 /// <remarks>
-/// <see cref="JournalFile.Append"/> makes one write per call, carrying whole lines, so the predicate sees each append's lines
+/// <see cref="JournalFile.Append"/> makes one write per call, carrying whole lines, so <c>failureOf</c> sees each append's lines
 /// together. Writes after the failed one pass through again, so that a test reading the file back sees any write the journal's
-/// guard on writing nothing after a failure let through.
+/// guard on writing nothing after a failure let through. The flush to the disk does not come through here: the journal file makes
+/// it on the file itself.
 /// </remarks>
-internal sealed class FailingWriteStream(Stream inner, Func<string, bool> picksWrite, string message) : Stream
+internal sealed class FailingWriteStream(Stream inner, Func<string, IOException?> failureOf) : Stream
 {
     private bool _failed;
 
@@ -32,10 +33,10 @@ internal sealed class FailingWriteStream(Stream inner, Func<string, bool> picksW
 
     public override void Write(ReadOnlySpan<byte> buffer)
     {
-        if (!_failed && picksWrite(Encoding.UTF8.GetString(buffer)))
+        if (!_failed && failureOf(Encoding.UTF8.GetString(buffer)) is { } failure)
         {
             _failed = true;
-            throw new IOException(message);
+            throw failure;
         }
 
         inner.Write(buffer);

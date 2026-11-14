@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Dagline.TestSupport;
 
 /// <summary>
@@ -13,27 +11,33 @@ namespace Dagline.TestSupport;
 /// journal it is put on, so tests running in parallel cannot fail each other's writes.
 /// </para>
 /// <para>
-/// This is the only code outside <c>JournalFile</c> that knows how an entry looks in the journal's lines, so a change to the format
-/// touches the choices here and no test. A new choice is a new factory that recognises one more kind of line.
+/// A choice names its entry as a <see cref="JournalLine"/>, the only code outside <c>JournalFile</c> that knows how an entry looks in
+/// the journal's lines, and through which <see cref="JournalEntries"/> reads a journal back. So a change to the format touches
+/// <see cref="JournalLine"/> and no test. A new choice is a new factory here that names one more kind of line.
 /// </para>
 /// </remarks>
 public sealed class JournalWriteFailure
 {
     private const string _defaultMessage = "The test made this journal write fail.";
 
-    private readonly Func<string, bool> _picksLine;
+    private readonly JournalLine _line;
     private readonly string _message;
 
-    private JournalWriteFailure(Func<string, bool> picksLine, string message = _defaultMessage)
+    private JournalWriteFailure(JournalLine line, string message = _defaultMessage)
     {
-        _picksLine = picksLine;
+        _line = line;
         _message = message;
     }
 
     /// <summary>Fails the write that holds the settle of the task at <paramref name="taskPath"/>, whatever it settled with.</summary>
     /// <param name="taskPath">The task's path as text, such as <c>shard-1/load</c>.</param>
     /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>
-    public static JournalWriteFailure SettleOf(string taskPath) => EntryOf("taskSettled", taskPath);
+    public static JournalWriteFailure SettleOf(string taskPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskPath);
+
+        return new JournalWriteFailure(JournalLine.SettleOf(taskPath));
+    }
 
     /// <summary>
     /// Fails the write that holds a checkpoint save of the task at <paramref name="taskPath"/>, the first one it makes. A clearing
@@ -41,13 +45,18 @@ public sealed class JournalWriteFailure
     /// </summary>
     /// <param name="taskPath">The task's path as text, such as <c>shard-1/load</c>.</param>
     /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>
-    public static JournalWriteFailure CheckpointSaveOf(string taskPath) => EntryOf("checkpointSaved", taskPath);
+    public static JournalWriteFailure CheckpointSaveOf(string taskPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskPath);
+
+        return new JournalWriteFailure(JournalLine.CheckpointSaveOf(taskPath));
+    }
 
     /// <summary>
     /// Fails the write that holds the run's end: the last write of a run that ends with a run outcome. The run keeps its outcome,
     /// and only the journal shows the failure, by recording no end.
     /// </summary>
-    public static JournalWriteFailure EndOfRun() => KindOf("runEnded");
+    public static JournalWriteFailure EndOfRun() => new(JournalLine.RunEnd);
 
     /// <summary>
     /// The same write, failing with an <see cref="IOException"/> whose message is <paramref name="message"/>, as a file system's own
@@ -59,7 +68,7 @@ public sealed class JournalWriteFailure
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
 
-        return new JournalWriteFailure(_picksLine, message);
+        return new JournalWriteFailure(_line, message);
     }
 
     /// <summary>The same journal choice, but with this write failing once the run opens the journal.</summary>
@@ -69,21 +78,11 @@ public sealed class JournalWriteFailure
     {
         ArgumentNullException.ThrowIfNull(journal);
 
-        return journal.WithFailingWrite(write => write.Split('\n').Any(_picksLine), _message);
+        return journal.WithFailingWrite(FailureOf);
     }
 
-    // Every line is one JSON object that opens with the kind of its entry, then the path for an entry about one task.
-    private static JournalWriteFailure EntryOf(string kind, string taskPath)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(taskPath);
-
-        return LineOpeningWith($"{OpeningOf(kind)}\"path\":{JsonSerializer.Serialize(taskPath)},");
-    }
-
-    private static JournalWriteFailure KindOf(string kind) => LineOpeningWith(OpeningOf(kind));
-
-    private static string OpeningOf(string kind) => $"{{\"entry\":\"{kind}\",";
-
-    private static JournalWriteFailure LineOpeningWith(string opening)
-        => new(line => line.StartsWith(opening, StringComparison.Ordinal));
+    private IOException? FailureOf(string write)
+        => write.Split('\n', StringSplitOptions.RemoveEmptyEntries).Any(line => JournalLine.Of(line) == _line)
+            ? new IOException(_message)
+            : null;
 }
