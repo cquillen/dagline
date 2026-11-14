@@ -1,7 +1,7 @@
 # Dagline
 
 [![CI](https://github.com/cquillen/dagline/actions/workflows/ci.yml/badge.svg)](https://github.com/cquillen/dagline/actions/workflows/ci.yml)
-[![NuGet](https://img.shields.io/nuget/vpre/Dagline.svg)](https://www.nuget.org/packages/Dagline)
+[![NuGet](https://img.shields.io/nuget/v/Dagline.svg)](https://www.nuget.org/packages/Dagline)
 [![Docs](https://img.shields.io/badge/docs-cquillen.github.io%2Fdagline-blue)](https://cquillen.github.io/dagline/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -9,7 +9,7 @@ A lightweight, in-process .NET library for running directed acyclic graphs (DAGs
 
 Think Apache Airflow, but purely local: no scheduler service, no database, no web server. You define tasks and their dependencies in C#, and Dagline runs them in dependency order inside your console app while a terminal UI shows what's queued, running and done.
 
-> **Status:** alpha. Dagline runs real work and is tested on every change, but until 1.0 the names and shapes of its public API may change in any release, each change listed in the [changelog](https://github.com/cquillen/dagline/blob/main/CHANGELOG.md). The plain-text output may change in any release and is not for parsing. The exit codes 0, 1 and 2 are stable, and every later release reads the journals an earlier one wrote: see [Compatibility](https://cquillen.github.io/dagline/articles/compatibility.html).
+> **Status:** before 1.0. Dagline runs real work and is tested on every change. A patch release never breaks your code, but until 1.0 the names and shapes of its public API may change in a minor release, each change listed in the [changelog](https://github.com/cquillen/dagline/blob/main/CHANGELOG.md). The plain-text output may change in any release and is not for parsing. The exit codes 0, 1 and 2 are stable, and every later release reads the journals an earlier one wrote: see [Compatibility](https://cquillen.github.io/dagline/articles/compatibility.html).
 
 ## Packages
 

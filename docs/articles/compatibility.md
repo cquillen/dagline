@@ -1,10 +1,13 @@
 # Compatibility
 
-Dagline is an alpha. It runs real work and is tested on every change, but its public API may still change between releases before 1.0. This page says what you may rely on from one release to the next, and what you must not.
+Dagline is before 1.0. It runs real work and is tested on every change, but its public API may still change between minor releases. This page says what you may rely on from one release to the next, and what you must not.
 
-## What may still change
+## The public API before 1.0
 
-- **The public API.** A name or a shape may change in any alpha release. Every such change is listed under its release in the [changelog](https://github.com/cquillen/dagline/blob/main/CHANGELOG.md), with what to write instead.
+- **A patch release never breaks you.** Upgrading from 0.1.0 to any 0.1.x needs no change to your code and no rebuild: every public type and member keeps its name, its shape and its meaning.
+- **A minor release may.** A name or a shape may change from 0.1 to 0.2, and from each minor release to the next. Every such change is listed under its release in the [changelog](https://github.com/cquillen/dagline/blob/main/CHANGELOG.md), with what to write instead.
+
+## What may change in any release
 - **The plain-text output.** What <xref:Dagline.PlainTextReporter> prints is for people to read: its wording, its layout and the lines it chooses to print may change in any release, 1.0 and later included. Do not parse it. A program that needs to know what happened in a run reads the events and the snapshot through a [reporter](reporters.md) of its own, or the <xref:Dagline.RunResult> that `RunAsync` returns.
 - **The display.** The same holds for what <xref:Dagline.Spectre.SpectreReporter> draws on the terminal, and for the summary it leaves.
 
@@ -37,6 +40,6 @@ The first line of every [journal](journals.md) names the format version it was w
 
 Continuing a journal with a later release may leave it in that release's format, so do not go back to an earlier release while a journal holds work you want to keep.
 
-Every release so far writes format version 1. The tests of each release continue and list a version 1 journal, checked in exactly as the first alpha wrote it, so a change that would break this promise fails the build.
+Every release so far writes format version 1. The tests of each release continue and list a version 1 journal, checked in exactly as 0.1.0 wrote it, so a change that would break this promise fails the build.
 
 The promise is about what Dagline can read, not about the layout of the file. The file is readable text, so that you can look into it when something went wrong, but your code should read a journal through <xref:Dagline.Journals.ListAsync*> and continue it through <xref:Dagline.Journal.Continue*>, not by parsing its lines.

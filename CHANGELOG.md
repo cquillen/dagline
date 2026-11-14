@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-13
+
 ### Added
 
 - Repository scaffold: `Dagline` and `Dagline.Spectre` packages, tests, sample, docs site and CI.
@@ -119,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A group answers for the tasks beneath it: `NodeSnapshot.WarningCount` is the sum of their warnings, a warning beyond the 100 kept included; `NodeSnapshot.IsWaiting` is true when it has running tasks and every one of them is waiting; `NodeSnapshot.IsWorking` is true when its status is running and it is not waiting. A group's snapshot is recorded again whenever a task beneath it begins or ends waiting or is given a warning. Progress never touches a group.
 - Both reporters take every total, settled count, count of tasks that have not succeeded, earlier-success count and waiting or working count from `TaskCounts`, and the display takes a group's waiting and warnings from the group's own snapshot. What they print is unchanged.
 - Docs: `TaskCounts` and the group roll-up in the Reporters article, and empty status text in the Writing tasks article.
-- The compatibility policy: the exit codes 0, 1 and 2 of `RunOutcome.ToExitCode()` are stable; the plain-text output and the display are for people and may change in any release; a later Dagline reads every journal format version an earlier release wrote, and an older Dagline refuses a newer format with `JournalFormatException`. A version 1 journal, checked in as the first alpha writes it, is listed and continued by the tests of every release.
+- The compatibility policy: the exit codes 0, 1 and 2 of `RunOutcome.ToExitCode()` are stable; the plain-text output and the display are for people and may change in any release; a later Dagline reads every journal format version an earlier release wrote, and an older Dagline refuses a newer format with `JournalFormatException`. A version 1 journal, checked in as 0.1.0 writes it, is listed and continued by the tests of every release.
 - Docs: the Compatibility article, linked from the Exit codes section of Running and stopping, the file section of Journals, the plain-text reporter section of Reporters and the Batch sample's README; and the XML comments of `ToExitCode`, `PlainTextReporter` and `SpectreReporter.Create` state the same.
 - `Journals.IsValidId(id)` says whether text is in the journal id format, without throwing, so an app can check an id an operator typed without catching `ArgumentException`. Null is not valid.
 - `JournalNotFoundException`, `JournalInUseException` and `JournalAccessException` carry `Id` and `Directory`, so an app's message can name the journal without parsing text. A `JournalAccessException` for the directory itself, which could not be created or listed, has a null `Id`.
@@ -131,8 +133,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TaskHarness.For(body, timeProvider, checkpoint)` plants a checkpoint that the task reads back in the first run, so a re-attach test needs no first run to save one. The harness saves it through `TaskContext.SaveCheckpointAsync` just before it calls the body, on Dagline's public API alone.
 - Docs: the new outcome members, the seed and reading a checkpoint back in the Testing your tasks article.
 - `Dagline` and `Dagline.Testing` are marked compatible with native AOT and trimming (`IsAotCompatible`), so the trim, AOT and single-file analyzers check them on every build; they report nothing. `Dagline.Spectre` is not marked, since Spectre.Console decides that for itself.
-- Each of the three packages records its public surface in `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`, checked by `Microsoft.CodeAnalysis.PublicApiAnalyzers`, so every change to a public type or member shows as a diff in a pull request and a change the files do not record fails the CI build. Nothing has shipped yet, so the whole surface is in the unshipped files.
+- Each of the three packages records its public surface in `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`, checked by `Microsoft.CodeAnalysis.PublicApiAnalyzers`, so every change to a public type or member shows as a diff in a pull request and a change the files do not record fails the CI build. With this release the whole surface moves to the shipped files.
 - Docs: native AOT and trimming in the Compatibility article, and how to update the surface files in `CONTRIBUTING.md`.
+- Each package carries a README of its own, shown on its NuGet.org page: what the package is for, how to install it, a short example and links to the docs.
+- The public API promise before 1.0: a patch release never breaks your code, and a minor release may, each change listed in the changelog with what to write instead. Stated in the Compatibility article, the docs home page and the README, in place of "alpha".
 
 ### Changed
 
@@ -153,7 +157,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConsoleStop.Hook()` also hooks SIGTERM, counted together with Ctrl+C: the first of either requests a stop, the second ends the grace period, both are swallowed, and from the third on the process ends as it would with no hook. There is no option to leave SIGTERM out. Where .NET cannot hook SIGTERM, the signal hooks Ctrl+C alone.
 - Docs: Getting started shows `new StopSignal()` for an app with a stop trigger of its own, and says that it is not disposable.
 
-- `RunEvent` is closed to derivation outside Dagline, as its documentation always said: the set of eight events cannot be added to by an app. The events are still records. saying what may still change, in place of "not yet usable".
+- `RunEvent` is closed to derivation outside Dagline, as its documentation always said: the set of eight events cannot be added to by an app. The events are still records.
+- README: the status line says what may still change, in place of "not yet usable".
 
 ### Removed
 
@@ -161,4 +166,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `NodeSnapshot.EarlierSuccesses` and `GroupSettled.EarlierSuccesses`: read `Counts.EarlierSuccesses` instead.
 
-[Unreleased]: https://github.com/cquillen/dagline/commits/main
+[Unreleased]: https://github.com/cquillen/dagline/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/cquillen/dagline/releases/tag/v0.1.0
