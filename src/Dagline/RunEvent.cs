@@ -61,7 +61,7 @@ public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, Nod
 }
 
 /// <summary>
-/// A running task added a warning to its outcome with <see cref="TaskContext.Warn"/>, and Dagline kept it.
+/// A running task added a warning to its outcome with <see cref="TaskContext.AddWarning"/>, and Dagline kept it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -85,7 +85,7 @@ public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warni
 }
 
 /// <summary>
-/// A running task began or stopped waiting: its waiting marker, opened with <see cref="TaskContext.Waiting"/>, began or ended.
+/// A running task began or stopped waiting: its waiting marker, opened with <see cref="TaskContext.BeginWaiting"/>, began or ended.
 /// </summary>
 /// <remarks>
 /// <para>

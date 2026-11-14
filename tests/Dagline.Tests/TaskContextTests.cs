@@ -62,9 +62,9 @@ public class TaskContextTests
                     await together.Task;
                     for (var report = 0; report < reportsOfEachThread; report++)
                     {
-                        context.Warn($"thread {thread} warning {report}");
-                        context.Detail($"thread {thread} line {report}");
-                        context.Count(report);
+                        context.AddWarning($"thread {thread} warning {report}");
+                        context.AddDetail($"thread {thread} line {report}");
+                        context.SetCount(report);
                     }
                 })).ToList();
                 together.SetResult();
@@ -100,11 +100,11 @@ public class TaskContextTests
         var load = builder.Task("load", context =>
         {
             loadContext = context;
-            context.Status("loading entities");
-            context.Count(40, 40);
-            context.Message("loaded 40 entities");
-            context.Detail("tenant-a: 25 entities");
-            context.Warn("entity 9 has no region");
+            context.SetStatusText("loading entities");
+            context.SetCount(40, 40);
+            context.SetMessage("loaded 40 entities");
+            context.AddDetail("tenant-a: 25 entities");
+            context.AddWarning("entity 9 has no region");
             return Task.CompletedTask;
         }).Requires(prepare);
         builder.Task("verify", verify.Body).After(load);
@@ -113,11 +113,11 @@ public class TaskContextTests
         var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         await verify.Started;
         loadContext.ShouldNotBeNull();
-        loadContext.Status("still loading");
-        loadContext.Count(1, 2);
-        loadContext.Warn("a late warning");
-        loadContext.Message("a late message");
-        loadContext.Detail("a late line");
+        loadContext.SetStatusText("still loading");
+        loadContext.SetCount(1, 2);
+        loadContext.AddWarning("a late warning");
+        loadContext.SetMessage("a late message");
+        loadContext.AddDetail("a late line");
         var late = loadContext.Fail("a late failure", "a late detail line");
         var upstream = loadContext.StatusOf(prepare);
         verify.Release();

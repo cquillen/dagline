@@ -158,7 +158,7 @@ public class ArgumentTests
         var builder = new GraphBuilder();
         builder.Group("shard-1").Task("prepare", context =>
         {
-            context.Warn("entity 9 has no region");
+            context.AddWarning("entity 9 has no region");
             return Task.CompletedTask;
         });
         var reporter = new RecordingReporter();

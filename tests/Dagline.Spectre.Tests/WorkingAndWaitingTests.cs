@@ -17,21 +17,21 @@ public class WorkingAndWaitingTests
         var check = builder.Group("check");
         check.Task("totals", context =>
         {
-            context.Count(1928, 4087);
-            context.Status("summing entities");
+            context.SetCount(1928, 4087);
+            context.SetStatusText("summing entities");
             return totals.Body(context);
         });
         check.Task("duplicates", duplicates.Body);
         check.Task("cross-check", context =>
         {
-            context.Count(2602, 6068);
-            context.Status("cross-checking");
+            context.SetCount(2602, 6068);
+            context.SetStatusText("cross-checking");
             return crossCheck.Body(context);
         }).After(first);
         builder.Group("process").Task("extract", async context =>
         {
-            context.Status("job 48067 running");
-            using var wait = context.Waiting("external job");
+            context.SetStatusText("job 48067 running");
+            using var wait = context.BeginWaiting("external job");
             await extract.Body(context);
         });
 
@@ -76,8 +76,8 @@ public class WorkingAndWaitingTests
         var builder = new GraphBuilder();
         builder.Task("a", context =>
         {
-            context.Count(42);
-            context.Status("reading\nfile 3");
+            context.SetCount(42);
+            context.SetStatusText("reading\nfile 3");
             return a.Body(context);
         });
         builder.Task("b", b.Body);
@@ -266,10 +266,10 @@ public class WorkingAndWaitingTests
             await _begin.Task;
             if (status is not null)
             {
-                context.Status(status);
+                context.SetStatusText(status);
             }
 
-            using var wait = context.Waiting(text);
+            using var wait = context.BeginWaiting(text);
             await _paused.Body(context);
         }
     }

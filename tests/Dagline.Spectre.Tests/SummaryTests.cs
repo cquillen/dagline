@@ -36,7 +36,7 @@ public class SummaryTests
         var first = new GraphBuilder();
         first.Task("a", context =>
         {
-            context.Warn("entity 9 has no region");
+            context.AddWarning("entity 9 has no region");
             return Task.CompletedTask;
         });
         var firstB = first.Task("b", context => throw context.Fail("2 bad entities"));
@@ -49,7 +49,7 @@ public class SummaryTests
         second.Task("a", _ => Task.CompletedTask);
         var b = second.Task("b", context =>
         {
-            context.Warn("entity 4 has a bad date");
+            context.AddWarning("entity 4 has a bad date");
             throw context.Fail("1 bad entity");
         });
         second.Task("report", _ => Task.CompletedTask).After(b);
@@ -121,14 +121,14 @@ public class SummaryTests
         {
             foreach (var warning in warnings)
             {
-                context.Warn(warning);
+                context.AddWarning(warning);
             }
 
             return Task.CompletedTask;
         });
         builder.Task("store", context =>
         {
-            context.Warn("entity 3 has a bad date");
+            context.AddWarning("entity 3 has a bad date");
             return Task.CompletedTask;
         });
 
@@ -185,8 +185,8 @@ public class SummaryTests
         var checkTask = builder.Task("check", async context =>
         {
             await check.Body(context);
-            context.Status("checking entities\nof shard-3");
-            context.Count(17, 40);
+            context.SetStatusText("checking entities\nof shard-3");
+            context.SetCount(17, 40);
             throw context.Fail("103 bad entities", detail);
         });
         builder.Task("one", _ => Task.CompletedTask).Requires(checkTask);
@@ -228,7 +228,7 @@ public class SummaryTests
         {
             var load = new StoppedBody(context =>
             {
-                context.Message("loaded 17 entities");
+                context.SetMessage("loaded 17 entities");
                 context.CancellationToken.ThrowIfCancellationRequested();
             });
             var store = new StoppedBody();

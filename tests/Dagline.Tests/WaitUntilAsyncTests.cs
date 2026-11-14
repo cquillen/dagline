@@ -3,7 +3,7 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Dagline.Tests;
 
-public class WaitUntilTests
+public class WaitUntilAsyncTests
 {
     private const int _repeats = 50;
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
@@ -14,7 +14,7 @@ public class WaitUntilTests
         var clock = new FakeTimeProvider(_runStart);
         var checks = 0;
         var builder = new GraphBuilder();
-        var jobTask = builder.Task("job", context => context.WaitUntil(
+        var jobTask = builder.Task("job", context => context.WaitUntilAsync(
             TimeSpan.FromSeconds(30),
             _ =>
             {
@@ -52,7 +52,7 @@ public class WaitUntilTests
         var starts = new List<DateTimeOffset>();
         var ends = new List<DateTimeOffset>();
         var builder = new GraphBuilder();
-        builder.Task("job", context => context.WaitUntil(
+        builder.Task("job", context => context.WaitUntilAsync(
             interval,
             _ =>
             {
@@ -89,7 +89,7 @@ public class WaitUntilTests
         var builder = new GraphBuilder();
         var jobTask = builder.Task("job", context =>
         {
-            refused = Should.Throw<ArgumentOutOfRangeException>(() => context.WaitUntil(
+            refused = Should.Throw<ArgumentOutOfRangeException>(() => context.WaitUntilAsync(
                 TimeSpan.FromSeconds(seconds),
                 _ =>
                 {
@@ -122,7 +122,7 @@ public class WaitUntilTests
         var jobTask = builder.Task("job", async context =>
         {
             kept = context;
-            await context.WaitUntil(
+            await context.WaitUntilAsync(
                 interval,
                 token =>
                 {
@@ -130,7 +130,7 @@ public class WaitUntilTests
                     return Task.FromResult(tokens.Count == 2);
                 },
                 "job 17 to finish");
-            context.Message("job 17 finished");
+            context.SetMessage("job 17 finished");
         });
         var reporter = new RecordingReporter();
 
@@ -163,7 +163,7 @@ public class WaitUntilTests
     public async Task A_check_that_throws_ends_the_wait_and_fails_the_task_as_an_unexpected_failure()
     {
         var builder = new GraphBuilder();
-        var jobTask = builder.Task("job", context => context.WaitUntil(
+        var jobTask = builder.Task("job", context => context.WaitUntilAsync(
             TimeSpan.FromSeconds(30),
             _ => throw new InvalidOperationException("the job service is unreachable"),
             "job 17 to finish"));
@@ -191,7 +191,7 @@ public class WaitUntilTests
     public async Task A_check_that_throws_what_fail_returns_fails_the_task_as_a_reported_failure()
     {
         var builder = new GraphBuilder();
-        var jobTask = builder.Task("job", context => context.WaitUntil(
+        var jobTask = builder.Task("job", context => context.WaitUntilAsync(
             TimeSpan.FromSeconds(30),
             _ => throw context.Fail("job 17 ended in error", "step 3 of 5 failed"),
             "job 17 to finish"));
@@ -215,7 +215,7 @@ public class WaitUntilTests
         var interval = TimeSpan.FromSeconds(30);
         var checks = 0;
         var builder = new GraphBuilder();
-        var jobTask = builder.Task("job", context => context.WaitUntil(
+        var jobTask = builder.Task("job", context => context.WaitUntilAsync(
             interval,
             _ =>
             {
@@ -231,7 +231,7 @@ public class WaitUntilTests
                 }
                 catch (HttpRequestException exception)
                 {
-                    context.Warn($"check failed, trying again: {exception.Message}");
+                    context.AddWarning($"check failed, trying again: {exception.Message}");
                     return Task.FromResult(false);
                 }
             },
@@ -262,12 +262,12 @@ public class WaitUntilTests
         var clock = new WatchedClock(fake);
         var interval = TimeSpan.FromSeconds(30);
         var builder = new GraphBuilder();
-        var jobTask = builder.Task("job", context => context.WaitUntil(
+        var jobTask = builder.Task("job", context => context.WaitUntilAsync(
             interval,
             _ =>
             {
-                context.Status("job 17 is 40% done");
-                context.Count(40, 100);
+                context.SetStatusText("job 17 is 40% done");
+                context.SetCount(40, 100);
                 return Task.FromResult(context.TimeProvider.GetUtcNow() > _runStart);
             },
             "job 17 to finish"));
@@ -295,7 +295,7 @@ public class WaitUntilTests
             var clock = new WatchedClock(fake);
             var checks = 0;
             var builder = new GraphBuilder();
-            var jobTask = builder.Task("job", context => context.WaitUntil(
+            var jobTask = builder.Task("job", context => context.WaitUntilAsync(
                 TimeSpan.FromSeconds(30),
                 _ =>
                 {
@@ -340,7 +340,7 @@ public class WaitUntilTests
             var jobTask = builder.Task("job", async context =>
             {
                 await load.Body(context);
-                await context.WaitUntil(
+                await context.WaitUntilAsync(
                     TimeSpan.FromSeconds(30),
                     _ =>
                     {
@@ -376,7 +376,7 @@ public class WaitUntilTests
             {
                 try
                 {
-                    await context.WaitUntil(
+                    await context.WaitUntilAsync(
                         TimeSpan.FromSeconds(30),
                         _ =>
                         {
@@ -387,7 +387,7 @@ public class WaitUntilTests
                 }
                 finally
                 {
-                    context.Waiting("job 18 to finish").Dispose();
+                    context.BeginWaiting("job 18 to finish").Dispose();
                     ended.TrySetResult();
                 }
             });
@@ -425,13 +425,13 @@ public class WaitUntilTests
     {
         var interval = TimeSpan.FromSeconds(30);
 
-        var (helperLines, helperWaits, helperJob) = await CheckTwice(context => context.WaitUntil(
+        var (helperLines, helperWaits, helperJob) = await CheckTwice(context => context.WaitUntilAsync(
             interval,
             _ => Task.FromResult(context.TimeProvider.GetUtcNow() > _runStart),
             "job 17 to finish"));
         var (loopLines, loopWaits, loopJob) = await CheckTwice(async context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
                 while (context.TimeProvider.GetUtcNow() == _runStart)
                 {

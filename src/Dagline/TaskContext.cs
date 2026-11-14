@@ -11,10 +11,10 @@ namespace Dagline;
 /// A run creates one context for each task it starts, so a graph that is run twice gives each run's bodies their own contexts.
 /// </para>
 /// <para>
-/// A task reports three kinds of thing. <em>Progress</em> is <see cref="Status"/> and <see cref="Count"/>: it shows in the snapshot
+/// A task reports three kinds of thing. <em>Progress</em> is <see cref="SetStatusText"/> and <see cref="SetCount"/>: it shows in the snapshot
 /// while the task runs, is never an event, and is frozen as the task left it when the task settles. <em>Warnings</em>, added with
-/// <see cref="Warn"/>, show as they are added and stay on the task whatever status it settles with. The <em>outcome</em> is
-/// the message set with <see cref="Message"/> and the detail lines added with <see cref="Detail"/>, on a task that succeeds
+/// <see cref="AddWarning"/>, show as they are added and stay on the task whatever status it settles with. The <em>outcome</em> is
+/// the message set with <see cref="SetMessage"/> and the detail lines added with <see cref="AddDetail"/>, on a task that succeeds
 /// as much as on one that fails. <see cref="Fail"/> ends the task as a reported failure.
 /// </para>
 /// <para>
@@ -27,8 +27,8 @@ namespace Dagline;
 /// Calls made at once from several threads are applied in an order that is not defined.
 /// </para>
 /// <para>
-/// Once the task has settled, <see cref="Status"/>, <see cref="Count"/>, <see cref="Warn"/>, <see cref="Message"/>,
-/// <see cref="Detail"/> and <see cref="Fail"/> change nothing and publish nothing, though they still check their arguments.
+/// Once the task has settled, <see cref="SetStatusText"/>, <see cref="SetCount"/>, <see cref="AddWarning"/>, <see cref="SetMessage"/>,
+/// <see cref="AddDetail"/> and <see cref="Fail"/> change nothing and publish nothing, though they still check their arguments.
 /// <see cref="StatusOf"/> and <see cref="Checkpoint"/> still answer. <see cref="SaveCheckpointAsync"/> and
 /// <see cref="ClearCheckpointAsync"/> are the exception: they throw <see cref="InvalidOperationException"/>, so that a task never
 /// believes a checkpoint was kept when it was not. A body sees this only when it leaves work running after it has ended.
@@ -38,7 +38,7 @@ namespace Dagline;
 /// (<see cref="RunOptions.GracePeriod"/>). The run records it as <see cref="NodeStatus.Cancelled"/> with the message
 /// <c>still running when the run stopped waiting</c>, in place of any message it set, and keeps its warnings, detail lines and
 /// frozen progress. Its body may still be running, and nothing it does changes the run: the reporting members do nothing
-/// and do not throw, <see cref="Waiting"/> returns a scope that does nothing, and disposing a scope does nothing.
+/// and do not throw, <see cref="BeginWaiting"/> returns a scope that does nothing, and disposing a scope does nothing.
 /// A save or a clearing of the checkpoint throws <see cref="InvalidOperationException"/>, as on a task that has settled.
 /// <see cref="StatusOf"/>, <see cref="Checkpoint"/>, <see cref="Path"/>, <see cref="TimeProvider"/> and <see cref="CancellationToken"/> keep working.
 /// When the body ends, however it ends, nothing is published and no snapshot changes, and an exception from it is dropped.
@@ -106,7 +106,7 @@ public sealed class TaskContext
     /// kept as given, line breaks included, since making it one line on every call would slow a task that reports in a tight loop.
     /// A reporter decides how to show them: <see cref="PlainTextReporter"/> prints each as a space.
     /// </remarks>
-    public void Status(string? text) => _run.SetStatusText(_task, text);
+    public void SetStatusText(string? text) => _run.SetStatusText(_task, text);
 
     /// <summary>Sets the count of the task's progress, with or without the total it is counting towards.</summary>
     /// <param name="current">How far the task has got. It replaces the last count.</param>
@@ -121,7 +121,7 @@ public sealed class TaskContext
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="current"/> or <paramref name="total"/> is negative. Nothing is changed.
     /// </exception>
-    public void Count(long current, long? total = null)
+    public void SetCount(long current, long? total = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(current);
         if (total is { } towards)
@@ -148,7 +148,7 @@ public sealed class TaskContext
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="warning"/> is <see langword="null"/>.</exception>
-    public void Warn(string warning)
+    public void AddWarning(string warning)
     {
         ArgumentNullException.ThrowIfNull(warning);
 
@@ -165,7 +165,7 @@ public sealed class TaskContext
     /// what it did. <see cref="Fail"/> replaces it, and so does an exception that escapes the body when no failure was reported.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="message"/> is <see langword="null"/>.</exception>
-    public void Message(string message)
+    public void SetMessage(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
@@ -185,7 +185,7 @@ public sealed class TaskContext
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="lines"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A line in <paramref name="lines"/> is <see langword="null"/>. Nothing is added.</exception>
-    public void Detail(params string[] lines)
+    public void AddDetail(params string[] lines)
     {
         ThrowIfAnyNull(lines, nameof(lines));
 
@@ -201,7 +201,7 @@ public sealed class TaskContext
     /// leaves the task with no message, though it still fails.
     /// </param>
     /// <param name="detail">
-    /// Detail lines to add after those the task already has, as <see cref="Detail"/> adds them: text that holds line breaks
+    /// Detail lines to add after those the task already has, as <see cref="AddDetail"/> adds them: text that holds line breaks
     /// is split into one line for each, and the lines count towards the 100 kept.
     /// </param>
     /// <returns>
@@ -217,7 +217,7 @@ public sealed class TaskContext
     /// to its end. Like any failure, a reported failure blocks every task that requires this one.
     /// </para>
     /// <para>
-    /// Calling it again replaces the message and adds more detail lines. <see cref="Message"/> and <see cref="Detail"/>
+    /// Calling it again replaces the message and adds more detail lines. <see cref="SetMessage"/> and <see cref="AddDetail"/>
     /// called afterwards still apply.
     /// </para>
     /// <para>
@@ -239,7 +239,7 @@ public sealed class TaskContext
 
     /// <summary>
     /// Opens a waiting scope: marks the task as idle until an external system changes, until the scope is disposed.
-    /// <c>using (context.Waiting("job 17 to finish")) { ... }</c>.
+    /// <c>using (context.BeginWaiting("job 17 to finish")) { ... }</c>.
     /// </summary>
     /// <param name="text">
     /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. Each line break in it is
@@ -264,13 +264,13 @@ public sealed class TaskContext
     /// does nothing. A scope opened once the task has settled does nothing at all.
     /// </para>
     /// </remarks>
-    public IDisposable Waiting(string? text = null)
+    public IDisposable BeginWaiting(string? text = null)
         => new WaitingScope(_run.OpenWaitingScope(_task, text) ? _run : null, _task);
 
     /// <summary>
     /// Waits for an external system: checks at once, then again one interval after each check ends, until the check
     /// returns <see langword="true"/>. The task is marked as waiting throughout.
-    /// <c>await context.WaitUntil(TimeSpan.FromSeconds(30), async token => await jobs.IsFinishedAsync(17, token), "job 17 to finish");</c>
+    /// <c>await context.WaitUntilAsync(TimeSpan.FromSeconds(30), async token => await jobs.IsFinishedAsync(17, token), "job 17 to finish");</c>
     /// </summary>
     /// <param name="interval">
     /// How long to wait after a check that returned <see langword="false"/> before the next check starts, on the run's clock.
@@ -282,16 +282,16 @@ public sealed class TaskContext
     /// </param>
     /// <param name="text">
     /// What the task is waiting for, in one line for the operator, or <see langword="null"/> for none. It is the text of the
-    /// waiting scope the helper opens, as <see cref="Waiting"/> takes it: a line break becomes a space, and empty text is none.
+    /// waiting scope the helper opens, as <see cref="BeginWaiting"/> takes it: a line break becomes a space, and empty text is none.
     /// </param>
     /// <returns>A task that completes once a check has returned <see langword="true"/>.</returns>
     /// <remarks>
     /// <para>
-    /// The helper opens a waiting scope with <paramref name="text"/> (see <see cref="Waiting"/>), calls the check, and while
+    /// The helper opens a waiting scope with <paramref name="text"/> (see <see cref="BeginWaiting"/>), calls the check, and while
     /// the check returns <see langword="false"/> delays for <paramref name="interval"/> on <see cref="TimeProvider"/> and calls
     /// it again. The scope closes however the helper ends: when the check returns <see langword="true"/>, when the check throws,
     /// and on a stop. A task waits for as long as it is inside the helper, time spent in the check included. A hand-written loop
-    /// inside a <see cref="Waiting"/> scope is marked exactly the same way.
+    /// inside a <see cref="BeginWaiting"/> scope is marked exactly the same way.
     /// </para>
     /// <para>
     /// A stop ends the helper at once: a delay in progress ends when <see cref="CancellationToken"/> is signalled, and the
@@ -316,7 +316,7 @@ public sealed class TaskContext
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="check"/> is <see langword="null"/>. It is thrown by the call itself.</exception>
     /// <exception cref="OperationCanceledException">The run was stopped before the check returned <see langword="true"/>.</exception>
-    public Task WaitUntil(TimeSpan interval, Func<CancellationToken, Task<bool>> check, string? text = null)
+    public Task WaitUntilAsync(TimeSpan interval, Func<CancellationToken, Task<bool>> check, string? text = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
         ArgumentNullException.ThrowIfNull(check);
@@ -469,7 +469,7 @@ public sealed class TaskContext
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using (Waiting(text))
+        using (BeginWaiting(text))
         {
             while (!await check(cancellationToken).ConfigureAwait(false))
             {

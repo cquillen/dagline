@@ -7,21 +7,21 @@ var shard = builder.Group("shard-1");
 
 var load = shard.Task("load", async context =>
 {
-    context.Status("loading entities");
+    context.SetStatusText("loading entities");
     await Task.Delay(TimeSpan.FromSeconds(3), context.TimeProvider, context.CancellationToken);
-    context.Message("loaded 40 entities");
+    context.SetMessage("loaded 40 entities");
 });
 
 shard.Task("store", async context =>
 {
-    context.Status("storing entities");
+    context.SetStatusText("storing entities");
     for (var stored = 10; stored <= 40; stored += 10)
     {
         await Task.Delay(TimeSpan.FromSeconds(1), context.TimeProvider, context.CancellationToken);
-        context.Count(stored, total: 40);
+        context.SetCount(stored, total: 40);
     }
 
-    context.Message("stored 40 entities");
+    context.SetMessage("stored 40 entities");
 }).Requires(load);
 
 var graph = builder.Build();

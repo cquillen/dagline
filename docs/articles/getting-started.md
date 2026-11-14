@@ -31,21 +31,21 @@ var shard = builder.Group("shard-1");
 
 var load = shard.Task("load", async context =>
 {
-    context.Status("loading entities");
+    context.SetStatusText("loading entities");
     await Task.Delay(TimeSpan.FromSeconds(3), context.TimeProvider, context.CancellationToken);
-    context.Message("loaded 40 entities");
+    context.SetMessage("loaded 40 entities");
 });
 
 shard.Task("store", async context =>
 {
-    context.Status("storing entities");
+    context.SetStatusText("storing entities");
     for (var stored = 10; stored <= 40; stored += 10)
     {
         await Task.Delay(TimeSpan.FromSeconds(1), context.TimeProvider, context.CancellationToken);
-        context.Count(stored, total: 40);
+        context.SetCount(stored, total: 40);
     }
 
-    context.Message("stored 40 entities");
+    context.SetMessage("stored 40 entities");
 }).Requires(load);
 
 var graph = builder.Build();
@@ -53,7 +53,7 @@ var graph = builder.Build();
 
 The graph is a tree: the group `shard-1` holds the tasks `shard-1/load` and `shard-1/store`. A group runs no code. It is there so that the tree matches the shape of the work. `Requires(load)` is a dependency: `store` starts only once `load` has succeeded, and would be blocked if `load` failed.
 
-A task body is an async function that receives a <xref:Dagline.TaskContext>. Through it the task reports progress, with `Status` and `Count`, and the message of its outcome. The bodies wait on the context's clock and pass the context's cancellation token, so that a stop ends them at once. [Defining a graph](defining-a-graph.md) and [Writing tasks](writing-tasks.md) cover both halves.
+A task body is an async function that receives a <xref:Dagline.TaskContext>. Through it the task reports progress, with `SetStatusText` and `SetCount`, and the message of its outcome. The bodies wait on the context's clock and pass the context's cancellation token, so that a stop ends them at once. [Defining a graph](defining-a-graph.md) and [Writing tasks](writing-tasks.md) cover both halves.
 
 ## Choose a journal
 

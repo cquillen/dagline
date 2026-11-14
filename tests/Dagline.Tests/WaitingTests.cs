@@ -17,7 +17,7 @@ public class WaitingTests
         builder.Task("job", async context =>
         {
             await trigger.Body(context);
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
                 await poll.Body(context);
             }
@@ -59,7 +59,7 @@ public class WaitingTests
         var builder = new GraphBuilder();
         var jobTask = builder.Task("job", async context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
                 await poll.Body(context);
             }
@@ -97,9 +97,9 @@ public class WaitingTests
         var builder = new GraphBuilder();
         var jobTask = builder.Task("job", async context =>
         {
-            var first = context.Waiting("job 17 to finish");
+            var first = context.BeginWaiting("job 17 to finish");
             await firstOpen.Body(context);
-            using (context.Waiting("job 18 to finish"))
+            using (context.BeginWaiting("job 18 to finish"))
             {
                 await secondOpen.Body(context);
                 first.Dispose();
@@ -144,11 +144,11 @@ public class WaitingTests
         var builder = new GraphBuilder();
         builder.Task("job", context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
             }
 
-            using (context.Waiting())
+            using (context.BeginWaiting())
             {
             }
 
@@ -179,9 +179,9 @@ public class WaitingTests
         var builder = new GraphBuilder();
         var jobTask = builder.Task("job", async context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
-                var inner = context.Waiting("job 18 to finish");
+                var inner = context.BeginWaiting("job 18 to finish");
                 inner.Dispose();
                 inner.Dispose();
                 await stillOpen.Body(context);
@@ -208,7 +208,7 @@ public class WaitingTests
         var builder = new GraphBuilder();
         var jobTask = builder.Task("job", context =>
         {
-            leftOpen = context.Waiting("job 17 to finish");
+            leftOpen = context.BeginWaiting("job 17 to finish");
             throw new InvalidOperationException("job 17 was rejected");
         });
         var reporter = new RecordingReporter();
@@ -246,7 +246,7 @@ public class WaitingTests
         var shard = builder.Group("shard-1");
         var jobTask = shard.Task("job", async context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
                 await poll.Body(context);
             }
@@ -277,7 +277,7 @@ public class WaitingTests
         var builder = new GraphBuilder();
         builder.Task("job", async context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
                 await poll.Body(context);
             }
@@ -318,10 +318,10 @@ public class WaitingTests
         var builder = new GraphBuilder();
         var jobTask = builder.Task("job", async context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
-                context.Status("job 17 is 40% done");
-                context.Count(40, 100);
+                context.SetStatusText("job 17 is 40% done");
+                context.SetCount(40, 100);
                 await poll.Body(context);
             }
         });
@@ -353,7 +353,7 @@ public class WaitingTests
         var reporter = new RecordingReporter();
 
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var late = kept!.Waiting("job 17 to finish");
+        var late = kept!.BeginWaiting("job 17 to finish");
         late.Dispose();
         late.Dispose();
 

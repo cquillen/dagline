@@ -35,15 +35,15 @@ public class PlainTextReporterTests
         var checkA = await a.Started;
         var checkB = await b.Started;
         clock.Advance(TimeSpan.FromSeconds(2));
-        checkA.Warn("entity 9 has no region");
+        checkA.AddWarning("entity 9 has no region");
         await reporter.Handled("warning checks/a: entity 9 has no region");
         clock.Advance(TimeSpan.FromSeconds(1.1));
-        checkB.Status("checking entities");
-        checkB.Count(17, 40);
+        checkB.SetStatusText("checking entities");
+        checkB.SetCount(17, 40);
         b.Release();
         await reporter.Handled("notify: pending -> blocked");
         clock.Advance(TimeSpan.FromSeconds(1.9));
-        checkA.Message("checked 40 entities");
+        checkA.SetMessage("checked 40 entities");
         a.Release();
         await reporter.Handled("report: ready -> running");
         clock.Advance(TimeSpan.FromMinutes(1));
@@ -100,7 +100,7 @@ public class PlainTextReporterTests
             var job = builder.Task("job", async context =>
             {
                 await jobStart.Body(context);
-                await context.WaitUntil(TimeSpan.FromMinutes(2), _ => Task.FromResult(false), "job 17 to finish");
+                await context.WaitUntilAsync(TimeSpan.FromMinutes(2), _ => Task.FromResult(false), "job 17 to finish");
             }).Requires(aTask);
             builder.Task("slow", slow.Body);
             builder.Task("tidy", _ => Task.CompletedTask).Requires(job);
@@ -164,7 +164,7 @@ public class PlainTextReporterTests
         var builder = new GraphBuilder();
         builder.Task("job", context =>
         {
-            using (context.Waiting())
+            using (context.BeginWaiting())
             {
                 clock.Advance(TimeSpan.FromSeconds(3));
             }
@@ -285,7 +285,7 @@ public class PlainTextReporterTests
             var verify = new PausedBody();
             var load = new StoppedBody(context =>
             {
-                context.Message("loaded 17 entities");
+                context.SetMessage("loaded 17 entities");
                 context.CancellationToken.ThrowIfCancellationRequested();
             });
             var builder = new GraphBuilder();
@@ -301,9 +301,9 @@ public class PlainTextReporterTests
             var run = Runner.RunAsync(builder.Build(), Options(clock, reporter), stop);
             await verify.Started;
             var loading = await load.Started;
-            loading.Warn("entity 9 has no region");
-            loading.Status("loading entities");
-            loading.Count(17, 40);
+            loading.AddWarning("entity 9 has no region");
+            loading.SetStatusText("loading entities");
+            loading.SetCount(17, 40);
             await reporter.Handled("warning load: entity 9 has no region");
             clock.Advance(TimeSpan.FromSeconds(2));
             verify.Release();
@@ -397,8 +397,8 @@ public class PlainTextReporterTests
         var builder = new GraphBuilder();
         builder.Task("prepare", context =>
         {
-            context.Message("checked 40 entities");
-            context.Detail("entity 9 has no region");
+            context.SetMessage("checked 40 entities");
+            context.AddDetail("entity 9 has no region");
             return Task.CompletedTask;
         });
 
@@ -508,7 +508,7 @@ public class PlainTextReporterTests
         {
             foreach (var warning in warnings)
             {
-                context.Warn(warning);
+                context.AddWarning(warning);
             }
 
             throw context.Fail("103 bad entities", detail);
@@ -546,18 +546,18 @@ public class PlainTextReporterTests
         var writer = new StringWriter();
         var builder = new GraphBuilder();
         Node last = builder.Task("none", context => throw context.Fail("stopped"));
-        last = Failing("text", context => context.Status("checking entities"));
-        last = Failing("count", context => context.Count(17));
-        last = Failing("count-of-total", context => context.Count(1234567, 2000000));
+        last = Failing("text", context => context.SetStatusText("checking entities"));
+        last = Failing("count", context => context.SetCount(17));
+        last = Failing("count-of-total", context => context.SetCount(1234567, 2000000));
         last = Failing("text-and-count", context =>
         {
-            context.Status("checking entities");
-            context.Count(17);
+            context.SetStatusText("checking entities");
+            context.SetCount(17);
         });
         last = Failing("text-and-count-of-total", context =>
         {
-            context.Status("checking entities");
-            context.Count(17, 40);
+            context.SetStatusText("checking entities");
+            context.SetCount(17, 40);
         });
 
         await Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
@@ -601,8 +601,8 @@ public class PlainTextReporterTests
         var builder = new GraphBuilder();
         var check = builder.Task("check", context =>
         {
-            context.Status(statusText);
-            context.Count(17, 40);
+            context.SetStatusText(statusText);
+            context.SetCount(17, 40);
             throw context.Fail("stopped");
         });
 
@@ -629,14 +629,14 @@ public class PlainTextReporterTests
         var tenant = shard.Group("tenant-a");
         var load = tenant.Task("load", context =>
         {
-            context.Warn("entity 9 has no region");
-            context.Warn("entity 12 has no region");
+            context.AddWarning("entity 9 has no region");
+            context.AddWarning("entity 12 has no region");
             return Task.CompletedTask;
         });
         tenant.Task("store", _ => Task.CompletedTask).Requires(load);
         builder.Task("publish", context =>
         {
-            context.Warn("nothing new to publish");
+            context.AddWarning("nothing new to publish");
             return Task.CompletedTask;
         }).Requires(shard);
 
@@ -693,8 +693,8 @@ public class PlainTextReporterTests
         var builder = new GraphBuilder();
         builder.Task("prepare", context =>
         {
-            context.Status("checking entities");
-            context.Count(17, 40);
+            context.SetStatusText("checking entities");
+            context.SetCount(17, 40);
             return Task.CompletedTask;
         }).Title("Prepare the entities");
 
@@ -768,7 +768,7 @@ public class PlainTextReporterTests
         var context = await prepare.Started;
         await reporter.Handled("prepare: ready -> running");
         clock.Advance(TimeSpan.FromSeconds(40));
-        context.Warn("entity 9 has no region");
+        context.AddWarning("entity 9 has no region");
         await reporter.Handled("warning prepare: entity 9 has no region");
         clock.Advance(TimeSpan.FromSeconds(40));
         var aMinuteAfterTheStart = Lines(writer);

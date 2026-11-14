@@ -8,10 +8,10 @@ public class MessageAndDetailTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", context =>
         {
-            context.Message("checking entities");
-            context.Detail("tenant-a: 25 entities");
-            context.Message("checked 40 entities");
-            context.Detail("tenant-b: 15 entities", "tenant-c: none");
+            context.SetMessage("checking entities");
+            context.AddDetail("tenant-a: 25 entities");
+            context.SetMessage("checked 40 entities");
+            context.AddDetail("tenant-b: 15 entities", "tenant-c: none");
             return Task.CompletedTask;
         });
 
@@ -32,8 +32,8 @@ public class MessageAndDetailTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", context =>
         {
-            context.Message("checked 40 entities\r\nin 3 tenants\nand found\r2 problems");
-            context.Detail("entity 3: missing owner\r\nentity 17: bad date", "entity 20: no region\n\nentity 21: no region\rentity 22: no region");
+            context.SetMessage("checked 40 entities\r\nin 3 tenants\nand found\r2 problems");
+            context.AddDetail("entity 3: missing owner\r\nentity 17: bad date", "entity 20: no region\n\nentity 21: no region\rentity 22: no region");
             return Task.CompletedTask;
         });
 
@@ -58,10 +58,10 @@ public class MessageAndDetailTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", context =>
         {
-            context.Detail([.. Enumerable.Range(1, 60).Select(entity => $"entity {entity}: missing owner")]);
-            context.Warn("entity 9 has no region");
-            context.Detail(string.Join('\n', Enumerable.Range(61, 43).Select(entity => $"entity {entity}: missing owner")));
-            context.Detail("entity 104: missing owner");
+            context.AddDetail([.. Enumerable.Range(1, 60).Select(entity => $"entity {entity}: missing owner")]);
+            context.AddWarning("entity 9 has no region");
+            context.AddDetail(string.Join('\n', Enumerable.Range(61, 43).Select(entity => $"entity {entity}: missing owner")));
+            context.AddDetail("entity 104: missing owner");
             return Task.CompletedTask;
         });
 
@@ -80,10 +80,10 @@ public class MessageAndDetailTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", context =>
         {
-            Should.Throw<ArgumentNullException>(() => context.Message(null!)).ParamName.ShouldBe("message");
-            Should.Throw<ArgumentNullException>(() => context.Warn(null!)).ParamName.ShouldBe("warning");
-            Should.Throw<ArgumentNullException>(() => context.Detail(null!)).ParamName.ShouldBe("lines");
-            Should.Throw<ArgumentException>(() => context.Detail("entity 3: missing owner", null!)).ParamName.ShouldBe("lines");
+            Should.Throw<ArgumentNullException>(() => context.SetMessage(null!)).ParamName.ShouldBe("message");
+            Should.Throw<ArgumentNullException>(() => context.AddWarning(null!)).ParamName.ShouldBe("warning");
+            Should.Throw<ArgumentNullException>(() => context.AddDetail(null!)).ParamName.ShouldBe("lines");
+            Should.Throw<ArgumentException>(() => context.AddDetail("entity 3: missing owner", null!)).ParamName.ShouldBe("lines");
             return Task.CompletedTask;
         });
 

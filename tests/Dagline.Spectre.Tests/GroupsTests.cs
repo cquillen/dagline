@@ -17,7 +17,7 @@ public class GroupsTests
         var second = validate.Group("shard-2");
         second.Task("c", context =>
         {
-            context.Warn("odd");
+            context.AddWarning("odd");
             return Task.CompletedTask;
         });
         second.Task("d", context => throw context.Fail("broken"));
@@ -66,7 +66,7 @@ public class GroupsTests
         validate.Group("shard-1").Task("x", x.Body);
         validate.Group("shard-2").Task("y", context =>
         {
-            context.Warn("odd");
+            context.AddWarning("odd");
             throw context.Fail("broken");
         });
         validate.Group("shard-3").Task("z", _ => Task.CompletedTask);
@@ -242,7 +242,7 @@ public class GroupsTests
 
     private static TaskBody Waiting(PausedBody body) => async context =>
     {
-        using var waiting = context.Waiting("job");
+        using var waiting = context.BeginWaiting("job");
         await body.Body(context);
     };
 }

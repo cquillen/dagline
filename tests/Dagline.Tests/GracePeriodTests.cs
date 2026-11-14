@@ -388,11 +388,11 @@ public class GracePeriodTests
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", async context =>
             {
-                context.Status("loading entities");
-                context.Count(40, 100);
-                context.Warn("entity 9 has no region");
-                context.Message("loaded 40 of 100 entities");
-                context.Detail("stopped at entity 41");
+                context.SetStatusText("loading entities");
+                context.SetCount(40, 100);
+                context.AddWarning("entity 9 has no region");
+                context.SetMessage("loaded 40 of 100 entities");
+                context.AddDetail("stopped at entity 41");
                 await load.Body(context);
             });
             var stop = new StopSignal();
@@ -455,7 +455,7 @@ public class GracePeriodTests
             var builder = new GraphBuilder();
             builder.Task("job", async context =>
             {
-                using (context.Waiting("job 17 to finish"))
+                using (context.BeginWaiting("job 17 to finish"))
                 {
                     await poll.Body(context);
                 }
@@ -506,13 +506,13 @@ public class GracePeriodTests
             var source = await reporter.Source;
             var events = reporter.Events.Count;
 
-            context.Status("still going");
-            context.Count(99, 100);
-            context.Warn("late warning");
-            context.Message("late message");
-            context.Detail("late detail");
+            context.SetStatusText("still going");
+            context.SetCount(99, 100);
+            context.AddWarning("late warning");
+            context.SetMessage("late message");
+            context.AddDetail("late detail");
             _ = context.Fail("late failure");
-            context.Waiting("late wait").Dispose();
+            context.BeginWaiting("late wait").Dispose();
 
             reporter.Events.Count.ShouldBe(events);
             source.Current[loadTask.Path].ShouldBe(result.Snapshot[loadTask.Path]);

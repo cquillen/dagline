@@ -50,9 +50,9 @@ public class ContinueTests
         var load = builder.Task("load", context =>
         {
             runs++;
-            context.Message("loaded 3 files");
-            context.Detail("file-1", "file-2\nfile-3");
-            context.Warn("file-2 was empty");
+            context.SetMessage("loaded 3 files");
+            context.AddDetail("file-1", "file-2\nfile-3");
+            context.AddWarning("file-2 was empty");
             return Task.CompletedTask;
         });
         var graph = builder.Build();

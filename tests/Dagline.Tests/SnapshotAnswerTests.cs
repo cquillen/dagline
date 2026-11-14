@@ -33,7 +33,7 @@ public class SnapshotAnswerTests
         var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(load);
         var pollA = builder.Task("poll-a", async context =>
         {
-            using (context.Waiting("job 17 to finish"))
+            using (context.BeginWaiting("job 17 to finish"))
             {
                 await firstPoll.Body(context);
             }
@@ -42,7 +42,7 @@ public class SnapshotAnswerTests
         {
             for (var entity = 1; entity <= 102; entity++)
             {
-                context.Warn($"entity {entity} has no region");
+                context.AddWarning($"entity {entity} has no region");
             }
 
             await noisyWork.Body(context);
@@ -50,7 +50,7 @@ public class SnapshotAnswerTests
         var quiet = builder.Task("quiet", quietWork.Body).After(check);
         var pollB = builder.Task("poll-b", async context =>
         {
-            using (context.Waiting())
+            using (context.BeginWaiting())
             {
                 await secondPoll.Body(context);
             }
@@ -142,26 +142,26 @@ public class SnapshotAnswerTests
         var builder = new GraphBuilder();
         var quiet = builder.Task("quiet", context =>
         {
-            context.Message("");
+            context.SetMessage("");
             return Task.CompletedTask;
         });
         var retracted = builder.Task("retracted", context =>
         {
-            context.Message("loaded 40 entities");
-            context.Message("");
+            context.SetMessage("loaded 40 entities");
+            context.SetMessage("");
             return Task.CompletedTask;
         });
         var rejected = builder.Task("rejected", context => throw context.Fail(""));
         var broken = builder.Task("broken", async context =>
         {
-            using (context.Waiting("job 2\r\nqueued\nbehind job 1"))
+            using (context.BeginWaiting("job 2\r\nqueued\nbehind job 1"))
             {
                 await brokenWait.Body(context);
             }
         });
         var blank = builder.Task("blank", async context =>
         {
-            using (context.Waiting(""))
+            using (context.BeginWaiting(""))
             {
                 await blankWait.Body(context);
             }

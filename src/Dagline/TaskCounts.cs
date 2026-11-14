@@ -101,7 +101,7 @@ public sealed class TaskCounts
 
     /// <summary>
     /// How many of the running tasks are waiting, as <see cref="NodeSnapshot.IsWaiting"/> says of each: they have a
-    /// <see cref="TaskContext.Waiting"/> scope open. They are among the running, and <see cref="Working"/> counts the rest of them.
+    /// <see cref="TaskContext.BeginWaiting"/> scope open. They are among the running, and <see cref="Working"/> counts the rest of them.
     /// </summary>
     /// <remarks>A task that settles stops waiting as it settles, so a group that has settled has no waiting task beneath it.</remarks>
     public int Waiting => _numbers[WaitingAt];

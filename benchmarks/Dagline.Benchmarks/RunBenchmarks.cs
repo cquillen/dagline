@@ -133,9 +133,9 @@ public class RunBenchmarks
 
     private static Task ReportAndSucceed(TaskContext context)
     {
-        context.Status(_statusTexts[0]);
-        context.Count(1, total: 1);
-        context.Message("done");
+        context.SetStatusText(_statusTexts[0]);
+        context.SetCount(1, total: 1);
+        context.SetMessage("done");
 
         return Task.CompletedTask;
     }
@@ -144,8 +144,8 @@ public class RunBenchmarks
     {
         for (var report = 0; report < ProgressReports; report++)
         {
-            context.Status(_statusTexts[report % _statusTexts.Length]);
-            context.Count(report, total: ProgressReports);
+            context.SetStatusText(_statusTexts[report % _statusTexts.Length]);
+            context.SetCount(report, total: ProgressReports);
         }
 
         return Task.CompletedTask;
@@ -155,7 +155,7 @@ public class RunBenchmarks
     {
         foreach (var warning in _warnings)
         {
-            context.Warn(warning);
+            context.AddWarning(warning);
         }
 
         return Task.CompletedTask;
@@ -165,9 +165,9 @@ public class RunBenchmarks
     {
         foreach (var text in _waitingTexts)
         {
-            using (context.Waiting(text))
+            using (context.BeginWaiting(text))
             {
-                context.Count(1);
+                context.SetCount(1);
             }
         }
 

@@ -60,7 +60,7 @@ A clock passed to `For` is used as is, in every run, and the body sees it as `co
 
 ## A waiting task without real waiting
 
-A task that waits through <xref:Dagline.TaskContext.WaitUntil(System.TimeSpan,System.Func{System.Threading.CancellationToken,System.Threading.Tasks.Task{System.Boolean}},System.String)> finishes without real waiting on the default clock:
+A task that waits through <xref:Dagline.TaskContext.WaitUntilAsync(System.TimeSpan,System.Func{System.Threading.CancellationToken,System.Threading.Tasks.Task{System.Boolean}},System.String)> finishes without real waiting on the default clock:
 
 ```csharp
 [Test]

@@ -30,10 +30,10 @@ public class TaskHarnessContinueTests
         await using var harness = TaskHarness.For(async context =>
         {
             calls++;
-            await context.WaitUntil(TimeSpan.FromMinutes(1), _ => Task.FromResult(true));
-            context.Warn("the export was slow");
-            context.Detail("17 rows", "3 files");
-            context.Message("export done");
+            await context.WaitUntilAsync(TimeSpan.FromMinutes(1), _ => Task.FromResult(true));
+            context.AddWarning("the export was slow");
+            context.AddDetail("17 rows", "3 files");
+            context.SetMessage("export done");
         });
 
         var first = await harness.RunAsync();
@@ -80,8 +80,8 @@ public class TaskHarnessContinueTests
             await context.SaveCheckpointAsync(job);
         }
 
-        await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(system.IsFinished(job)), $"{job} to finish");
-        context.Message($"{job} finished");
+        await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(system.IsFinished(job)), $"{job} to finish");
+        context.SetMessage($"{job} finished");
     }
 
     private sealed class FakeExternalSystem
