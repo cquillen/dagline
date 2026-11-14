@@ -82,8 +82,7 @@ internal sealed class DisplayRun : IAsyncDisposable
     {
         var clock = new FakeTimeProvider(RunStart);
         var console = new TestConsole().Size(new Size(width, height)).EmitAnsiSequences();
-        IReporter display = SpectreReporter.Auto(
-            options: new SpectreOptions { Display = DisplayMode.Force, Ascii = ascii, Console = console, TimeProvider = clock });
+        IReporter display = SpectreReporter.Create(new SpectreOptions { Display = DisplayMode.Force, Ascii = ascii, Console = console, TimeProvider = clock });
         var held = holdBefore is null ? null : new HeldReporter(display, holdBefore);
         var reporter = new WatchedReporter(held ?? display);
         var runOptions = (options ?? new RunOptions { Journal = Journal.None }) with { TimeProvider = clock, Reporters = [reporter] };

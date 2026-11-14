@@ -43,7 +43,7 @@ using var stop = ConsoleStop.Hook();
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = journal,
-    Reporters = [SpectreReporter.Auto()],
+    Reporters = [SpectreReporter.Create()],
 }, stop);
 
 // The process exits with 0 when every task succeeded, 1 when one did not, and 2 when the run was stopped.
