@@ -61,8 +61,8 @@ A task body is an async function that receives a <xref:Dagline.TaskContext>. Thr
 // The journal: continue the newest one that is not finished, so that a run you stopped carries on where it left off.
 // When there is none, start a new one. The journals are kept beside the program.
 var directory = Path.Combine(AppContext.BaseDirectory, "journals");
-var journals = await Journals.ListAsync(directory);
-var open = journals.LastOrDefault(j => !j.IsFinished && j.Ending is not JournalEnding.InUse);
+var listing = await Journals.ListAsync(directory);
+var open = listing.Journals.LastOrDefault(j => !j.IsFinished && j.Ending is not JournalEnding.InUse);
 
 var journal = open is null
     ? Journal.New(directory, "basic sample")

@@ -19,7 +19,7 @@ public class JournalDeletingTests
         var id = kept.Snapshot.Journal!.Id;
         Directory.GetFiles(temporary.Path).Select(Path.GetFileName).Order(StringComparer.Ordinal)
             .ShouldBe([$"{id}.journal", $"{id}.lock"]);
-        (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem().Id.ShouldBe(id);
+        (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem().Id.ShouldBe(id);
     }
 
     [Test]
@@ -34,11 +34,12 @@ public class JournalDeletingTests
         await load.Started;
         var id = (await holder.Source).Current.Journal!.Id;
 
-        await Should.ThrowAsync<JournalInUseException>(() => Journals.DeleteAsync(temporary.Path, id));
+        var thrown = await Should.ThrowAsync<JournalInUseException>(() => Journals.DeleteAsync(temporary.Path, id));
 
+        (thrown.Id, thrown.Directory).ShouldBe((id, temporary.Path));
         load.Release();
         (await holding).Outcome.ShouldBe(RunOutcome.Complete);
-        (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem().Ending.ShouldBe(JournalEnding.Complete);
+        (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem().Ending.ShouldBe(JournalEnding.Complete);
     }
 
     [Test]
@@ -46,7 +47,8 @@ public class JournalDeletingTests
     {
         using var temporary = new TemporaryDirectory();
 
-        await Should.ThrowAsync<JournalNotFoundException>(() => Journals.DeleteAsync(temporary.Path, "20261111T041200Z-a3f9c2"));
+        var thrown = await Should.ThrowAsync<JournalNotFoundException>(() => Journals.DeleteAsync(temporary.Path, "20261111T041200Z-a3f9c2"));
+        (thrown.Id, thrown.Directory).ShouldBe(("20261111T041200Z-a3f9c2", temporary.Path));
         await Should.ThrowAsync<JournalNotFoundException>(
             () => Journals.DeleteAsync(temporary.Combine("missing"), "20261111T041200Z-a3f9c2"));
 

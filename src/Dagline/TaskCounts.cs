@@ -6,7 +6,8 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// The run's counts are <see cref="Snapshot.Counts"/>, a node's are <see cref="NodeSnapshot.Counts"/>, and the counts of a group
-/// that has just settled are <see cref="GroupSettled.Counts"/>. A group's counts are those of the tasks beneath it at any depth,
+/// that has just settled are <see cref="GroupSettled.Counts"/>, and a listed journal's are <see cref="JournalSummary.Counts"/>, with
+/// no waiting and no earlier successes. A group's counts are those of the tasks beneath it at any depth,
 /// and a task's are those of the task alone: one for its status, with <see cref="Waiting"/> and <see cref="EarlierSuccesses"/>
 /// one when they hold.
 /// </para>

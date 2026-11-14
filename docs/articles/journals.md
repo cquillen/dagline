@@ -38,7 +38,17 @@ Console.WriteLine($"journal {journal.Id} run {journal.Run}: {journal.Description
 
 <xref:Dagline.Journal.Continue*> takes the directory and an id. The run that continues a journal is its next run: its snapshot carries the same id and description, and a run number one higher.
 
-An id that is not in the id format is refused at once with `ArgumentException`, so an id can never name a file outside the directory. An id the directory has no journal for makes `RunAsync` throw <xref:Dagline.JournalNotFoundException> before the run exists: no task starts, no event is published and no reporter is called.
+An id that is not in the id format is refused at once with `ArgumentException`, so an id can never name a file outside the directory. To check an id an operator typed before you use it, call <xref:Dagline.Journals.IsValidId*>, which says whether text is in the id format and never throws:
+
+```csharp
+if (!Journals.IsValidId(typedId))
+{
+    Console.Error.WriteLine($"'{typedId}' is not a journal id: it looks like 20261111T041200Z-a3f9c2.");
+    return 64;
+}
+```
+
+An id the directory has no journal for makes `RunAsync` throw <xref:Dagline.JournalNotFoundException> before the run exists: no task starts, no event is published and no reporter is called.
 
 ## The app always chooses
 
@@ -51,22 +61,35 @@ There is no default directory either, so continuing never depends on where the c
 <xref:Dagline.Journals.ListAsync*> summarises every journal in a directory, oldest first, without needing a graph, so a policy for choosing one is a few lines. This one continues the newest journal that is not finished and that no other operator is running, and starts a new one otherwise:
 
 ```csharp
-var journals = await Journals.ListAsync("journals/export");
-var open = journals.LastOrDefault(j => !j.IsFinished && j.Ending is not JournalEnding.InUse);
+var listing = await Journals.ListAsync("journals/export");
+var open = listing.Journals.LastOrDefault(j => !j.IsFinished && j.Ending is not JournalEnding.InUse);
 
 var journal = open is null
     ? Journal.New("journals/export", "all shards")
     : Journal.Continue("journals/export", open.Id);
 ```
 
-A directory that does not exist gives an empty list. Each <xref:Dagline.JournalSummary> carries enough to show an operator who must choose:
+The result is a <xref:Dagline.JournalListing> with two lists: `Journals`, a summary of each journal that could be read, oldest first, and `Unreadable`, each journal file that could not be read (see [Journals that cannot be read](#journals-that-cannot-be-read)). A directory that does not exist gives two empty lists. Each <xref:Dagline.JournalSummary> carries enough to show an operator who must choose:
 
 - `Id`, `Created` and `Description`: which journal it is.
 - `Runs`: how many runs it has had, and `LatestRun`, a <xref:Dagline.JournalRunSummary>: when the latest started and ended, and the user and machine that ran it. `LatestRun` is null only when the journal's first run was never recorded.
 - `Ending`: how the latest run ended (see [Endings](#endings)), and `IsFinished`: true only when the latest run was complete.
-- `Counts`: how many tasks the journal records in each status, by the last status recorded for each path. A task whose success was [set aside](#an-after-task-runs-again-when-what-it-is-after-runs-again) since counts as pending, and one that started and never settled, as when its process was killed, counts as running. Paths that are no longer in your graph count too, since the listing has no graph.
+- `Counts`: how many tasks the journal records in each status, by the last status recorded for each path, as a <xref:Dagline.TaskCounts> read just as a snapshot's counts are, as in `summary.Counts[NodeStatus.Failed]` or `summary.Counts.Total`. A task whose success was [set aside](#an-after-task-runs-again-when-what-it-is-after-runs-again) since counts as pending, and one that started and never settled, as when its process was killed, counts as running. Paths that are no longer in your graph count too, since the listing has no graph. A journal records no waiting and no run is under way, so `Waiting` and `EarlierSuccesses` are always zero: every recorded success counts among the succeeded.
 
 The listing reads each journal with the same code that a continuing run uses, so what it shows is what a run that continues the journal would find.
+
+### Journals that cannot be read
+
+One bad file never stops a listing. A journal in a format version this Dagline does not know, as one a later Dagline wrote may be, a file named like a journal that is not one or was overwritten, and a journal whose file or lock file the process cannot read, each go into <xref:Dagline.JournalListing.Unreadable> as an <xref:Dagline.UnreadableJournal>, with the file's `Path` and the `Exception` that says why: a <xref:Dagline.JournalFormatException> or a <xref:Dagline.JournalAccessException>. The other journals are listed as usual, so you can still continue or delete them. No journal is ever left out unseen, so show the unreadable ones to the operator:
+
+```csharp
+foreach (var unreadable in listing.Unreadable)
+{
+    Console.Error.WriteLine($"Passing over {unreadable.Path}: {unreadable.Exception.Message}");
+}
+```
+
+Only a failure to read the directory itself makes `ListAsync` throw, with `JournalAccessException`.
 
 The `Batch` sample's policy also matches the description, so each subset continues its own journal, and it does not skip a journal that another run holds, so that run is refused. [Its README](https://github.com/cquillen/dagline/blob/main/samples/Dagline.Samples.Batch/README.md#2-a-failed-validation-then-the-fix) shows a failed run and the run that continues it.
 
@@ -164,7 +187,7 @@ Dagline never deletes or expires a journal itself. How long a record is kept is 
 - <xref:Dagline.JournalAccessException>: the journal, its lock file or its directory cannot be opened, created or read, for example for lack of permission. Its inner exception is the file system's own.
 - <xref:Dagline.JournalFormatException>: the file is not a journal, a line other than the last cannot be read, or it was written in a format version this Dagline does not know. `Version` carries the version when the header gives one.
 
-`ListAsync` throws `JournalFormatException` too, naming the file, rather than leave a journal out of the list unseen. All of them derive from <xref:Dagline.DaglineException>.
+`JournalInUseException`, `JournalNotFoundException` and `JournalAccessException` carry the journal's `Id` and `Directory`, so a message can name the journal without parsing text. A `JournalAccessException` for the directory itself, which could not be created or listed, has no journal to name: its `Id` is null. `JournalFormatException` names the file in its message. `ListAsync` does not throw `JournalFormatException`, nor `JournalAccessException` for one journal's files: it lists that journal as [unreadable](#journals-that-cannot-be-read). All of them derive from <xref:Dagline.DaglineException>.
 
 ## The file
 

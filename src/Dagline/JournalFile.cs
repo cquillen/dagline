@@ -80,18 +80,19 @@ internal sealed class JournalFile : IDisposable
         location.ThrowIfNotFound();
 
         var claimed = ClaimExisting(location);
-        return OwningOnSuccess(claimed, () => ReadForAppending(claimed, location.FilePath));
+        return OwningOnSuccess(claimed, () => ReadForAppending(claimed, location));
     }
 
     /// <summary>
-    /// Reads and folds the journal file at <paramref name="path"/> without holding it, as a listing does. A run may be appending
+    /// Reads and folds the journal file at <paramref name="location"/> without holding it, as a listing does. A run may be appending
     /// to it meanwhile: what the run had written by then is read.
     /// </summary>
     /// <exception cref="FileNotFoundException">The file is not there, or no longer.</exception>
     /// <exception cref="JournalAccessException">The file cannot be opened or read.</exception>
     /// <exception cref="JournalFormatException">The file cannot be read as a journal.</exception>
-    public static async Task<JournalFold> ReadAsync(string path, CancellationToken cancellationToken)
+    public static async Task<JournalFold> ReadAsync(JournalLocation location, CancellationToken cancellationToken)
     {
+        var path = location.FilePath;
         string text;
         try
         {
@@ -108,7 +109,7 @@ internal sealed class JournalFile : IDisposable
         }
         catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen) && cannotOpen is not FileNotFoundException)
         {
-            throw new JournalAccessException(path, cannotOpen);
+            throw new JournalAccessException(location, path, cannotOpen);
         }
 
         using var lines = new StringReader(WholeLines(text));
@@ -196,7 +197,7 @@ internal sealed class JournalFile : IDisposable
         catch (Exception cannotCreate) when (FileSystemFailure.Is(cannotCreate))
         {
             claim.Dispose();
-            throw new JournalAccessException(location.FilePath, cannotCreate);
+            throw new JournalAccessException(location, location.FilePath, cannotCreate);
         }
     }
 
@@ -215,7 +216,7 @@ internal sealed class JournalFile : IDisposable
         }
         catch (Exception cannotWrite) when (FileSystemFailure.Is(cannotWrite))
         {
-            throw new JournalAccessException(location.FilePath, cannotWrite);
+            throw new JournalAccessException(location, location.FilePath, cannotWrite);
         }
 
         return file;
@@ -242,7 +243,7 @@ internal sealed class JournalFile : IDisposable
         catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen))
         {
             claim.Dispose();
-            throw new JournalAccessException(location.FilePath, cannotOpen);
+            throw new JournalAccessException(location, location.FilePath, cannotOpen);
         }
     }
 
@@ -252,8 +253,9 @@ internal sealed class JournalFile : IDisposable
     /// </summary>
     /// <exception cref="JournalAccessException">The file cannot be read.</exception>
     /// <exception cref="JournalFormatException">The file cannot be read as a journal.</exception>
-    private static JournalFile ReadForAppending(ClaimedFile claimed, string path)
+    private static JournalFile ReadForAppending(ClaimedFile claimed, JournalLocation location)
     {
+        var path = location.FilePath;
         var stream = claimed.Stream;
         try
         {
@@ -270,7 +272,7 @@ internal sealed class JournalFile : IDisposable
         }
         catch (Exception cannotRead) when (FileSystemFailure.Is(cannotRead))
         {
-            throw new JournalAccessException(path, cannotRead);
+            throw new JournalAccessException(location, path, cannotRead);
         }
     }
 

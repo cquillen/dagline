@@ -41,7 +41,7 @@ public class KilledProcessTests
         var cuts = JournalCutter.Cut(Directory.GetFiles(temporary.Path, "*.journal").Single());
 
         cuts[^2].WriteTo(copies.Path);
-        var summary = (await Journals.ListAsync(copies.Path)).ShouldHaveSingleItem();
+        var summary = (await Journals.ListAsync(copies.Path)).Journals.ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Died);
         summary.LatestRun!.Ended.ShouldBeNull();

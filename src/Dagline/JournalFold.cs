@@ -65,25 +65,18 @@ internal sealed class JournalFold
     public RunOutcome? LatestOutcome => _latestRunEnded?.Outcome;
 
     /// <summary>
-    /// How many paths have each status as their last recorded one, with every status present: the latest settle, pending once a
-    /// later set-aside names it, or running when the path's latest entry is a start.
+    /// How many paths have each status as their last recorded one: the latest settle, pending once a later set-aside names it, or
+    /// running when the path's latest entry is a start. A journal records no waiting and no earlier successes, so both are zero.
     /// </summary>
-    public IReadOnlyDictionary<NodeStatus, int> LastStatusCounts()
+    public TaskCounts LastStatusCounts()
     {
-        var statuses = Enum.GetValues<NodeStatus>();
-        Span<int> tally = stackalloc int[statuses.Length];
+        Span<int> tally = stackalloc int[TaskCounts.TallyLength];
         foreach (var status in _lastStatuses.Values)
         {
             tally[(int)status]++;
         }
 
-        var counts = new Dictionary<NodeStatus, int>(statuses.Length);
-        foreach (var status in statuses)
-        {
-            counts.Add(status, tally[(int)status]);
-        }
-
-        return counts.AsReadOnly();
+        return TaskCounts.From(tally);
     }
 
     /// <summary>Folds the entries of one journal, in the order of the file, under its header.</summary>

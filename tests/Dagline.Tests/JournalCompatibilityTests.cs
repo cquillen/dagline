@@ -17,7 +17,7 @@ public class JournalCompatibilityTests
     {
         using var temporary = CopyOfVersion1Journal();
 
-        var summary = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
+        var summary = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
 
         summary.Id.ShouldBe(_id);
         summary.Created.ShouldBe(_created);
@@ -31,7 +31,7 @@ public class JournalCompatibilityTests
         summary.Counts[NodeStatus.Succeeded].ShouldBe(1);
         summary.Counts[NodeStatus.Failed].ShouldBe(1);
         summary.Counts[NodeStatus.Blocked].ShouldBe(1);
-        summary.Counts.Values.Sum().ShouldBe(3);
+        summary.Counts.Total.ShouldBe(3);
     }
 
     [Test]

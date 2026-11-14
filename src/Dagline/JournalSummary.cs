@@ -47,12 +47,17 @@ public sealed class JournalSummary
     public JournalEnding Ending { get; }
 
     /// <summary>
-    /// How many tasks the journal records in each status, with every status present. Each path the journal has an entry for counts
-    /// once, by its last recorded status: its latest settle, pending once a later set-aside names it, and running when its latest
-    /// entry is a start, as for a task that was running when its run died. Paths no longer in a graph count as well, since the
-    /// listing has no graph. Ready is always zero.
+    /// How many tasks the journal records in each status, read as <see cref="Snapshot.Counts"/> is: by the indexer, with
+    /// <see cref="TaskCounts.Total"/> and the other sums. Each path the journal has an entry for counts once, by its last recorded
+    /// status: its latest settle, pending once a later set-aside names it, and running when its latest entry is a start, as for a
+    /// task that was running when its run died. Paths no longer in a graph count as well, since the listing has no graph.
     /// </summary>
-    public IReadOnlyDictionary<NodeStatus, int> Counts { get; }
+    /// <remarks>
+    /// Ready is always zero, and so are <see cref="TaskCounts.Waiting"/> and <see cref="TaskCounts.EarlierSuccesses"/>: a journal
+    /// records neither, and with no run under way there is no run for a success to be earlier than. A task that succeeded in any run
+    /// of the journal counts among the succeeded.
+    /// </remarks>
+    public TaskCounts Counts { get; }
 
     /// <summary>
     /// Whether the journal is finished: its latest run recorded that it was <see cref="RunOutcome.Complete"/>. A finished journal can

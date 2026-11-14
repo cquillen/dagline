@@ -187,7 +187,7 @@ public class SetAsideTests
         {
             using var copy = new TemporaryDirectory();
             cut.WriteTo(copy.Path);
-            listed.Add((await Journals.ListAsync(copy.Path)).Single());
+            listed.Add((await Journals.ListAsync(copy.Path)).Journals.Single());
         }
 
         var secondRunStarted = listed.FindIndex(summary => summary.Runs == 2);
