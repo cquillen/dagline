@@ -62,7 +62,7 @@ var journal = open is null
 A directory that does not exist gives an empty list. Each <xref:Dagline.JournalSummary> carries enough to show an operator who must choose:
 
 - `Id`, `Created` and `Description`: which journal it is.
-- `Runs`: how many runs it has had, and `LatestRun`: when the latest started and ended, and the user and machine that ran it. `LatestRun` is null only when the journal's first run was never recorded.
+- `Runs`: how many runs it has had, and `LatestRun`, a <xref:Dagline.JournalRunSummary>: when the latest started and ended, and the user and machine that ran it. `LatestRun` is null only when the journal's first run was never recorded.
 - `Ending`: how the latest run ended (see [Endings](#endings)), and `IsFinished`: true only when the latest run was complete.
 - `Counts`: how many tasks the journal records in each status, by the last status recorded for each path. A task whose success was [set aside](#an-after-task-runs-again-when-what-it-is-after-runs-again) since counts as pending, and one that started and never settled, as when its process was killed, counts as running. Paths that are no longer in your graph count too, since the listing has no graph.
 
