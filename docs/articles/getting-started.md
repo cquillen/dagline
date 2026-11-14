@@ -89,11 +89,11 @@ using var stop = ConsoleStop.Hook();
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = journal,
-    Reporters = [SpectreReporter.Auto()],
+    Reporters = [SpectreReporter.Create()],
 }, stop);
 ```
 
-<xref:Dagline.Runner.RunAsync*> runs the graph and returns when the run has ended. The journal choice is the one option you must set. A reporter shows the run while it happens, and <xref:Dagline.Spectre.SpectreReporter.Auto*> gives the right one for where the app runs: the display on a terminal, and timestamped lines of plain text when output is redirected to a file or a build log.
+<xref:Dagline.Runner.RunAsync*> runs the graph and returns when the run has ended. The journal choice is the one option you must set. A reporter shows the run while it happens, and <xref:Dagline.Spectre.SpectreReporter.Create*> gives the right one for where the app runs: the display on a terminal, and timestamped lines of plain text when output is redirected to a file or a build log.
 
 > [!WARNING]
 > While the display is up, your app's own logging must go to a file and not to the console: see [The terminal display](terminal-ui.md#your-apps-own-output).
@@ -146,7 +146,7 @@ Dagline  basic sample  journal 20261111T041200Z-a3f9c2 · run 2           50%  e
 
 This time let it finish. The summary reads `Run complete` with `✓ 2 succeeded (1 earlier)`, and the app exits with 0. The journal is now finished, so the next run starts a new one.
 
-Last, redirect the output: `dotnet run > run.txt`. Standard output is not a terminal, so `SpectreReporter.Auto` prints the run as plain text instead, one timestamped line per thing that happened, which is what a log file or a build server wants.
+Last, redirect the output: `dotnet run > run.txt`. Standard output is not a terminal, so `SpectreReporter.Create` prints the run as plain text instead, one timestamped line per thing that happened, which is what a log file or a build server wants.
 
 ## Next
 
