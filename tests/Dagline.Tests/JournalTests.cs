@@ -57,14 +57,39 @@ public class JournalTests
         var graph = builder.Build();
         var reporter = new RecordingReporter();
 
-        await Should.ThrowAsync<JournalNotFoundException>(() => Runner.RunAsync(
+        var inDirectory = await Should.ThrowAsync<JournalNotFoundException>(() => Runner.RunAsync(
             graph,
             new RunOptions { Journal = Journal.Continue(temporary.Path, "20261111T041200Z-a3f9c2"), Reporters = [reporter] }));
-        await Should.ThrowAsync<JournalNotFoundException>(() => Runner.RunAsync(
+        var inMissingDirectory = await Should.ThrowAsync<JournalNotFoundException>(() => Runner.RunAsync(
             graph,
             new RunOptions { Journal = Journal.Continue(temporary.Combine("missing"), "20261111T041200Z-a3f9c2"), Reporters = [reporter] }));
 
         reporter.Events.ShouldBeEmpty();
+        (inDirectory.Id, inDirectory.Directory).ShouldBe(("20261111T041200Z-a3f9c2", temporary.Path));
+        (inMissingDirectory.Id, inMissingDirectory.Directory).ShouldBe(("20261111T041200Z-a3f9c2", temporary.Combine("missing")));
+    }
+
+    [Test]
+    [Arguments("20261111T041200Z-a3f9c2")]
+    [Arguments("20261231T235959Z-000000")]
+    public void An_id_in_the_id_format_is_valid(string id)
+    {
+        Journals.IsValidId(id).ShouldBeTrue();
+    }
+
+    [Test]
+    [Arguments("20261111T041200Z-A3F9C2")]
+    [Arguments("20261111T041200Z-a3f9c")]
+    [Arguments("2026-11-11T041200Z-a3f9c2")]
+    [Arguments("../20261111T041200Z-a3f9c2")]
+    [Arguments("20261111T041200Z-a3f9c2\n")]
+    [Arguments("20261111T041200Z-a3f9c2.journal")]
+    [Arguments("")]
+    [Arguments(" ")]
+    [Arguments(null)]
+    public void Text_not_in_the_id_format_is_not_a_valid_id(string? id)
+    {
+        Journals.IsValidId(id).ShouldBeFalse();
     }
 
     [Test]

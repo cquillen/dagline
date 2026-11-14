@@ -27,7 +27,7 @@ A script that calls an app which returns `ToExitCode()` can rely on these three 
 The first line of every [journal](journals.md) names the format version it was written in. Two promises follow from it:
 
 - **A later Dagline reads every journal format an earlier release wrote.** An upgrade never strands work in progress: a journal written by this release can be listed, continued and deleted by every later one, its earlier successes and its checkpoints included.
-- **An older Dagline refuses a newer format.** A journal written in a format version that a release does not know is never half read: continuing it throws <xref:Dagline.JournalFormatException> before any task starts, with the version in `Version`, and listing the directory throws it too.
+- **An older Dagline refuses a newer format.** A journal written in a format version that a release does not know is never half read: continuing it throws <xref:Dagline.JournalFormatException> before any task starts, with the version in `Version`, and listing the directory puts it in <xref:Dagline.JournalListing.Unreadable> with that exception, beside the journals it can read.
 
 Continuing a journal with a later release may leave it in that release's format, so do not go back to an earlier release while a journal holds work you want to keep.
 

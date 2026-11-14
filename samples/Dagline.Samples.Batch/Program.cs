@@ -111,19 +111,24 @@ var limits = Enumerable.Range(1, ShardCount).ToDictionary(shard => $"shard-{shar
 limits["scheduler"] = 3;
 
 // The journal policy: continue the newest unfinished journal for the same shards, or start a new one. A journal that
-// another run holds is not skipped, so that run refuses it below.
+// another run holds is not skipped, so that run refuses it below. A journal that cannot be read is named and passed over.
 var description = shards.Count == ShardCount ? "all shards" : $"shards {string.Join(',', shards)}";
-IReadOnlyList<JournalSummary> journals;
+JournalListing listing;
 try
 {
-    journals = await Journals.ListAsync(directory);
+    listing = await Journals.ListAsync(directory);
 }
-catch (DaglineException exception) when (exception is JournalAccessException or JournalFormatException)
+catch (JournalAccessException exception)
 {
     return await RefuseAsync(exception.Message);
 }
 
-var unfinished = startNew ? null : journals.LastOrDefault(summary => !summary.IsFinished && summary.Description == description);
+foreach (var unreadable in listing.Unreadable)
+{
+    await Console.Error.WriteLineAsync($"Passing over {unreadable.Path}: {unreadable.Exception.Message}");
+}
+
+var unfinished = startNew ? null : listing.Journals.LastOrDefault(summary => !summary.IsFinished && summary.Description == description);
 Journal journal;
 if (unfinished is null)
 {

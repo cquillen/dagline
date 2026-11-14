@@ -110,6 +110,13 @@ public class RunConfigurationTests
             "- The graph names the limit 'database', and the options give it no size.",
             "- The graph names the limit 'network', and the options give it no size.",
         ]);
+        exception.Problems.ShouldBe(
+        [
+            "MaxRunningTasks is 0. It must be at least 1.",
+            "The size of the limit 'files' is 0. It must be at least 1.",
+            "The graph names the limit 'database', and the options give it no size.",
+            "The graph names the limit 'network', and the options give it no size.",
+        ]);
     }
 
     [Test]

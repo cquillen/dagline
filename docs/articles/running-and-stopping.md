@@ -318,6 +318,20 @@ The options cannot be used to run the graph:
 - The graph names the limit 'database', and the options give it no size.
 ```
 
+<xref:Dagline.RunConfigurationException.Problems> holds the same problems, in the same order, without the heading or the dashes, so you can show each one your own way without splitting the message:
+
+```csharp
+catch (RunConfigurationException refused)
+{
+    foreach (var problem in refused.Problems)
+    {
+        Console.Error.WriteLine($"error: {problem}");
+    }
+
+    return 64;
+}
+```
+
 It is thrown at the call too: no task has started, no event has been published and no reporter has been called.
 
 A run on a journal then holds, opens and reads it, also before anything has happened. Each of these is thrown at the call, checked in this order:
@@ -329,7 +343,7 @@ A run on a journal then holds, opens and reads it, also before anything has happ
 | <xref:Dagline.JournalAccessException> | The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written. |
 | <xref:Dagline.JournalFormatException> | The file cannot be read as a journal: its first line is not a journal header, its format version is unknown (in `Version`), or a line other than the last is not an entry. |
 
-See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.
+The first three carry the journal's `Id` and `Directory`; for a directory that cannot be created, `JournalAccessException.Id` is null. See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.
 
 `RunConfigurationException` and the journal exceptions derive from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
 

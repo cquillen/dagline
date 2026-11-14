@@ -25,7 +25,7 @@ The faults:
 - `poll`: the first status call of the first job throws.
 - `job`: the last job ends in error.
 
-A run without `--fault` is the operator having fixed things. Before each run the sample prints one line saying whether it starts a new journal or continues the newest unfinished one for the same shards. The tenant count is not part of that match, so keep `--tenants` the same when you continue, or pass `--new`.
+A run without `--fault` is the operator having fixed things. Before each run the sample prints one line saying whether it starts a new journal or continues the newest unfinished one for the same shards. A journal file in the directory that cannot be read, such as one a later Dagline wrote, is named on standard error and passed over. The tenant count is not part of that match, so keep `--tenants` the same when you continue, or pass `--new`.
 
 ## Exit codes
 

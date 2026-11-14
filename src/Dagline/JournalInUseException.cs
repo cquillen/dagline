@@ -22,5 +22,13 @@ public sealed class JournalInUseException : DaglineException
     internal JournalInUseException(JournalLocation location, Exception innerException)
         : base($"The journal '{location.Id}' in '{location.Directory}' is in use: another run holds it.", innerException)
     {
+        Id = location.Id;
+        Directory = location.Directory;
     }
+
+    /// <summary>The id of the journal a run holds.</summary>
+    public string Id { get; }
+
+    /// <summary>The directory of the journal a run holds, as the app gave it.</summary>
+    public string Directory { get; }
 }
