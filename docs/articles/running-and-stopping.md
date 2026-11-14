@@ -222,7 +222,7 @@ The wait ends in one of three ways:
 - **The grace period runs out** with tasks still running.
 - **A second stop:** a second `Request` on the same signal ends the wait at once, so an operator who presses Ctrl+C twice is not held for the whole grace period. A third request changes nothing.
 
-In the last two cases the run publishes a <xref:Dagline.GraceEnded> event with the reason, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
+In the last two cases the run publishes a <xref:Dagline.GraceEnded> event whose `Reason` is a <xref:Dagline.GraceEndReason>, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
 
 Both extremes are a setting:
 
@@ -243,7 +243,7 @@ A signal requested twice before the run starts gives the same result as one requ
 A stopped run leaves two kinds of unfinished work, and the snapshot tells them apart:
 
 - **Cancelled** tasks were running and ended because of the stop: their body ended with a cancellation exception, or was still running when the run stopped waiting. Cancelled is a settled status. <xref:Dagline.Snapshot.Cancelled> lists them in declaration order. A cancelled task never blocks: a task that requires it stays pending.
-- **Never reached** tasks had not started: they keep their status, pending or ready, and are not settled. <xref:Dagline.Snapshot.NeverReached> lists them in declaration order once the run has ended, and is empty before then. A group with such a task beneath it does not settle.
+- **Never reached** tasks had not started: they keep their status, pending or ready, and are not settled. <xref:Dagline.Snapshot.NeverReached> lists them in declaration order once the run has ended, and is empty before then. A group with such a task beneath it does not settle. Tasks a failure blocked are not among them: see [Which tasks did not run, and why](reporters.md#which-tasks-did-not-run-and-why).
 
 A task that finished in spite of the stop keeps its real status, succeeded or failed. <xref:Dagline.Snapshot.Stop> holds when the stop was applied, from the `StopRequested` snapshot on.
 

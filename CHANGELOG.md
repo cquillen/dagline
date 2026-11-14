@@ -121,6 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: `TaskCounts` and the group roll-up in the Reporters article, and empty status text in the Writing tasks article.
 - The compatibility policy: the exit codes 0, 1 and 2 of `RunOutcome.ToExitCode()` are stable; the plain-text output and the display are for people and may change in any release; a later Dagline reads every journal format version an earlier release wrote, and an older Dagline refuses a newer format with `JournalFormatException`. A version 1 journal, checked in as the first alpha writes it, is listed and continued by the tests of every release.
 - Docs: the Compatibility article, linked from the Exit codes section of Running and stopping, the file section of Journals, the plain-text reporter section of Reporters and the Batch sample's README; and the XML comments of `ToExitCode`, `PlainTextReporter` and `SpectreReporter.Create` state the same.
+- `Snapshot.EarlierSuccesses`, beside `Failed`, `Cancelled` and `SetAside`: every task that is an earlier success, in declaration order, the same in every snapshot of the run. Its length is `Counts.EarlierSuccesses`.
+- Docs: a "Which tasks did not run, and why" recipe in the Reporters article, telling `Blocked`, `NeverReached` and `EarlierSuccesses` apart and saying when each applies; filtering `Snapshot.Nodes` with `IsGroup` and `IsEarlierSuccess`; `Fail` with literal detail lines in the Writing tasks article; and `TaskNode`, `Dependency`, `DependencyKind`, `JournalInfo`, `JournalRunSummary` and `GraceEndReason` each named in an article.
 
 ### Changed
 

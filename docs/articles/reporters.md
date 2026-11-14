@@ -110,6 +110,51 @@ A snapshot also answers the questions a summary asks, each in declaration order,
 - <xref:Dagline.Snapshot.WarningCount> counts every warning added, and <xref:Dagline.Snapshot.WithWarnings> lists the tasks that have any. Each task keeps its first 100 warnings in <xref:Dagline.NodeSnapshot.Warnings> and counts the rest in <xref:Dagline.NodeSnapshot.WarningsOmitted>.
 - <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line. <xref:Dagline.Snapshot.TryGetBlocked*> finds the entry for one failed task by its path, and gives `false` for a task that blocked nothing.
 - <xref:Dagline.Snapshot.Waiting> and <xref:Dagline.Snapshot.Working> list the running tasks that are waiting on an external system and those that are working. Together they are every running task, and no task is in both.
+- <xref:Dagline.Snapshot.EarlierSuccesses> lists the tasks a continuing run kept from its journal and did not run again. See [A run on a journal](#a-run-on-a-journal).
+
+Each list holds tasks only, never a group. A question none of them answers is a filter over <xref:Dagline.Snapshot.Nodes>, which holds every group and every task in declaration order. A node says whether it is a group with <xref:Dagline.NodeSnapshot.IsGroup>: there is no kind enum to test. Its <xref:Dagline.NodeSnapshot.Dependencies> are the dependencies declared on it, one <xref:Dagline.Dependency> for each upstream node: its `Upstream` path and its <xref:Dagline.DependencyKind>, `Requires` or `After`. A dependency declared on a group is listed on the group, not on the tasks beneath it.
+
+```csharp
+var ranThisRun = snapshot.Nodes
+    .Where(node => !node.IsGroup && !node.IsEarlierSuccess && node.Status is NodeStatus.Succeeded)
+    .Select(node => node.Path);
+
+var groupsWithWarnings = snapshot.Nodes.Where(node => node.IsGroup && node.WarningCount > 0);
+```
+
+### Which tasks did not run, and why
+
+A task that ends a run without having run is in one of three lists, and each has its own cause. Read all three to account for every such task:
+
+| List | Status | Why the task did not run | When it applies |
+| --- | --- | --- | --- |
+| <xref:Dagline.Snapshot.Blocked> | blocked | A task it *requires*, or one beneath a group it requires, failed. | In any run with a failure, stopped or not. Blocked is settled, so a group made only of blocked and other settled tasks settles. |
+| <xref:Dagline.Snapshot.NeverReached> | pending or ready | The run was stopped before the task could start: it was ready, or still waiting on a dependency, such as one on a task the stop cancelled. | Only once a stopped run has ended. Empty while the run is going and for a run that was not stopped. These tasks are not settled. |
+| <xref:Dagline.Snapshot.EarlierSuccesses> | succeeded | An earlier run of the journal succeeded with it, so this run kept that success. | Only in a run that continues a journal. |
+
+`NeverReached` is not the tasks a failure blocked: a failure never leaves a task pending, it blocks it. A task that runs *after* a failed task is not blocked either: it runs.
+
+```csharp
+var snapshot = result.Snapshot;
+
+foreach (var entry in snapshot.Blocked)
+{
+    Console.WriteLine($"{entry.Cause} failed and blocked {entry.Tasks.Count} tasks:");
+    foreach (var root in entry.Roots)
+    {
+        Console.WriteLine($"  {root.Path}");
+    }
+}
+
+foreach (var task in snapshot.NeverReached)
+{
+    Console.WriteLine($"{task.Path} was not reached before the run stopped");
+}
+
+Console.WriteLine($"{snapshot.EarlierSuccesses.Count} tasks were kept from earlier runs");
+```
+
+A later run of the journal has the blocked and the never-reached tasks left to do, along with the failed and the cancelled ones. <xref:Dagline.TaskCounts.Unsucceeded> on <xref:Dagline.Snapshot.Counts> counts them all.
 
 Each node answers the same way for itself, so a reporter never writes Dagline's rules again:
 
@@ -127,8 +172,8 @@ A task's <xref:Dagline.NodeSnapshot.Message> and <xref:Dagline.NodeSnapshot.Wait
 
 A run that continues a [journal](journals.md) begins with its earlier successes already succeeded. They are in the first snapshot, the one handed with `RunStarted`, and no event is ever published for them, so an event always means something happened in this run. What the snapshot says about the journal is fixed for the run:
 
-- <xref:Dagline.Snapshot.Journal> names the journal: its id, its description and which run of it this is, counting from 1. It is null for a run with `Journal.None`, and a new journal's id is known only from here.
-- `EarlierSuccesses` on the run's <xref:Dagline.Snapshot.Counts> counts the earlier successes. They are among the succeeded, and <xref:Dagline.NodeSnapshot.IsEarlierSuccess> marks each one. A group's counts give those beneath it, and `GroupSettled` carries the same counts, so a reporter can show how much this run did.
+- <xref:Dagline.Snapshot.Journal> is a <xref:Dagline.JournalInfo> that names the journal: its id, its description and which run of it this is, counting from 1. It is null for a run with `Journal.None`, and a new journal's id is known only from here.
+- <xref:Dagline.Snapshot.EarlierSuccesses> lists the earlier successes, in declaration order, and `EarlierSuccesses` on the run's <xref:Dagline.Snapshot.Counts> counts them. They are among the succeeded, and <xref:Dagline.NodeSnapshot.IsEarlierSuccess> marks each one. A group's counts give those beneath it, and `GroupSettled` carries the same counts, so a reporter can show how much this run did.
 - <xref:Dagline.Snapshot.SetAside> lists the tasks whose earlier success this run set aside, in declaration order. They start pending and run again.
 - <xref:Dagline.Snapshot.JournalPathsNotInGraph> counts the paths the journal holds that this graph does not have as a task, and <xref:Dagline.Snapshot.JournalPathsNotInGraphUnsucceeded> how many of those have not succeeded.
 

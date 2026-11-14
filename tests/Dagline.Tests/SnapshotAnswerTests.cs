@@ -113,6 +113,49 @@ public class SnapshotAnswerTests
     }
 
     [Test]
+    public async Task A_continuing_run_lists_its_earlier_successes_in_declaration_order()
+    {
+        using var temporary = new TemporaryDirectory();
+        var firstGraph = new GraphBuilder();
+        var firstShard = firstGraph.Group("shard-1");
+        firstShard.Task("load", _ => Task.CompletedTask);
+        firstShard.Task("check", context => throw context.Fail("bad data"));
+        firstGraph.Task("export", _ => Task.CompletedTask);
+        firstGraph.Task("publish", _ => Task.CompletedTask);
+        var first = await Runner.RunAsync(firstGraph.Build(), new RunOptions { Journal = Journal.New(temporary.Path) });
+
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var load = shard.Task("load", _ => Task.CompletedTask);
+        var check = shard.Task("check", _ => Task.CompletedTask);
+        var export = builder.Task("export", _ => Task.CompletedTask);
+        var publish = builder.Task("publish", _ => Task.CompletedTask);
+        var fresh = builder.Task("fresh", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+
+        var second = await Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
+
+        reporter.Snapshots[0].EarlierSuccesses.Select(task => task.Path).ShouldBe([load.Path, export.Path, publish.Path]);
+        second.Snapshot.EarlierSuccesses.Select(task => task.Path).ShouldBe([load.Path, export.Path, publish.Path]);
+        second.Snapshot.EarlierSuccesses[0].ShouldBeSameAs(second.Snapshot[load.Path]);
+        second.Snapshot.EarlierSuccesses.ShouldNotContain(second.Snapshot[check.Path]);
+        second.Snapshot.EarlierSuccesses.ShouldNotContain(second.Snapshot[fresh.Path]);
+    }
+
+    [Test]
+    public async Task A_run_with_no_journal_has_no_earlier_successes()
+    {
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None });
+
+        result.Snapshot.EarlierSuccesses.ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task The_facts_of_a_stop_the_app_asked_for_say_the_app_asked()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
