@@ -84,22 +84,14 @@ public class AsciiTests
     [Test]
     public async Task With_Ascii_set_the_error_a_run_ended_with_is_drawn_in_ASCII()
     {
-        // No real file can be made to fail, so the end of a run whose journal could not be written is handed to the display
-        // here, with the final snapshot of a real run.
-        var clock = new FakeTimeProvider(DisplayRun.RunStart);
+        using var temporary = new TemporaryDirectory();
         var builder = new GraphBuilder();
         builder.Task("load", _ => Task.CompletedTask);
-        var recording = new RecordingReporter();
-        var final = (await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [recording] })).Snapshot;
-        using var console = new TestConsole().Size(new Size(60, 20)).EmitAnsiSequences();
-        var display = SpectreReporter.Create(new SpectreOptions { Display = DisplayMode.Force, Ascii = true, Console = console, TimeProvider = clock });
+        var journal = JournalWriteFailure.SettleOf("load").WithMessage("disk full — no space").In(Journal.New(temporary.Path));
 
-        await display.OnEventAsync(recording.Events.OfType<RunStarted>().Single(), final, CancellationToken.None);
-        await display.OnEventAsync(
-            FailedJournalWrite.RunEnded(DisplayRun.RunStart.AddSeconds(5), new InvalidOperationException("disk full — no space")),
-            final,
-            CancellationToken.None);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20, new RunOptions { Journal = journal }, ascii: true);
+        await Should.ThrowAsync<JournalWriteException>(display.Run);
 
-        Screen.Read(console.Output, new Size(60, 20), []).Ordinary[2].ShouldBe("    disk full ? no space");
+        display.Summary[2].ShouldBe("    The run's journal can no longer be written: disk full ? no space");
     }
 }

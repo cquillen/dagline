@@ -103,20 +103,45 @@ public abstract class Journal
     }
 
     /// <summary>Opens the journal the choice names, before the run exists: <see langword="null"/> for no journal.</summary>
-    internal abstract JournalFile? Open(TimeProvider clock);
+    internal JournalFile? Open(TimeProvider clock) => Open(clock, file => file);
+
+    /// <summary>
+    /// The one internal test hook: the same choice, but once the journal is opened, the first write to its file for whose text
+    /// <paramref name="failureOf"/> gives an <see cref="IOException"/> throws it, and every other write reaches the real file. It
+    /// applies to this journal alone. Only the shared test support calls it, which is what <c>InternalsVisibleTo</c> opens to.
+    /// </summary>
+    /// <param name="failureOf">
+    /// Given the text of each write, one or more whole lines of the journal: the failure to throw in place of that write, or
+    /// <see langword="null"/> to let it through.
+    /// </param>
+    internal Journal WithFailingWrite(Func<string, IOException?> failureOf) => new FailingWriteJournal(this, failureOf);
+
+    /// <summary>
+    /// Opens the journal the choice names, writing to its file through the stream <paramref name="writesThrough"/> makes of the file's
+    /// own: <see langword="null"/> for no journal.
+    /// </summary>
+    private protected abstract JournalFile? Open(TimeProvider clock, Func<Stream, Stream> writesThrough);
 
     private sealed class NoJournal : Journal
     {
-        internal override JournalFile? Open(TimeProvider clock) => null;
+        private protected override JournalFile? Open(TimeProvider clock, Func<Stream, Stream> writesThrough) => null;
     }
 
     private sealed class NewJournal(string directory, string? description) : Journal
     {
-        internal override JournalFile Open(TimeProvider clock) => JournalFile.Create(directory, description, clock);
+        private protected override JournalFile Open(TimeProvider clock, Func<Stream, Stream> writesThrough)
+            => JournalFile.Create(directory, description, clock, writesThrough);
     }
 
     private sealed class ContinuedJournal(JournalLocation location) : Journal
     {
-        internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(location);
+        private protected override JournalFile Open(TimeProvider clock, Func<Stream, Stream> writesThrough)
+            => JournalFile.Open(location, writesThrough);
+    }
+
+    private sealed class FailingWriteJournal(Journal journal, Func<string, IOException?> failureOf) : Journal
+    {
+        private protected override JournalFile? Open(TimeProvider clock, Func<Stream, Stream> writesThrough)
+            => journal.Open(clock, file => new FailingWriteStream(writesThrough(file), failureOf));
     }
 }

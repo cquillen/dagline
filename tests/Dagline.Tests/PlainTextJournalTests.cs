@@ -5,6 +5,7 @@ namespace Dagline.Tests;
 
 public class PlainTextJournalTests
 {
+    private const int _repeats = 50;
     private static readonly DateTimeOffset _firstRunStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset _secondRunStart = new(2026, 11, 11, 5, 0, 0, TimeSpan.Zero);
 
@@ -269,42 +270,91 @@ public class PlainTextJournalTests
     }
 
     [Test]
+    [NotInParallel(DiskHeavy.Key)]
     public async Task A_stop_Dagline_asked_for_and_a_run_that_ended_with_an_error_each_read_as_a_failed_journal_write()
     {
-        // No real file can be made to fail, so the two events a failed write gives are handed to the reporter here,
-        // each with a real snapshot of a run: one taken while a task was running, and the final one.
-        var clock = new FakeTimeProvider(_firstRunStart);
-        var load = new PausedBody();
-        var builder = new GraphBuilder();
-        builder.Task("load", load.Body);
-        var recording = new RecordingReporter();
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [recording] });
-        await load.Started;
-        clock.Advance(TimeSpan.FromSeconds(5));
-        var running = (await recording.Source).Current;
-        load.Release();
-        var final = (await run).Snapshot;
-        var writer = new StringWriter();
-        var reporter = new PlainTextReporter(writer, clock);
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            using var temporary = new TemporaryDirectory();
+            var clock = new FakeTimeProvider(_firstRunStart);
+            var writer = new StringWriter();
+            var fails = new PausedBody();
+            var running = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("fails", fails.Body);
+            builder.Task("running", running.Body);
+            var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+            var journal = JournalWriteFailure.SettleOf("fails").WithMessage("disk full").In(Journal.New(temporary.Path));
 
-        await reporter.OnEventAsync(
-            FailedJournalWrite.StopRequested(_firstRunStart.AddSeconds(5), TimeSpan.FromSeconds(30)), running, CancellationToken.None);
-        await reporter.OnEventAsync(
-            FailedJournalWrite.StopRequested(_firstRunStart.AddSeconds(5), Timeout.InfiniteTimeSpan), running, CancellationToken.None);
-        await reporter.OnEventAsync(
-            FailedJournalWrite.RunEnded(
-                _firstRunStart.AddSeconds(5),
-                new InvalidOperationException("The journal can no longer be written.", new IOException("disk full"))),
-            final,
-            CancellationToken.None);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [reporter] });
+            await fails.Started;
+            await running.Started;
+            clock.Advance(TimeSpan.FromSeconds(5));
+            fails.Release();
+            await reporter.Handled("stop requested");
+            running.Throw(new OperationCanceledException());
+            var id = (await Should.ThrowAsync<JournalWriteException>(run)).Snapshot.Journal!.Id;
 
-        Lines(writer).ShouldBe(
-        [
-            "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting up to 30.0s for 1 running task",
-            "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting for 1 running task",
-            "2026-11-11T04:12:05Z run ended: journal write failed after 5.0s: disk full",
-            "tasks: 1 succeeded",
-        ]);
+            Lines(writer).ShouldBe(
+            [
+                "2026-11-11T04:12:00Z run started: 2 tasks",
+                $"2026-11-11T04:12:00Z journal {id} run 1",
+                "2026-11-11T04:12:00Z started fails",
+                "2026-11-11T04:12:00Z started running",
+                "2026-11-11T04:12:05Z succeeded fails in 5.0s",
+                "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting up to 30.0s for 1 running task",
+                "2026-11-11T04:12:05Z cancelled running in 5.0s",
+                "2026-11-11T04:12:05Z run ended: journal write failed after 5.0s: disk full",
+                $"journal: {id} run 1",
+                "tasks: 1 succeeded, 1 cancelled",
+                "cancelled: 1",
+                "  running at 2026-11-11T04:12:05Z after 5.0s",
+                "left for a later run: 1 task",
+            ]);
+        }
+    }
+
+    [Test]
+    [NotInParallel(DiskHeavy.Key)]
+    public async Task A_stop_Dagline_asked_for_with_no_grace_period_limit_reads_as_waiting_for_the_running_tasks()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            using var temporary = new TemporaryDirectory();
+            var clock = new FakeTimeProvider(_firstRunStart);
+            var writer = new StringWriter();
+            var fails = new PausedBody();
+            var running = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("fails", fails.Body);
+            builder.Task("running", running.Body);
+            var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
+            var journal = JournalWriteFailure.SettleOf("fails").WithMessage("disk full").In(Journal.New(temporary.Path));
+            var options = new RunOptions { Journal = journal, GracePeriod = Timeout.InfiniteTimeSpan, TimeProvider = clock, Reporters = [reporter] };
+
+            var run = Runner.RunAsync(builder.Build(), options);
+            await fails.Started;
+            await running.Started;
+            clock.Advance(TimeSpan.FromSeconds(5));
+            fails.Release();
+            await reporter.Handled("stop requested");
+            running.Release();
+            var id = (await Should.ThrowAsync<JournalWriteException>(run)).Snapshot.Journal!.Id;
+
+            Lines(writer).ShouldBe(
+            [
+                "2026-11-11T04:12:00Z run started: 2 tasks",
+                $"2026-11-11T04:12:00Z journal {id} run 1",
+                "2026-11-11T04:12:00Z started fails",
+                "2026-11-11T04:12:00Z started running",
+                "2026-11-11T04:12:05Z succeeded fails in 5.0s",
+                "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting for 1 running task",
+                "2026-11-11T04:12:05Z succeeded running in 5.0s",
+                "2026-11-11T04:12:05Z run ended: journal write failed after 5.0s: disk full",
+                $"journal: {id} run 1",
+                "tasks: 2 succeeded",
+            ]);
+        }
     }
 
     /// <summary>What was written, one entry for each line, without the line break that ends the last one.</summary>
