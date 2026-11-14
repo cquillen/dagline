@@ -11,8 +11,8 @@ public class ProgressTests
         var builder = new GraphBuilder();
         var loadTask = builder.Task("load", async context =>
         {
-            context.Status("loading entities");
-            context.Count(17, 40);
+            context.SetStatusText("loading entities");
+            context.SetCount(17, 40);
             await load.Body(context);
         });
         var reporter = new RecordingReporter();
@@ -38,9 +38,9 @@ public class ProgressTests
         var builder = new GraphBuilder();
         var loadTask = builder.Task("load", async context =>
         {
-            context.Status("checking entities\r\nof shard-3");
+            context.SetStatusText("checking entities\r\nof shard-3");
             await multiLine.Body(context);
-            context.Status("");
+            context.SetStatusText("");
             await empty.Body(context);
         });
         var reporter = new RecordingReporter();
@@ -67,13 +67,13 @@ public class ProgressTests
         var builder = new GraphBuilder();
         var loadTask = builder.Task("load", async context =>
         {
-            context.Status("loading entities");
-            context.Status("checking entities");
-            context.Count(3, 40);
-            context.Count(4, 50);
+            context.SetStatusText("loading entities");
+            context.SetStatusText("checking entities");
+            context.SetCount(3, 40);
+            context.SetCount(4, 50);
             await first.Body(context);
-            context.Status(null);
-            context.Count(5);
+            context.SetStatusText(null);
+            context.SetCount(5);
             await second.Body(context);
         });
         var reporter = new RecordingReporter();
@@ -102,9 +102,9 @@ public class ProgressTests
         var builder = new GraphBuilder();
         var loadTask = builder.Task("load", context =>
         {
-            context.Count(0, 0);
-            Should.Throw<ArgumentOutOfRangeException>(() => context.Count(-1)).ParamName.ShouldBe("current");
-            Should.Throw<ArgumentOutOfRangeException>(() => context.Count(1, -1)).ParamName.ShouldBe("total");
+            context.SetCount(0, 0);
+            Should.Throw<ArgumentOutOfRangeException>(() => context.SetCount(-1)).ParamName.ShouldBe("current");
+            Should.Throw<ArgumentOutOfRangeException>(() => context.SetCount(1, -1)).ParamName.ShouldBe("total");
             return Task.CompletedTask;
         });
 
@@ -123,8 +123,8 @@ public class ProgressTests
         var builder = new GraphBuilder();
         var loadTask = builder.Task("load", context =>
         {
-            context.Status("loading entities");
-            context.Count(17, 40);
+            context.SetStatusText("loading entities");
+            context.SetCount(17, 40);
             throw new InvalidOperationException("entity 18 has no owner");
         });
         builder.Task("verify", verify.Body).After(loadTask);
@@ -172,8 +172,8 @@ public class ProgressTests
         var source = await reporter.Source;
         var context = await load.Started;
         var beforeTheProgress = source.Current;
-        context.Status("loading entities");
-        context.Count(17, 40);
+        context.SetStatusText("loading entities");
+        context.SetCount(17, 40);
         var afterTheProgress = source.Current;
         load.Release();
         await run;

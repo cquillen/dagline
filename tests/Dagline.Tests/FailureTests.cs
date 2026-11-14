@@ -95,8 +95,8 @@ public class FailureTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", async context =>
         {
-            context.Message("loading entities");
-            context.Detail("tenant-a: 25 entities", "tenant-b: 15 entities");
+            context.SetMessage("loading entities");
+            context.AddDetail("tenant-a: 25 entities", "tenant-b: 15 entities");
             await BreakAfterAnAwaitAsync(context);
         });
 
@@ -116,7 +116,7 @@ public class FailureTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", async context =>
         {
-            context.Detail([.. Enumerable.Range(1, 99).Select(entity => $"entity {entity}: loaded")]);
+            context.AddDetail([.. Enumerable.Range(1, 99).Select(entity => $"entity {entity}: loaded")]);
             await BreakAfterAnAwaitAsync(context);
         });
 

@@ -88,7 +88,7 @@ public sealed class TaskHarness : IAsyncDisposable
     /// with. This is how a first run is cut short, so that a later <see cref="RunAsync"/> can test how the task re-attaches.
     /// </summary>
     /// <returns>
-    /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntil"/> it is
+    /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntilAsync"/> it is
     /// <see cref="NodeStatus.Cancelled"/> with <see cref="TaskOutcome.Waited"/> <see langword="true"/>. A task that handles the
     /// stop itself, by catching the cancellation and reporting, returns the outcome it chose. A task that settles without ever
     /// waiting returns its own outcome, and the call does not hang.

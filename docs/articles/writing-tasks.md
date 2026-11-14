@@ -27,12 +27,12 @@ A run creates one context for each task it starts. The context gives the body:
 | `Path` | The path of the task this body is running as. |
 | `TimeProvider` | The clock of the run. Take delays and timestamps from it so that a test controls time. |
 | `CancellationToken` | Signalled when the run is [stopped](#when-the-run-is-stopped). Pass it to everything the body awaits. |
-| `Status`, `Count` | [Progress](#progress-status-text-and-a-count): what the task is doing now. |
-| `Warn` | [Warnings](#warnings): notes that do not change the task's status. |
-| `Message`, `Detail` | The [outcome](#message-and-detail): what the task did or found. |
+| `SetStatusText`, `SetCount` | [Progress](#progress-status-text-and-a-count): what the task is doing now. |
+| `AddWarning` | [Warnings](#warnings): notes that do not change the task's status. |
+| `SetMessage`, `AddDetail` | The [outcome](#message-and-detail): what the task did or found. |
 | `Fail` | A [reported failure](#failures). |
 | `StatusOf` | [The status of a node](#reading-the-status-of-a-dependency) this task depends on. |
-| `WaitUntil`, `Waiting` | [Waiting on an external system](waiting-on-external-systems.md): checking at an interval, marked as idle. |
+| `WaitUntilAsync`, `BeginWaiting` | [Waiting on an external system](waiting-on-external-systems.md): checking at an interval, marked as idle. |
 | `Checkpoint`, `SaveCheckpointAsync`, `ClearCheckpointAsync` | A [checkpoint](#checkpoints): text the task keeps for a later run of itself. |
 
 A task **succeeds** when its body completes without an exception and without having called `Fail`. Otherwise it **fails**: see [Failures](#failures).
@@ -77,17 +77,17 @@ static async Task CheckAsync(Tenant tenant, EntityStore store, TaskContext conte
 {
     var entities = await store.EntitiesOfAsync(tenant);
 
-    context.Status("checking entities");
+    context.SetStatusText("checking entities");
     for (var checkedSoFar = 0; checkedSoFar < entities.Count; checkedSoFar++)
     {
         await CheckOneAsync(entities[checkedSoFar]);
-        context.Count(checkedSoFar + 1, entities.Count);
+        context.SetCount(checkedSoFar + 1, entities.Count);
     }
 }
 ```
 
-- <xref:Dagline.TaskContext.Status*> replaces the status text. Pass `null` or empty text to clear it. Other text is kept as you give it. Keep it to one line: the reporters print a line break in it as a space.
-- <xref:Dagline.TaskContext.Count*> replaces the count and its total. The total is optional: leave it out for a running tally. A call without a total clears the last one. A negative count or total throws `ArgumentOutOfRangeException`.
+- <xref:Dagline.TaskContext.SetStatusText*> replaces the status text. Pass `null` or empty text to clear it. Other text is kept as you give it. Keep it to one line: the reporters print a line break in it as a space.
+- <xref:Dagline.TaskContext.SetCount*> replaces the count and its total. The total is optional: leave it out for a running tally. A call without a total clears the last one. A negative count or total throws `ArgumentOutOfRangeException`.
 - The text and the count are independent: setting one leaves the other as it was.
 
 Progress shows in the snapshot as <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total>. It is **never an event**, so reporting it often does not flood a reporter: a reporter reads it from the [snapshot source](reporters.md#progress-on-a-timer-the-snapshot-source) when it draws.
@@ -101,11 +101,11 @@ A warning is a one-line note that a task attaches to its own outcome. It never c
 ```csharp
 if (entity.Region is null)
 {
-    context.Warn($"entity {entity.Id} has no region");
+    context.AddWarning($"entity {entity.Id} has no region");
 }
 ```
 
-<xref:Dagline.TaskContext.Warn*> does two things at once:
+<xref:Dagline.TaskContext.AddWarning*> does two things at once:
 
 - It adds the warning to <xref:Dagline.NodeSnapshot.Warnings>, where it stays whether the task goes on to succeed or to fail.
 - It publishes a <xref:Dagline.WarningAdded> event, so reporters can show the warning live. A warning added before the body ends always comes before the event of the task settling.
@@ -119,20 +119,20 @@ A line break in a warning is replaced by a space, so a warning is always one lin
 A task's outcome is what it leaves behind when it settles: its status, a one-line **message**, **detail lines** and its warnings. Message and detail are not only for failures. A task that succeeds can say what it did:
 
 ```csharp
-context.Message($"checked {entities.Count} entities");
-context.Detail($"tenant {tenant.Name}: {entities.Count} entities", $"oldest: {oldest:yyyy-MM-dd}");
+context.SetMessage($"checked {entities.Count} entities");
+context.AddDetail($"tenant {tenant.Name}: {entities.Count} entities", $"oldest: {oldest:yyyy-MM-dd}");
 ```
 
-- <xref:Dagline.TaskContext.Message*> replaces the message. A line break in it is replaced by a space. An empty message clears it, so `context.Message("")` takes back a message set earlier.
-- <xref:Dagline.TaskContext.Detail*> adds lines after those already there. Text that holds line breaks is split into one line per break, so a multi-line text can be passed whole.
+- <xref:Dagline.TaskContext.SetMessage*> replaces the message. A line break in it is replaced by a space. An empty message clears it, so `context.SetMessage("")` takes back a message set earlier.
+- <xref:Dagline.TaskContext.AddDetail*> adds lines after those already there. Text that holds line breaks is split into one line per break, so a multi-line text can be passed whole.
 
 They show as <xref:Dagline.NodeSnapshot.Message> and <xref:Dagline.NodeSnapshot.Detail>, and the event of the task settling carries them, so a reporter can print the message on the line that says the task succeeded.
 
 ### One rule for the text a task reports
 
-A message and waiting text follow one rule, applied where the task reports them: each is kept as one line, every line break replaced by a space, and empty text means none. So `context.Message("")`, `context.Fail("")` and `context.Waiting("")` leave the task with no message or no waiting text, and a reporter only ever tests for null. The <xref:Dagline.WaitingChanged> event carries the waiting text as it is kept. A message an earlier run recorded in a [journal](journals.md) is read back as it was written.
+A message and waiting text follow one rule, applied where the task reports them: each is kept as one line, every line break replaced by a space, and empty text means none. So `context.SetMessage("")`, `context.Fail("")` and `context.BeginWaiting("")` leave the task with no message or no waiting text, and a reporter only ever tests for null. The <xref:Dagline.WaitingChanged> event carries the waiting text as it is kept. A message an earlier run recorded in a [journal](journals.md) is read back as it was written.
 
-A warning is always one line too. Status text follows half of the rule: empty status text means none, so `context.Status("")` clears it like `context.Status(null)`, but other text is kept as given, line breaks included, and each reporter prints a line break in it as a space. A task may report status text many thousands of times a second, and making it one line each time was measured to slow that loop, so the work is left to the reporter, which does it only when it prints.
+A warning is always one line too. Status text follows half of the rule: empty status text means none, so `context.SetStatusText("")` clears it like `context.SetStatusText(null)`, but other text is kept as given, line breaks included, and each reporter prints a line break in it as a space. A task may report status text many thousands of times a second, and making it one line each time was measured to slow that loop, so the work is left to the reporter, which does it only when it prints.
 
 ## Failures
 
@@ -201,7 +201,7 @@ var regions = checks.Task("regions", CheckRegionsAsync);
 builder.Task("report", context =>
 {
     var failed = new[] { owners, regions }.Where(check => context.StatusOf(check) is NodeStatus.Failed).ToList();
-    context.Message(context.StatusOf(checks) is NodeStatus.Succeeded
+    context.SetMessage(context.StatusOf(checks) is NodeStatus.Succeeded
         ? "every check succeeded"
         : $"{failed.Count} checks failed: {string.Join(", ", failed.Select(check => check.Path))}");
     return Task.CompletedTask;
@@ -255,7 +255,7 @@ builder.Task("load", async context =>
     foreach (var page in pages)
     {
         await LoadPageAsync(page, context.CancellationToken);
-        context.Count(page.Number, pages.Count);
+        context.SetCount(page.Number, pages.Count);
     }
 });
 ```
@@ -280,7 +280,7 @@ Such a task has the message `still running when the run stopped waiting`, in pla
 
 Its body may go on, but nothing it does changes the run:
 
-- `Status`, `Count`, `Warn`, `Message`, `Detail` and `Fail` do nothing and do not throw. `Waiting` returns a scope that does nothing, and disposing a scope does nothing.
+- `SetStatusText`, `SetCount`, `AddWarning`, `SetMessage`, `AddDetail` and `Fail` do nothing and do not throw. `BeginWaiting` returns a scope that does nothing, and disposing a scope does nothing.
 - `SaveCheckpointAsync` and `ClearCheckpointAsync` throw `InvalidOperationException`, since nothing they did would be kept.
 - `StatusOf`, `Checkpoint`, `Path`, `TimeProvider` and `CancellationToken` keep working, and the token stays signalled.
 - When the body ends, however it ends, no event is published and no snapshot changes. An exception from it is observed and dropped, so it never surfaces as an unobserved task exception.
@@ -289,4 +289,4 @@ A body that honours its token never gets here. Pass the token to everything you 
 
 ## After the task has settled
 
-Once a task has settled, its outcome is fixed. If a body leaves work running that still holds the context, `Status`, `Count`, `Warn`, `Message`, `Detail` and `Fail` then change nothing and publish nothing. They still check their arguments, and `Fail` still returns an exception. `StatusOf` and `Checkpoint` still answer. `SaveCheckpointAsync` and `ClearCheckpointAsync` throw `InvalidOperationException`, so that a task never believes a checkpoint was kept when it was not.
+Once a task has settled, its outcome is fixed. If a body leaves work running that still holds the context, `SetStatusText`, `SetCount`, `AddWarning`, `SetMessage`, `AddDetail` and `Fail` then change nothing and publish nothing. They still check their arguments, and `Fail` still returns an exception. `StatusOf` and `Checkpoint` still answer. `SaveCheckpointAsync` and `ClearCheckpointAsync` throw `InvalidOperationException`, so that a task never believes a checkpoint was kept when it was not.

@@ -13,7 +13,7 @@ public class HeaderTests
         var first = builder.Task("a", a.Body);
         builder.Task("b", async context =>
         {
-            using var wait = context.Waiting("job 7");
+            using var wait = context.BeginWaiting("job 7");
             await b.Body(context);
         });
         builder.Task("c", _ => Task.CompletedTask).Requires(first);
@@ -42,8 +42,8 @@ public class HeaderTests
         var builder = new GraphBuilder();
         var a = builder.Task("a", context =>
         {
-            context.Warn("first");
-            context.Warn("second");
+            context.AddWarning("first");
+            context.AddWarning("second");
             throw context.Fail("broken");
         });
         builder.Task("b", _ => Task.CompletedTask).Requires(a);

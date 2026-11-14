@@ -151,13 +151,13 @@ public class ProblemsTests
         await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 24);
         var contextA = await a.Started;
         var contextB = await b.Started;
-        contextA.Warn("one");
+        contextA.AddWarning("one");
         await display.Handled("warning a: one");
-        contextB.Warn("two");
+        contextB.AddWarning("two");
         await display.Handled("warning b: two");
-        contextA.Warn("three");
+        contextA.AddWarning("three");
         await display.Handled("warning a: three");
-        contextB.Warn("four");
+        contextB.AddWarning("four");
         await display.Handled("warning b: four");
         var frame = display.NextFrame();
         a.Release();
@@ -191,7 +191,7 @@ public class ProblemsTests
         {
             for (var warning = 1; warning <= 101; warning++)
             {
-                context.Warn($"w{warning}");
+                context.AddWarning($"w{warning}");
             }
 
             await a.Body(context);

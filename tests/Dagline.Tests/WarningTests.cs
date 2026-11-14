@@ -14,7 +14,7 @@ public class WarningTests
         var load = builder.Task("load", context =>
         {
             clock.Advance(TimeSpan.FromSeconds(2));
-            context.Warn("entity 9 has no region");
+            context.AddWarning("entity 9 has no region");
             return Task.CompletedTask;
         });
         var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(load);
@@ -61,8 +61,8 @@ public class WarningTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", context =>
         {
-            context.Warn("entity 9 has no region");
-            context.Warn("entity 12 has no region");
+            context.AddWarning("entity 9 has no region");
+            context.AddWarning("entity 12 has no region");
             throw new InvalidOperationException("entity 18 has no owner");
         });
 
@@ -79,7 +79,7 @@ public class WarningTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", context =>
         {
-            context.Warn("entity 9\r\nhas no region\nor no owner\rat all");
+            context.AddWarning("entity 9\r\nhas no region\nor no owner\rat all");
             return Task.CompletedTask;
         });
         var reporter = new RecordingReporter();
@@ -98,14 +98,14 @@ public class WarningTests
         {
             for (var entity = 1; entity <= 103; entity++)
             {
-                context.Warn($"entity {entity} has no region");
+                context.AddWarning($"entity {entity} has no region");
             }
 
             return Task.CompletedTask;
         });
         var verify = builder.Task("verify", context =>
         {
-            context.Warn("entity 7 has no owner");
+            context.AddWarning("entity 7 has no owner");
             return Task.CompletedTask;
         });
         var reporter = new RecordingReporter();
@@ -130,14 +130,14 @@ public class WarningTests
         var shard = builder.Group("shard-1");
         var load = shard.Task("load", context =>
         {
-            context.Warn("entity 9 has no region");
-            context.Warn("entity 12 has no region");
+            context.AddWarning("entity 9 has no region");
+            context.AddWarning("entity 12 has no region");
             return Task.CompletedTask;
         });
         shard.Task("verify", _ => Task.CompletedTask);
         var publish = builder.Task("publish", context =>
         {
-            context.Warn("nothing to publish for tenant-b");
+            context.AddWarning("nothing to publish for tenant-b");
             throw new InvalidOperationException("the store is closed");
         });
         load.After(publish);

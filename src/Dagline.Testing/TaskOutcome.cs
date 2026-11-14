@@ -25,8 +25,8 @@ namespace Dagline.Testing;
 /// </param>
 /// <param name="Warnings">The warnings kept, in the order they were added, whatever status the task ended with.</param>
 /// <param name="Waited">
-/// <see langword="true"/> if the task began waiting at least once in the run, through <see cref="TaskContext.WaitUntil"/> or
-/// <see cref="TaskContext.Waiting"/>.
+/// <see langword="true"/> if the task began waiting at least once in the run, through <see cref="TaskContext.WaitUntilAsync"/> or
+/// <see cref="TaskContext.BeginWaiting"/>.
 /// </param>
 public sealed record TaskOutcome(
     NodeStatus Status,

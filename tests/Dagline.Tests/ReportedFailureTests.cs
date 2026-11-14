@@ -10,8 +10,8 @@ public class ReportedFailureTests
         var builder = new GraphBuilder();
         var verify = builder.Task("verify", context =>
         {
-            context.Message("checking entities");
-            context.Detail("checked 40 entities");
+            context.SetMessage("checking entities");
+            context.AddDetail("checked 40 entities");
             throw context.Fail("2 bad entities", "entity 3: missing owner", "entity 17: bad date\nentity 17: no region");
         });
         var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(verify);

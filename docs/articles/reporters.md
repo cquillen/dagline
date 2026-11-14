@@ -50,7 +50,7 @@ A warning is a step of its own, and so is a stop being applied, and so is a task
 
 ### Waiting is a marker
 
-A task that triggers work in an external system and then waits for it opens a waiting scope with <xref:Dagline.TaskContext.Waiting(System.String)>. While a scope is open the task is **waiting**: it is idle, not working. Waiting is never a status. The task is running throughout, it keeps its slots, and its group and the run outcome are what they would be without the marker. A reporter uses it only to show idle tasks apart from working ones.
+A task that triggers work in an external system and then waits for it opens a waiting scope with <xref:Dagline.TaskContext.BeginWaiting(System.String)>. While a scope is open the task is **waiting**: it is idle, not working. Waiting is never a status. The task is running throughout, it keeps its slots, and its group and the run outcome are what they would be without the marker. A reporter uses it only to show idle tasks apart from working ones.
 
 A wait begins when the task's first open scope opens and ends when its last one closes, so `WaitingChanged` comes in pairs: one with `Waiting` true and `Since` equal to `At`, then one with `Waiting` false and the same `Text` and `Since`. Overlapping scopes make one wait with the text and time of the scope that opened first, and a task that waits twice in a run gives two pairs.
 

@@ -11,11 +11,11 @@ public class InstantClockRunTests
         var firstChecks = 0;
         var secondChecks = 0;
         var builder = new GraphBuilder();
-        var first = builder.Task("first", context => context.WaitUntil(
+        var first = builder.Task("first", context => context.WaitUntilAsync(
             TimeSpan.FromHours(1),
             _ => Task.FromResult(++firstChecks == 4),
             "the first export to finish"));
-        var second = builder.Task("second", context => context.WaitUntil(
+        var second = builder.Task("second", context => context.WaitUntilAsync(
             TimeSpan.FromHours(2),
             _ => Task.FromResult(++secondChecks == 3),
             "the second export to finish"));
@@ -36,7 +36,7 @@ public class InstantClockRunTests
         var clock = new InstantClock(TimeSpan.FromDays(1));
         var checks = 0;
         var builder = new GraphBuilder();
-        var stuck = builder.Task("stuck", context => context.WaitUntil(
+        var stuck = builder.Task("stuck", context => context.WaitUntilAsync(
             TimeSpan.FromHours(1),
             _ =>
             {

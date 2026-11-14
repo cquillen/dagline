@@ -16,7 +16,7 @@ public class TaskCountsTests
         var load = tenant.Task("load", loading.Body).After(check);
         var poll = tenant.Task("poll", async context =>
         {
-            using (context.Waiting("job 17"))
+            using (context.BeginWaiting("job 17"))
             {
                 await polling.Body(context);
             }
@@ -151,9 +151,9 @@ public class TaskCountsTests
         var first = await firstPoll.Started;
         var second = await secondPoll.Started;
         var bothWorking = source.Current;
-        var firstWait = first.Waiting("job 17");
+        var firstWait = first.BeginWaiting("job 17");
         var oneWaiting = source.Current;
-        var secondWait = second.Waiting("job 18");
+        var secondWait = second.BeginWaiting("job 18");
         var bothWaiting = source.Current;
         firstWait.Dispose();
         var oneWaitingAgain = source.Current;
@@ -213,7 +213,7 @@ public class TaskCountsTests
         var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         var context = await polling.Started;
-        using var wait = context.Waiting("job 17");
+        using var wait = context.BeginWaiting("job 17");
         var waiting = source.Current;
         polling.Release();
         var result = await run;
@@ -237,7 +237,7 @@ public class TaskCountsTests
         var noisy = tenant.Task("noisy", warning.Body);
         var quiet = shard.Task("quiet", context =>
         {
-            context.Warn("entity 9 has no region");
+            context.AddWarning("entity 9 has no region");
             return Task.CompletedTask;
         });
         var reporter = new RecordingReporter();
@@ -247,11 +247,11 @@ public class TaskCountsTests
         var context = await warning.Started;
         for (var entity = 1; entity <= 100; entity++)
         {
-            context.Warn($"entity {entity} has no region");
+            context.AddWarning($"entity {entity} has no region");
         }
 
         var atTheNumberKept = source.Current;
-        context.Warn("entity 101 has no region");
+        context.AddWarning("entity 101 has no region");
         var beyondIt = source.Current;
         warning.Release();
         var result = await run;
@@ -282,12 +282,12 @@ public class TaskCountsTests
         var context = await warning.Started;
         for (var entity = 1; entity <= 100; entity++)
         {
-            context.Warn($"entity {entity} has no region");
+            context.AddWarning($"entity {entity} has no region");
         }
 
         var atTheNumberKept = source.Current;
-        context.Warn("entity 101 has no region");
-        context.Warn("entity 102 has no region");
+        context.AddWarning("entity 101 has no region");
+        context.AddWarning("entity 102 has no region");
         var beyondIt = source.Current;
         warning.Release();
         var result = await run;
@@ -314,14 +314,14 @@ public class TaskCountsTests
         {
             for (var entity = 1; entity <= 101; entity++)
             {
-                context.Warn($"entity {entity} has no region");
+                context.AddWarning($"entity {entity} has no region");
             }
 
             return Task.CompletedTask;
         });
         var verify = tenant.Task("verify", context =>
         {
-            context.Warn("entity 7 has no owner");
+            context.AddWarning("entity 7 has no owner");
             return fail ? throw context.Fail("bad data") : Task.CompletedTask;
         });
         var graph = builder.Build();
@@ -354,9 +354,9 @@ public class TaskCountsTests
         var source = await reporter.Source;
         var context = await warning.Started;
         var beforeTheWarnings = source.Current;
-        context.Warn("entity 1 has no region");
+        context.AddWarning("entity 1 has no region");
         var afterOneWarning = source.Current;
-        context.Warn("entity 2 has no region");
+        context.AddWarning("entity 2 has no region");
         var afterTwoWarnings = source.Current;
         warning.Release();
         var result = await run;

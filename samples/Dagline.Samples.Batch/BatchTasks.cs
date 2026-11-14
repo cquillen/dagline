@@ -9,15 +9,15 @@ public static class BatchTasks
     /// <summary>Fetches a tenant's entities and leaves a message with the count.</summary>
     public static async Task Load(string tenant, EntityStore store, TaskContext context)
     {
-        context.Status("fetching entities");
+        context.SetStatusText("fetching entities");
         var entities = await store.FetchAsync(tenant, context.TimeProvider, context.CancellationToken);
-        context.Message($"{entities.Count} entities");
+        context.SetMessage($"{entities.Count} entities");
     }
 
     /// <summary>Counts through a tenant's entities, warns for tenants seeded to warn, and fails on bad entities.</summary>
     public static async Task Validate(string tenant, EntityStore store, TaskContext context)
     {
-        context.Status("validating entities");
+        context.SetStatusText("validating entities");
         var entities = store.EntitiesOf(tenant);
 
         var validated = 0;
@@ -25,12 +25,12 @@ public static class BatchTasks
         {
             await store.CheckAsync(tenant, batch, context.TimeProvider, context.CancellationToken);
             validated += batch.Length;
-            context.Count(validated, entities.Count);
+            context.SetCount(validated, entities.Count);
         }
 
         if (EntityStore.WarningFor(tenant) is { } warning)
         {
-            context.Warn(warning);
+            context.AddWarning(warning);
         }
 
         var bad = entities.Where(entity => entity.IsBad).Select(entity => $"entity {entity.Number}: a required field is empty").ToArray();
@@ -39,7 +39,7 @@ public static class BatchTasks
             throw context.Fail($"{bad.Length} of {entities.Count} entities are bad", bad);
         }
 
-        context.Message($"{entities.Count} entities valid");
+        context.SetMessage($"{entities.Count} entities valid");
     }
 
     /// <summary>
@@ -60,9 +60,9 @@ public static class BatchTasks
             await context.SaveCheckpointAsync(job);
         }
 
-        context.Status($"job {job}");
+        context.SetStatusText($"job {job}");
         var status = JobStatus.Running;
-        await context.WaitUntil(
+        await context.WaitUntilAsync(
             interval,
             async token =>
             {
@@ -78,14 +78,14 @@ public static class BatchTasks
             throw context.Fail($"job {job} ended in error", [.. log]);
         }
 
-        context.Message($"job {job} done");
+        context.SetMessage($"job {job} done");
     }
 
     /// <summary>Reads the status of each job task and writes how many succeeded.</summary>
     public static Task Report(IReadOnlyList<Node> jobTasks, TaskContext context)
     {
         var succeeded = jobTasks.Count(jobTask => context.StatusOf(jobTask) is NodeStatus.Succeeded);
-        context.Message($"{succeeded} of {jobTasks.Count} job tasks succeeded");
+        context.SetMessage($"{succeeded} of {jobTasks.Count} job tasks succeeded");
         return Task.CompletedTask;
     }
 }

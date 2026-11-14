@@ -111,7 +111,7 @@ public class SpaceTests
         bodies.Add(waited);
         builder.Group("wait").Task("a1", async context =>
         {
-            using var job = context.Waiting("job");
+            using var job = context.BeginWaiting("job");
             await waited.Body(context);
         });
         for (var i = 1; i <= 6; i++)
@@ -191,7 +191,7 @@ public class SpaceTests
                     bodies.Add(body);
                     wait.Task($"a{i}", async context =>
                     {
-                        using var job = context.Waiting("job");
+                        using var job = context.BeginWaiting("job");
                         await body.Body(context);
                     });
                 }

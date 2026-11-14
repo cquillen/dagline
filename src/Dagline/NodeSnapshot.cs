@@ -106,7 +106,7 @@ public sealed record NodeSnapshot
     /// The one-line message of the task's outcome, or <see langword="null"/> when it has none and for a group.
     /// </summary>
     /// <remarks>
-    /// It is the message the task last set with <see cref="TaskContext.Message"/> or <see cref="TaskContext.Fail"/>,
+    /// It is the message the task last set with <see cref="TaskContext.SetMessage"/> or <see cref="TaskContext.Fail"/>,
     /// and shows from the moment it is set, while the task is still running. For an unexpected failure it is the message
     /// of the exception that escaped the task body, which replaces any the task had set. When the exception's
     /// <see cref="Exception.Message"/> itself throws or gives <see langword="null"/>, it is the full name of the exception's type.
@@ -120,7 +120,7 @@ public sealed record NodeSnapshot
     /// The detail lines of the task's outcome, in the order added. Empty when it has none and for a group.
     /// </summary>
     /// <remarks>
-    /// They are the lines the task added with <see cref="TaskContext.Detail"/> and <see cref="TaskContext.Fail"/>,
+    /// They are the lines the task added with <see cref="TaskContext.AddDetail"/> and <see cref="TaskContext.Fail"/>,
     /// each shown from the moment it is added. An unexpected failure adds, after any lines the task had already added,
     /// the full name of the exception's type, then each line of its stack trace as the runtime wrote it.
     /// The stack trace is left out when the exception has none or when its <see cref="Exception.StackTrace"/> itself throws.
@@ -135,7 +135,7 @@ public sealed record NodeSnapshot
     public int DetailOmitted { get; internal init; }
 
     /// <summary>
-    /// The warnings the task added with <see cref="TaskContext.Warn"/>, in the order added, each on one line.
+    /// The warnings the task added with <see cref="TaskContext.AddWarning"/>, in the order added, each on one line.
     /// Empty when it added none and for a group.
     /// </summary>
     /// <remarks>
@@ -154,7 +154,7 @@ public sealed record NodeSnapshot
     /// only counted in <see cref="WarningsOmitted"/>. For a group, the sum of that number for the tasks beneath it at any depth.
     /// </summary>
     /// <remarks>
-    /// It counts every call of <see cref="TaskContext.Warn"/> a task made while it ran, and for an earlier success the warnings
+    /// It counts every call of <see cref="TaskContext.AddWarning"/> a task made while it ran, and for an earlier success the warnings
     /// it succeeded with. A group's number is kept up to date as each task beneath it is given a warning, one beyond the number
     /// kept included, so a snapshot shows it as of its own instant. A group lists no warnings of its own: read them from the tasks
     /// beneath it. <see cref="GroupSettled"/> does not carry this number.
@@ -165,7 +165,7 @@ public sealed record NodeSnapshot
     internal int WarningsBeneath { get; init; }
 
     /// <summary>
-    /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.Status"/>.
+    /// The status text of the task's progress: the line the task last set with <see cref="TaskContext.SetStatusText"/>.
     /// <see langword="null"/> when the task has set none or has cleared it, with <see langword="null"/> or empty text, and for a group.
     /// </summary>
     /// <remarks>
@@ -176,14 +176,14 @@ public sealed record NodeSnapshot
     public string? StatusText { get; internal init; }
 
     /// <summary>
-    /// The count of the task's progress: the number the task last gave <see cref="TaskContext.Count"/>.
+    /// The count of the task's progress: the number the task last gave <see cref="TaskContext.SetCount"/>.
     /// <see langword="null"/> when the task has given none, and for a group.
     /// </summary>
     /// <remarks>Like <see cref="StatusText"/>, it is never an event and is frozen when the task settles.</remarks>
     public long? Count { get; internal init; }
 
     /// <summary>
-    /// The total that <see cref="Count"/> is counting towards, as the task last gave it to <see cref="TaskContext.Count"/>.
+    /// The total that <see cref="Count"/> is counting towards, as the task last gave it to <see cref="TaskContext.SetCount"/>.
     /// <see langword="null"/> when the last count came with no total, when the task has given no count, and for a group.
     /// </summary>
     /// <remarks>
@@ -196,7 +196,7 @@ public sealed record NodeSnapshot
     /// or <see langword="null"/> while the task is not waiting, and for a group.
     /// </summary>
     /// <remarks>
-    /// A task waits from the moment its first <see cref="TaskContext.Waiting"/> scope opens until its last open scope closes.
+    /// A task waits from the moment its first <see cref="TaskContext.BeginWaiting"/> scope opens until its last open scope closes.
     /// Waiting is a marker on a running task and never a status. It is live only: it is cleared when the wait ends, and a task
     /// that has settled is never waiting. <see cref="WaitingChanged"/> announces each begin and end.
     /// </remarks>
@@ -212,7 +212,7 @@ public sealed record NodeSnapshot
     public string? WaitingText { get; internal init; }
 
     /// <summary>
-    /// <see langword="true"/> for a task that is running and waiting: one with a <see cref="TaskContext.Waiting"/> scope open.
+    /// <see langword="true"/> for a task that is running and waiting: one with a <see cref="TaskContext.BeginWaiting"/> scope open.
     /// For a group, <see langword="true"/> when it has running tasks beneath it and every one of them is waiting.
     /// </summary>
     /// <remarks>

@@ -18,24 +18,24 @@ public class AsciiTests
         var builder = new GraphBuilder();
         builder.Task("ok", context =>
         {
-            context.Warn("odd café");
+            context.AddWarning("odd café");
             return Task.CompletedTask;
         }).Title("Größe");
         builder.Task("after", _ => Task.CompletedTask).Requires(builder.Task("bad", context => throw context.Fail("no input ✗", "détail 🙂")));
         builder.Task("work", context =>
         {
-            context.Count(1, 4);
-            context.Status("a long status text… that the ellipsis has to cut off before the time at the end");
+            context.SetCount(1, 4);
+            context.SetStatusText("a long status text… that the ellipsis has to cut off before the time at the end");
             return work.Body(context);
         });
         builder.Task("wait", async context =>
         {
-            using var job = context.Waiting("job → 17");
+            using var job = context.BeginWaiting("job → 17");
             await wait.Body(context);
         });
         builder.Task("cancel", async context =>
         {
-            context.Message("arrêté");
+            context.SetMessage("arrêté");
             await cancel.Body(context);
         });
         builder.Task("later", _ => Task.CompletedTask).Requires(builder.Task("held", _ => Task.CompletedTask));

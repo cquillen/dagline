@@ -207,11 +207,11 @@ public class StopTests
         {
             var load = new StoppedBody(context =>
             {
-                context.Status("loading entities");
-                context.Count(40, 100);
-                context.Warn("entity 9 has no region");
-                context.Message("loaded 40 of 100 entities");
-                context.Detail("stopped at entity 41");
+                context.SetStatusText("loading entities");
+                context.SetCount(40, 100);
+                context.AddWarning("entity 9 has no region");
+                context.SetMessage("loaded 40 of 100 entities");
+                context.AddDetail("stopped at entity 41");
                 context.CancellationToken.ThrowIfCancellationRequested();
             });
             var builder = new GraphBuilder();
