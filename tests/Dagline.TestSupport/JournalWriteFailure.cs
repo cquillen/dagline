@@ -28,6 +28,20 @@ public sealed class JournalWriteFailure
     /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>
     public static JournalWriteFailure SettleOf(string taskPath) => EntryOf("taskSettled", taskPath);
 
+    /// <summary>
+    /// Fails the write that holds a checkpoint save of the task at <paramref name="taskPath"/>, the first one it makes. A clearing
+    /// is not a save, and is written.
+    /// </summary>
+    /// <param name="taskPath">The task's path as text, such as <c>shard-1/load</c>.</param>
+    /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>
+    public static JournalWriteFailure CheckpointSaveOf(string taskPath) => EntryOf("checkpointSaved", taskPath);
+
+    /// <summary>
+    /// Fails the write that holds the run's end: the last write of a run that ends with a run outcome. The run keeps its outcome,
+    /// and only the journal shows the failure, by recording no end.
+    /// </summary>
+    public static JournalWriteFailure EndOfRun() => KindOf("runEnded");
+
     /// <summary>The same journal choice, but with this write failing once the run opens the journal.</summary>
     /// <param name="journal">A new journal or one to continue, as <see cref="Journal.New"/> or <see cref="Journal.Continue"/> made it.</param>
     /// <exception cref="ArgumentNullException"><paramref name="journal"/> is <see langword="null"/>.</exception>
@@ -43,7 +57,13 @@ public sealed class JournalWriteFailure
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskPath);
 
-        var opening = $"{{\"entry\":\"{kind}\",\"path\":{JsonSerializer.Serialize(taskPath)},";
-        return new JournalWriteFailure(line => line.StartsWith(opening, StringComparison.Ordinal));
+        return LineOpeningWith($"{OpeningOf(kind)}\"path\":{JsonSerializer.Serialize(taskPath)},");
     }
+
+    private static JournalWriteFailure KindOf(string kind) => LineOpeningWith(OpeningOf(kind));
+
+    private static string OpeningOf(string kind) => $"{{\"entry\":\"{kind}\",";
+
+    private static JournalWriteFailure LineOpeningWith(string opening)
+        => new(line => line.StartsWith(opening, StringComparison.Ordinal));
 }
