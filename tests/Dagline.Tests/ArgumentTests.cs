@@ -42,11 +42,11 @@ public class ArgumentTests
     }
 
     [Test]
-    public void RunOptions_defaults_to_a_cap_of_sixteen_and_no_sizes()
+    public void RunOptions_defaults_to_sixteen_max_running_tasks_and_no_sizes()
     {
         var options = new RunOptions { Journal = Journal.None };
 
-        options.Cap.ShouldBe(16);
+        options.MaxRunningTasks.ShouldBe(16);
         options.Limits.ShouldBeEmpty();
     }
 

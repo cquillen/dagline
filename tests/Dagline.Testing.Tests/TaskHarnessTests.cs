@@ -149,7 +149,7 @@ public class TaskHarnessTests
     public async Task The_run_is_on_a_new_journal_in_a_temporary_directory_that_disposal_deletes()
     {
         var clock = new FakeTimeProvider(UniqueStart());
-        var harness = TaskHarness.For(_ => Task.CompletedTask, clock);
+        var harness = TaskHarness.For(_ => Task.CompletedTask, timeProvider: clock);
 
         await harness.RunAsync();
         var journal = FindJournal(clock.GetUtcNow());

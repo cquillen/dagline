@@ -18,7 +18,7 @@ public sealed record JournalSummary
         LatestRun = fold.LatestRun;
         Ending = EndingOf(fold.LatestOutcome, inUse);
         Counts = fold.LastStatusCounts();
-        Finished = fold.LatestOutcome is RunOutcome.Complete;
+        IsFinished = fold.LatestOutcome is RunOutcome.Complete;
     }
 
     /// <summary>The journal's id, which <see cref="Journal.Continue"/> and <see cref="Journals.DeleteAsync"/> take.</summary>
@@ -58,7 +58,7 @@ public sealed record JournalSummary
     /// Whether the journal is finished: its latest run recorded that it was <see cref="RunOutcome.Complete"/>. A finished journal can
     /// still be continued: with an unchanged graph the run is complete at once.
     /// </summary>
-    public bool Finished { get; }
+    public bool IsFinished { get; }
 
     private static JournalEnding EndingOf(RunOutcome? latestOutcome, bool inUse)
     {

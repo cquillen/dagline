@@ -249,7 +249,7 @@ public sealed class TaskContext
     /// <remarks>
     /// <para>
     /// Waiting is a marker on a running task and never a status. Dependencies, group status, the run outcome and the scheduler
-    /// ignore it, and a waiting task keeps the slots it holds in the cap and in its limits. Progress, warnings and the outcome
+    /// ignore it, and a waiting task keeps the slots it holds in the max running tasks and in its limits. Progress, warnings and the outcome
     /// work as usual while the task waits.
     /// </para>
     /// <para>
@@ -308,7 +308,7 @@ public sealed class TaskContext
     /// <para>
     /// There is no deadline, backoff or jitter, and tasks waiting at the same interval are not staggered. To give up after a
     /// while, compare the elapsed time on <see cref="TimeProvider"/> inside the check and fail the task.
-    /// While the task waits it keeps the slots it holds in the cap and in its limits.
+    /// While the task waits it keeps the slots it holds in the max running tasks and in its limits.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">

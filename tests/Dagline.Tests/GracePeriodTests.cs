@@ -60,12 +60,12 @@ public class GracePeriodTests
             ]);
             var requested = reporter.Events.OfType<StopRequested>().Single();
             requested.ShouldBe(new StopRequested(_runStart.AddSeconds(5), TimeSpan.FromSeconds(30)));
-            reporter.Events.OfType<StoppedWaiting>().Single()
-                .ShouldBe(new StoppedWaiting(_runStart.AddSeconds(35), StoppedWaitingReason.GracePeriodOver));
+            reporter.Events.OfType<GraceEnded>().Single()
+                .ShouldBe(new GraceEnded(_runStart.AddSeconds(35), GraceEndReason.GracePeriodOver));
             result.Snapshot[slowTask.Path].Message.ShouldBe(_leftBehind);
             result.Snapshot[stuckTask.Path].Settled.ShouldBe(_runStart.AddSeconds(35));
             result.Snapshot[tidy.Path].Status.ShouldBe(NodeStatus.Ready);
-            result.Snapshot.Cap.InUse.ShouldBe(0);
+            result.Snapshot.RunningTasks.InUse.ShouldBe(0);
             (await slow.Started).CancellationToken.IsCancellationRequested.ShouldBeTrue();
             slow.Release();
             stuck.Release();
@@ -93,7 +93,7 @@ public class GracePeriodTests
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
-            reporter.Events.OfType<StoppedWaiting>().ShouldBeEmpty();
+            reporter.Events.OfType<GraceEnded>().ShouldBeEmpty();
             reporter.Lines[^1].ShouldBe("run ended: stopped");
             result.Snapshot.Ended.ShouldBe(_runStart);
         }
@@ -191,7 +191,7 @@ public class GracePeriodTests
                 "run ended: stopped",
             ]);
             var requested = reporter.Events.OfType<StopRequested>().Single();
-            reporter.Events.OfType<StoppedWaiting>().Single().At.ShouldBe(requested.At);
+            reporter.Events.OfType<GraceEnded>().Single().At.ShouldBe(requested.At);
             result.Snapshot.Stop.ShouldBe(new StopState(requested.At, TimeSpan.Zero, requested.At, StopRequester.App));
             load.Release();
         }
@@ -221,7 +221,7 @@ public class GracePeriodTests
             load.Release();
             var result = await run;
 
-            reporter.Events.OfType<StoppedWaiting>().ShouldBeEmpty();
+            reporter.Events.OfType<GraceEnded>().ShouldBeEmpty();
             result.Snapshot[loadTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
             result.Snapshot.Stop.ShouldBe(new StopState(_runStart, Timeout.InfiniteTimeSpan, Deadline: null, StopRequester.App));
             reporter.Events.OfType<StopRequested>().Single().GracePeriod.ShouldBe(Timeout.InfiniteTimeSpan);
@@ -314,14 +314,14 @@ public class GracePeriodTests
         builder.Task("load", _ => Task.CompletedTask);
         var reporter = new RecordingReporter();
         var gracePeriod = TimeSpan.FromMilliseconds(milliseconds);
-        var options = new RunOptions { Journal = Journal.None, Cap = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
+        var options = new RunOptions { Journal = Journal.None, MaxRunningTasks = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
 
         var exception = Should.Throw<RunConfigurationException>(() => { _ = Runner.RunAsync(builder.Build(), options); });
 
         exception.Message.Split(Environment.NewLine).ShouldBe(
         [
             "The options cannot be used to run the graph:",
-            "- The cap is 0. It must be at least 1.",
+            "- MaxRunningTasks is 0. It must be at least 1.",
             $"- The grace period is {gracePeriod}. It must be zero or more, or Timeout.InfiniteTimeSpan to wait with no limit.",
         ]);
         reporter.Events.ShouldBeEmpty();
@@ -336,14 +336,14 @@ public class GracePeriodTests
         builder.Task("load", _ => Task.CompletedTask);
         var reporter = new RecordingReporter();
         var gracePeriod = TimeSpan.FromTicks(ticks);
-        var options = new RunOptions { Journal = Journal.None, Cap = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
+        var options = new RunOptions { Journal = Journal.None, MaxRunningTasks = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
 
         var exception = Should.Throw<RunConfigurationException>(() => { _ = Runner.RunAsync(builder.Build(), options); });
 
         exception.Message.Split(Environment.NewLine).ShouldBe(
         [
             "The options cannot be used to run the graph:",
-            "- The cap is 0. It must be at least 1.",
+            "- MaxRunningTasks is 0. It must be at least 1.",
             $"- The grace period is {gracePeriod}. It must be at most 49.17:02:47.2940000, about 49.7 days, or Timeout.InfiniteTimeSpan to wait with no limit.",
         ]);
         reporter.Events.ShouldBeEmpty();

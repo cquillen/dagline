@@ -33,7 +33,7 @@ public class JournalListingTests
         summary.Runs.ShouldBe(1);
         summary.LatestRun.ShouldBe(new JournalRunSummary(_created, _created.AddSeconds(5), Environment.UserName, Environment.MachineName));
         summary.Ending.ShouldBe(JournalEnding.Complete);
-        summary.Finished.ShouldBeTrue();
+        summary.IsFinished.ShouldBeTrue();
         summary.Counts[NodeStatus.Succeeded].ShouldBe(2);
         summary.Counts.Values.Sum().ShouldBe(2);
     }
@@ -51,7 +51,7 @@ public class JournalListingTests
         var summary = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Incomplete);
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
         summary.Description.ShouldBeNull();
         summary.Counts[NodeStatus.Failed].ShouldBe(1);
         summary.Counts[NodeStatus.Blocked].ShouldBe(1);
@@ -71,7 +71,7 @@ public class JournalListingTests
         var summary = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Stopped);
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
         summary.Counts.Values.Sum().ShouldBe(0);
         summary.Counts.Keys.ShouldBe(Enum.GetValues<NodeStatus>(), ignoreOrder: true);
     }
@@ -123,7 +123,7 @@ public class JournalListingTests
         var summary = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.InUse);
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
         summary.LatestRun.ShouldNotBeNull().Ended.ShouldBeNull();
         summary.Counts[NodeStatus.Running].ShouldBe(1);
         load.Release();
@@ -148,7 +148,7 @@ public class JournalListingTests
         var summary = (await Journals.ListAsync(copies.Path)).ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Died);
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
         summary.Runs.ShouldBe(1);
         summary.LatestRun.ShouldNotBeNull().Ended.ShouldBeNull();
         summary.Counts[NodeStatus.Running].ShouldBe(1);
@@ -174,7 +174,7 @@ public class JournalListingTests
         summary.Runs.ShouldBe(0);
         summary.Created.ShouldBe(_created);
         summary.Description.ShouldBe("all shards");
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
         summary.Counts.Values.Sum().ShouldBe(0);
     }
 
@@ -197,12 +197,12 @@ public class JournalListingTests
             new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), TimeProvider = clock });
         var afterSecond = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
 
-        afterFirst.Finished.ShouldBeFalse();
+        afterFirst.IsFinished.ShouldBeFalse();
         afterSecond.Runs.ShouldBe(2);
         afterSecond.Created.ShouldBe(_created);
         afterSecond.LatestRun.ShouldNotBeNull().Started.ShouldBe(_created.AddHours(1));
         afterSecond.Ending.ShouldBe(JournalEnding.Complete);
-        afterSecond.Finished.ShouldBeTrue();
+        afterSecond.IsFinished.ShouldBeTrue();
         afterSecond.Counts[NodeStatus.Succeeded].ShouldBe(2);
         afterSecond.Counts[NodeStatus.Failed].ShouldBe(0);
     }
@@ -245,7 +245,7 @@ public class JournalListingTests
         var summary = (await Journals.ListAsync(temporary.Path)).ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Incomplete);
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
     }
 
     [Test]

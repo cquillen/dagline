@@ -25,7 +25,7 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.WaitingChanged> | When a running task begins waiting on an external system and when it stops: once each per wait, however many waiting scopes overlap. | The path of the task, whether it is now waiting, the text saying what it waits for, and when the wait began. |
 | <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it, and never for one made only of earlier successes, which is settled from the start. | The path of the group, its status, and its <xref:Dagline.TaskCounts>: the tasks beneath it per status, with the earlier successes among the succeeded counted apart. Not the warnings beneath it: read the group's `WarningCount` from the snapshot handed with the event. |
 | <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | Who asked, `By`: the app through its `StopSignal`, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
-| <xref:Dagline.StoppedWaiting> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
+| <xref:Dagline.GraceEnded> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
 | <xref:Dagline.RunEnded> | Last, once per run. | Exactly one of the run outcome and an error: a run whose journal could no longer be written ends with a `JournalWriteException` in `Error` and a null `Outcome`. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
@@ -46,7 +46,7 @@ Each list is in declaration order. The steps of a run never overlap, so the even
 
 Once a stop has been applied, the last group is always empty: nothing starts.
 
-A warning is a step of its own, and so is a stop being applied, and so is a task beginning or ending a wait. A stop applied before any task has started gives `RunStarted`, the tasks that become ready, `StopRequested`, then `RunEnded`. When the run stops waiting with tasks still running, `StoppedWaiting` comes first, then each task it leaves behind, cancelled, in declaration order. A task that settles while it is still waiting ends its wait in the step in which it settles: the `WaitingChanged` that ends it comes immediately before that task's `TaskStatusChanged`, so a settled task is never waiting.
+A warning is a step of its own, and so is a stop being applied, and so is a task beginning or ending a wait. A stop applied before any task has started gives `RunStarted`, the tasks that become ready, `StopRequested`, then `RunEnded`. When the run stops waiting with tasks still running, `GraceEnded` comes first, then each task it leaves behind, cancelled, in declaration order. A task that settles while it is still waiting ends its wait in the step in which it settles: the `WaitingChanged` that ends it comes immediately before that task's `TaskStatusChanged`, so a settled task is never waiting.
 
 ### Waiting is a marker
 
@@ -70,7 +70,7 @@ report: ready -> running
 
 A blocked task gets one event, pending to blocked, and its `Node` names the failed task in <xref:Dagline.NodeSnapshot.BlockedBy>. A reporter that would rather print one line for a whole cascade than one per task can group consecutive blocked events by that path, as the plain-text reporter does.
 
-A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, the counts of the run's tasks, and how full the cap and each limit are. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
+A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, the counts of the run's tasks, and how full the max running tasks and each limit are. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
 
 A reporter gets snapshots in two ways:
 

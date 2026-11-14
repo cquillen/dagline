@@ -195,7 +195,7 @@ public sealed record StopRequested(DateTimeOffset At, StopRequester By, TimeSpan
 }
 
 /// <summary>
-/// The run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
+/// The grace ended: the run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -209,9 +209,9 @@ public sealed record StopRequested(DateTimeOffset At, StopRequester By, TimeSpan
 /// Nothing a task's body does after this changes the run, and nothing is published when the body ends.
 /// </para>
 /// </remarks>
-/// <param name="At">When the run stopped waiting.</param>
-/// <param name="Reason">Why the run stopped waiting.</param>
-public sealed record StoppedWaiting(DateTimeOffset At, StoppedWaitingReason Reason) : RunEvent(At);
+/// <param name="At">When the grace ended.</param>
+/// <param name="Reason">Why the grace ended: a second stop, or the grace period ran out.</param>
+public sealed record GraceEnded(DateTimeOffset At, GraceEndReason Reason) : RunEvent(At);
 
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <remarks>

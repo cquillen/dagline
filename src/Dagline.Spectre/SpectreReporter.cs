@@ -33,7 +33,8 @@ public static class SpectreReporter
     /// which run of it this is (or that there is no journal), the percentage of tasks settled and the time elapsed. The second is
     /// one bar for the whole run, split by status. The third counts the tasks per status, with the running tasks that are waiting
     /// apart from those that are working and the earlier successes in brackets after the succeeded, then the warnings, and at the
-    /// right the cap in use over its size, how many limits are full out of how many, and how many ready tasks are held.
+    /// right the running tasks over the max running tasks, labelled <c>cap</c>, how many limits are full out of how many, and how
+    /// many ready tasks are held.
     /// A count of zero is left out. Under the header come a stop banner once a stop has been applied, a row per group, the tasks
     /// that are working, the tasks that are waiting on external systems, and the problems so far, sharing the lines left. Below
     /// 60 columns or 15 rows the frame is the header alone. The terminal display article of the documentation describes every pane.

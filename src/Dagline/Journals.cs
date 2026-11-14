@@ -35,7 +35,7 @@ public static class Journals
     /// A journal cannot be read: it is in a format version this Dagline does not know, or is not a journal. The message names its
     /// file. The listing does not leave it out, so that no journal is ever missing from it unseen.
     /// </exception>
-    /// <exception cref="JournalOpenException">A journal's file or the directory cannot be read.</exception>
+    /// <exception cref="JournalAccessException">A journal's file or the directory cannot be read.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public static async Task<IReadOnlyList<JournalSummary>> ListAsync(string directory, CancellationToken cancellationToken = default)
     {
@@ -88,7 +88,7 @@ public static class Journals
     /// </exception>
     /// <exception cref="JournalInUseException">A run holds the journal.</exception>
     /// <exception cref="JournalNotFoundException">The directory has no journal with the id.</exception>
-    /// <exception cref="JournalOpenException">The lock file or the journal cannot be opened or removed.</exception>
+    /// <exception cref="JournalAccessException">The lock file or the journal cannot be opened or removed.</exception>
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken"/> was signalled before the deletion began. Nothing is deleted.
     /// </exception>
@@ -106,7 +106,7 @@ public static class Journals
             Delete(location);
             return Task.CompletedTask;
         }
-        catch (Exception failed) when (failed is JournalNotFoundException or JournalInUseException or JournalOpenException)
+        catch (Exception failed) when (failed is JournalNotFoundException or JournalInUseException or JournalAccessException)
         {
             return Task.FromException(failed);
         }
@@ -115,7 +115,7 @@ public static class Journals
     /// <summary>Deletes the journal at <paramref name="location"/> and its lock file, claiming the journal while it does.</summary>
     /// <exception cref="JournalNotFoundException">The directory has no journal with the id.</exception>
     /// <exception cref="JournalInUseException">A run holds the journal.</exception>
-    /// <exception cref="JournalOpenException">The lock file or the journal cannot be opened or removed.</exception>
+    /// <exception cref="JournalAccessException">The lock file or the journal cannot be opened or removed.</exception>
     private static void Delete(JournalLocation location)
     {
         location.ThrowIfNotFound();
@@ -126,7 +126,7 @@ public static class Journals
         }
         catch (Exception cannotDelete) when (FileSystemFailure.Is(cannotDelete))
         {
-            throw new JournalOpenException(location.FilePath, cannotDelete);
+            throw new JournalAccessException(location.FilePath, cannotDelete);
         }
     }
 
@@ -148,7 +148,7 @@ public static class Journals
         }
         catch (Exception cannotList) when (FileSystemFailure.Is(cannotList))
         {
-            throw new JournalOpenException(directory, cannotList);
+            throw new JournalAccessException(directory, cannotList);
         }
     }
 }

@@ -114,7 +114,7 @@ public class DrawingTests
         group.Task("first", working.Body);
         group.Task("second", _ => Task.CompletedTask).Requires(group.Task("third", _ => throw new InvalidOperationException("no")));
         builder.Task("later", _ => Task.CompletedTask).After(group);
-        var options = new RunOptions { Journal = Journal.None, Cap = 96 };
+        var options = new RunOptions { Journal = Journal.None, MaxRunningTasks = 96 };
 
         await using var display = await DisplayRun.StartAsync(builder.Build(), width, height, options);
         await display.Handled("validate/second: pending -> blocked");

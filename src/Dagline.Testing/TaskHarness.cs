@@ -38,18 +38,18 @@ public sealed class TaskHarness : IAsyncDisposable
     private string? _journalId;
     private bool _disposed;
 
-    private TaskHarness(TaskBody body, TimeProvider? clock)
+    private TaskHarness(TaskBody body, TimeProvider? timeProvider)
     {
         var builder = new GraphBuilder();
         _task = builder.Task("task", body).Path;
         _graph = builder.Build();
-        _runClock = clock ?? new InstantClock();
-        _stopClock = clock ?? new NeverEndingClock();
+        _runClock = timeProvider ?? new InstantClock();
+        _stopClock = timeProvider ?? new NeverEndingClock();
     }
 
     /// <summary>Wraps <paramref name="body"/> in a harness. Nothing runs and nothing touches the disk until the first run.</summary>
     /// <param name="body">The task body to run, as it would be handed to <see cref="GraphBuilder.Task"/>.</param>
-    /// <param name="clock">
+    /// <param name="timeProvider">
     /// The clock every run uses, as <see cref="RunOptions.TimeProvider"/>, and so the one the body sees as
     /// <see cref="TaskContext.TimeProvider"/>. It is used as is. With none, <see cref="RunAsync"/> uses an
     /// <see cref="InstantClock"/> with the default guard, one for the life of the harness, so its guard counts fake time across
@@ -58,10 +58,10 @@ public sealed class TaskHarness : IAsyncDisposable
     /// </param>
     /// <returns>The harness. Dispose it to delete its temporary journal.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="body"/> is <see langword="null"/>.</exception>
-    public static TaskHarness For(TaskBody body, TimeProvider? clock = null)
+    public static TaskHarness For(TaskBody body, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(body);
-        return new TaskHarness(body, clock);
+        return new TaskHarness(body, timeProvider);
     }
 
     /// <summary>Runs the task to the end of the run and returns its outcome from the run's final snapshot.</summary>

@@ -263,7 +263,7 @@ public class ContinueTests
     }
 
     [Test]
-    public async Task A_run_that_continues_with_a_different_cap_and_limit_sizes_works()
+    public async Task A_run_that_continues_with_different_max_running_tasks_and_limit_sizes_works()
     {
         using var temporary = new TemporaryDirectory();
         var fail = true;
@@ -274,19 +274,19 @@ public class ContinueTests
 
         var first = await Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.New(temporary.Path), Cap = 4, Limits = new Dictionary<string, int> { ["database"] = 2 } });
+            new RunOptions { Journal = Journal.New(temporary.Path), MaxRunningTasks = 4, Limits = new Dictionary<string, int> { ["database"] = 2 } });
         fail = false;
         var second = await Runner.RunAsync(
             graph,
             new RunOptions
             {
                 Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id),
-                Cap = 1,
+                MaxRunningTasks = 1,
                 Limits = new Dictionary<string, int> { ["database"] = 1 },
             });
 
         second.Outcome.ShouldBe(RunOutcome.Complete);
-        second.Snapshot.Cap.Size.ShouldBe(1);
+        second.Snapshot.RunningTasks.Size.ShouldBe(1);
         second.Snapshot.Counts.EarlierSuccesses.ShouldBe(1);
     }
 

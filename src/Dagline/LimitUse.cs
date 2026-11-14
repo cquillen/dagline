@@ -1,7 +1,7 @@
 namespace Dagline;
 
 /// <summary>
-/// How full a limit, or the cap, is at one instant.
+/// How full a limit, or the max running tasks, is at one instant.
 /// </summary>
 /// <param name="Size">How many slots there are: the most tasks holding the limit that may be running at once. At least 1.</param>
 /// <param name="InUse">

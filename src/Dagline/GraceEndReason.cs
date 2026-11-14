@@ -1,7 +1,7 @@
 namespace Dagline;
 
-/// <summary>Why a run stopped waiting for its running tasks after a stop, as <see cref="StoppedWaiting"/> gives it.</summary>
-public enum StoppedWaitingReason
+/// <summary>Why the grace ended: why a run stopped waiting for its running tasks after a stop, as <see cref="GraceEnded"/> gives it.</summary>
+public enum GraceEndReason
 {
     /// <summary>The <see cref="StopSignal"/> was requested a second time.</summary>
     SecondStop,

@@ -11,16 +11,16 @@ namespace Dagline;
 public sealed record RunOptions
 {
     /// <summary>
-    /// The cap: the most tasks that may be running at once in the run, whatever limits they hold. The default is 16.
+    /// The max running tasks: the most tasks that may be running at once in the run, whatever limits they hold. The default is 16.
     /// </summary>
     /// <remarks>
-    /// The cap behaves as a limit that every task holds: a task takes one slot of it when it starts and gives the slot back
-    /// when it settles. A ready task that finds the cap reached stays ready until a task settles.
+    /// It behaves as a limit that every task holds: a task takes one slot of it when it starts and gives the slot back
+    /// when it settles. A ready task that finds it reached stays ready until a task settles.
     /// The default is fixed, not derived from the processor count, since a task mostly waits on other systems.
-    /// The cap must be at least 1: <see cref="Runner.RunAsync"/> refuses a lower one
+    /// It must be at least 1: <see cref="Runner.RunAsync"/> refuses a lower one
     /// with <see cref="RunConfigurationException"/> before any task starts.
     /// </remarks>
-    public int Cap { get; init; } = 16;
+    public int MaxRunningTasks { get; init; } = 16;
 
     /// <summary>
     /// The size of each limit, by name: how many of the tasks that hold the limit may be running at once.
@@ -73,7 +73,7 @@ public sealed record RunOptions
     /// <para>
     /// The wait is measured on <see cref="TimeProvider"/> from the moment the stop is applied, and
     /// <see cref="Snapshot.Stop"/> carries its deadline. It ends early when the last running task ends, and at once on a second
-    /// request on the <see cref="StopSignal"/>. When it ends with tasks still running, the run publishes <see cref="StoppedWaiting"/>,
+    /// request on the <see cref="StopSignal"/>. When it ends with tasks still running, the run publishes <see cref="GraceEnded"/>,
     /// records each of those tasks as <see cref="NodeStatus.Cancelled"/> in declaration order and lets go of it: the run returns
     /// while its body may still be running.
     /// </para>

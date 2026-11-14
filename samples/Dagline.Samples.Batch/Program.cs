@@ -118,12 +118,12 @@ try
 {
     journals = await Journals.ListAsync(directory);
 }
-catch (DaglineException exception) when (exception is JournalOpenException or JournalFormatException)
+catch (DaglineException exception) when (exception is JournalAccessException or JournalFormatException)
 {
     return await RefuseAsync(exception.Message);
 }
 
-var unfinished = startNew ? null : journals.LastOrDefault(summary => !summary.Finished && summary.Description == description);
+var unfinished = startNew ? null : journals.LastOrDefault(summary => !summary.IsFinished && summary.Description == description);
 Journal journal;
 if (unfinished is null)
 {
@@ -147,7 +147,7 @@ try
 {
     result = await Runner.RunAsync(graph, new RunOptions
     {
-        Cap = 16,
+        MaxRunningTasks = 16,
         Limits = limits,
         Journal = journal,
         Reporters = [SpectreReporter.Create(new SpectreOptions
@@ -157,7 +157,7 @@ try
         })],
     }, stop);
 }
-catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalOpenException or JournalFormatException)
+catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalAccessException or JournalFormatException)
 {
     return await RefuseAsync(exception.Message);
 }
