@@ -6,7 +6,7 @@ The core `Dagline` package has no console or UI dependency. The display is a [re
 
 ## Using it
 
-Add the package and give the run the reporter that <xref:Dagline.Spectre.SpectreReporter.Auto*> returns:
+Add the package and give the run the reporter that <xref:Dagline.Spectre.SpectreReporter.Create*> returns:
 
 ```csharp
 using Dagline;
@@ -17,7 +17,7 @@ using var stop = ConsoleStop.Hook();
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = Journal.None,
-    Reporters = [SpectreReporter.Auto()],
+    Reporters = [SpectreReporter.Create()],
 }, stop);
 
 return result.Outcome.ToExitCode();
@@ -195,17 +195,24 @@ There is no exit code in the summary, so it never disagrees with the code your a
 
 ## Plain text instead
 
-`SpectreReporter.Auto` decides once, when it handles <xref:Dagline.RunStarted>, and keeps that choice for the run:
+`SpectreReporter.Create` decides once, when it handles <xref:Dagline.RunStarted>, and keeps that choice for the run:
 
 - With `DisplayMode.Auto`, the default, it chooses the display when standard output is not redirected and the console accepts ANSI sequences, and the plain-text reporter otherwise. Standard input is not looked at, so piping input into your app keeps the display, and neither is whether the process looks like it runs in CI, nor the size of the terminal.
 - `DisplayMode.Force` always chooses the display, even on a console that is not a terminal.
 - `DisplayMode.Never` always chooses plain text, and nothing is drawn on the console.
 
-The plain-text reporter is a <xref:Dagline.PlainTextReporter> on the writer you pass as `plainText`, or on standard output, and prints the run as timestamped lines: see [the plain-text reporter](reporters.md#the-plain-text-reporter). Give an operator with an unusual terminal a flag to fall back on:
+The plain-text reporter is a <xref:Dagline.PlainTextReporter> on the writer you set as <xref:Dagline.Spectre.SpectreOptions.PlainText>, or on standard output as it is when the run starts, and prints the run as timestamped lines: see [the plain-text reporter](reporters.md#the-plain-text-reporter). The reporter never closes the writer. If the display is chosen and drawing fails, the rest of the run goes to the same writer as plain text, after one line saying so.
+
+```csharp
+using var log = File.CreateText("run.log");
+var reporter = SpectreReporter.Create(new SpectreOptions { PlainText = log });
+```
+
+Give an operator with an unusual terminal a flag to fall back on:
 
 ```csharp
 var plain = args.Contains("--plain");
-var reporter = SpectreReporter.Auto(options: new SpectreOptions
+var reporter = SpectreReporter.Create(new SpectreOptions
 {
     Display = plain ? DisplayMode.Never : DisplayMode.Auto,
 });
@@ -216,7 +223,7 @@ var reporter = SpectreReporter.Auto(options: new SpectreOptions
 For a terminal or font that lacks the Unicode glyphs, set `Ascii`:
 
 ```csharp
-var reporter = SpectreReporter.Auto(options: new SpectreOptions { Ascii = true });
+var reporter = SpectreReporter.Create(new SpectreOptions { Ascii = true });
 ```
 
 The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Text from your graph and tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the error a run ended with, is drawn with each character outside ASCII as `?`, so `café` becomes `caf?`. Neither a frame nor the summary then writes any character outside ASCII.

@@ -1,7 +1,7 @@
 namespace Dagline.Spectre;
 
 /// <summary>
-/// Whether <see cref="SpectreReporter.Auto"/> gives the display, which draws the run on the terminal, or the plain-text
+/// Whether <see cref="SpectreReporter.Create"/> gives the display, which draws the run on the terminal, or the plain-text
 /// reporter, which prints it as lines of text.
 /// </summary>
 public enum DisplayMode

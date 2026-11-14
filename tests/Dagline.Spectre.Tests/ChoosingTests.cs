@@ -14,7 +14,7 @@ public class ChoosingTests
         builder.Task("work", _ => Task.CompletedTask);
         using var console = new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences();
         using var writer = new StringWriter();
-        var reporter = SpectreReporter.Auto(writer, new SpectreOptions { Display = DisplayMode.Never, Console = console });
+        var reporter = SpectreReporter.Create(new SpectreOptions { PlainText = writer, Display = DisplayMode.Never, Console = console });
 
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
 
@@ -31,7 +31,7 @@ public class ChoosingTests
         builder.Task("work", _ => Task.CompletedTask);
         using var console = new TestConsole().Size(new Size(80, 24));
         using var writer = new StringWriter();
-        var reporter = SpectreReporter.Auto(writer, new SpectreOptions { Display = DisplayMode.Force, Console = console });
+        var reporter = SpectreReporter.Create(new SpectreOptions { PlainText = writer, Display = DisplayMode.Force, Console = console });
 
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
 
@@ -50,7 +50,7 @@ public class ChoosingTests
         using var console = new TestConsole().Size(new Size(80, 24));
         console.Profile.Capabilities.Ansi = false;
         using var writer = new StringWriter();
-        var reporter = SpectreReporter.Auto(writer, new SpectreOptions { Console = console });
+        var reporter = SpectreReporter.Create(new SpectreOptions { PlainText = writer, Console = console });
 
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
 
@@ -68,7 +68,7 @@ public class ChoosingTests
         using var console = new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences();
         console.Profile.Capabilities.Ansi = true;
         using var writer = new StringWriter();
-        var reporter = new WatchedReporter(SpectreReporter.Auto(writer, new SpectreOptions { Console = console }));
+        var reporter = new WatchedReporter(SpectreReporter.Create(new SpectreOptions { PlainText = writer, Console = console }));
 
         // Only what the console accepts when the run starts counts, not what it accepted when the reporter was made.
         console.Profile.Capabilities.Ansi = false;
@@ -93,7 +93,7 @@ public class ChoosingTests
         var clock = new FakeTimeProvider(DisplayRun.RunStart);
         using var writer = new StringWriter();
         var reporter = new WatchedReporter(
-            SpectreReporter.Auto(writer, new SpectreOptions { Display = DisplayMode.Never, TimeProvider = clock }));
+            SpectreReporter.Create(new SpectreOptions { PlainText = writer, Display = DisplayMode.Never, TimeProvider = clock }));
 
         var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         await reporter.Handled("work: ready -> running");

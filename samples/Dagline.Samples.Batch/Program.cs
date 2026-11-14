@@ -150,7 +150,7 @@ try
         Cap = 16,
         Limits = limits,
         Journal = journal,
-        Reporters = [SpectreReporter.Auto(options: new SpectreOptions
+        Reporters = [SpectreReporter.Create(new SpectreOptions
         {
             Display = plain ? DisplayMode.Never : DisplayMode.Auto,
             Ascii = ascii,
