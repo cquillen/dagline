@@ -28,14 +28,14 @@ internal sealed class JournalLock : IDisposable
 
     /// <summary>Claims the journal at <paramref name="location"/> until disposed, creating its lock file if missing.</summary>
     /// <exception cref="JournalInUseException">Another run has claimed the journal.</exception>
-    /// <exception cref="JournalOpenException">The lock file cannot be opened or created.</exception>
+    /// <exception cref="JournalAccessException">The lock file cannot be opened or created.</exception>
     public static JournalLock Claim(JournalLocation location) => new(Open(location, FileMode.OpenOrCreate, FileOptions.None));
 
     /// <summary>
     /// Claims the journal at <paramref name="location"/> so that it can be deleted: the lock file goes when this is disposed.
     /// </summary>
     /// <exception cref="JournalInUseException">Another run has claimed the journal.</exception>
-    /// <exception cref="JournalOpenException">The lock file cannot be opened or created.</exception>
+    /// <exception cref="JournalAccessException">The lock file cannot be opened or created.</exception>
     public static JournalLock ClaimToDelete(JournalLocation location)
         => new(Open(location, FileMode.OpenOrCreate, FileOptions.DeleteOnClose));
 
@@ -54,7 +54,7 @@ internal sealed class JournalLock : IDisposable
         {
             return true;
         }
-        catch (JournalOpenException cannotOpen) when (cannotOpen.InnerException is FileNotFoundException or DirectoryNotFoundException)
+        catch (JournalAccessException cannotOpen) when (cannotOpen.InnerException is FileNotFoundException or DirectoryNotFoundException)
         {
             return false;
         }
@@ -75,7 +75,9 @@ internal sealed class JournalLock : IDisposable
         }
         catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen))
         {
-            throw new JournalOpenException(location.LockPath, cannotOpen);
+            throw mode is FileMode.Open
+                ? JournalAccessException.LockNotOpened(location, cannotOpen)
+                : JournalAccessException.LockNotOpenedOrCreated(location, cannotOpen);
         }
     }
 

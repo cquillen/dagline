@@ -6,7 +6,9 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Dagline itself never hooks Ctrl+C or a process signal. The app decides what asks for a stop and calls <see cref="Request"/>.
+/// Dagline hooks no Ctrl+C and no process signal unless the app calls <see cref="ConsoleStop.Hook"/>, which gives a signal of
+/// this kind hooked to Ctrl+C and SIGTERM. Otherwise the app decides what asks for a stop and calls <see cref="Request"/>.
+/// A signal made with <see langword="new"/> holds no resource and is not disposable.
 /// </para>
 /// <para>
 /// The first request is a stop: from then on the run starts nothing, signals <see cref="TaskContext.CancellationToken"/>
@@ -25,7 +27,7 @@ namespace Dagline;
 /// The same signal can therefore be passed to a second run after the first has ended, and that run stops from its start.
 /// </para>
 /// <para>
-/// The class is not sealed so that a UI package can offer a signal hooked to the console. Its members are not virtual.
+/// The class is not sealed so that <see cref="ConsoleStop"/> can derive from it. Its members are not virtual.
 /// </para>
 /// </remarks>
 public class StopSignal

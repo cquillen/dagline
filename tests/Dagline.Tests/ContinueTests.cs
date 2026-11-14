@@ -20,7 +20,7 @@ public class ContinueTests
         var id = first.Snapshot.Journal!.Id;
         var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) });
 
-        second.Snapshot.Journal.ShouldBe(new JournalInfo(id, "all shards", 2));
+        (second.Snapshot.Journal!.Id, second.Snapshot.Journal.Description, second.Snapshot.Journal.Run).ShouldBe((id, "all shards", 2));
     }
 
     [Test]
@@ -50,9 +50,9 @@ public class ContinueTests
         var load = builder.Task("load", context =>
         {
             runs++;
-            context.Message("loaded 3 files");
-            context.Detail("file-1", "file-2\nfile-3");
-            context.Warn("file-2 was empty");
+            context.SetMessage("loaded 3 files");
+            context.AddDetail("file-1", "file-2\nfile-3");
+            context.AddWarning("file-2 was empty");
             return Task.CompletedTask;
         });
         var graph = builder.Build();
@@ -263,7 +263,7 @@ public class ContinueTests
     }
 
     [Test]
-    public async Task A_run_that_continues_with_a_different_cap_and_limit_sizes_works()
+    public async Task A_run_that_continues_with_different_max_running_tasks_and_limit_sizes_works()
     {
         using var temporary = new TemporaryDirectory();
         var fail = true;
@@ -274,19 +274,19 @@ public class ContinueTests
 
         var first = await Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.New(temporary.Path), Cap = 4, Limits = new Dictionary<string, int> { ["database"] = 2 } });
+            new RunOptions { Journal = Journal.New(temporary.Path), MaxRunningTasks = 4, Limits = new Dictionary<string, int> { ["database"] = 2 } });
         fail = false;
         var second = await Runner.RunAsync(
             graph,
             new RunOptions
             {
                 Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id),
-                Cap = 1,
+                MaxRunningTasks = 1,
                 Limits = new Dictionary<string, int> { ["database"] = 1 },
             });
 
         second.Outcome.ShouldBe(RunOutcome.Complete);
-        second.Snapshot.Cap.Size.ShouldBe(1);
+        second.Snapshot.RunningTasks.Size.ShouldBe(1);
         second.Snapshot.Counts.EarlierSuccesses.ShouldBe(1);
     }
 

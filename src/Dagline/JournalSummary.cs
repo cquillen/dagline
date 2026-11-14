@@ -7,7 +7,7 @@ namespace Dagline;
 /// A summary is read from the journal's file at the moment it was listed, and does not change after. It is folded from the
 /// journal's entries by the same code that a run continuing the journal uses.
 /// </remarks>
-public sealed record JournalSummary
+public sealed class JournalSummary
 {
     internal JournalSummary(JournalFold fold, bool inUse)
     {
@@ -18,7 +18,7 @@ public sealed record JournalSummary
         LatestRun = fold.LatestRun;
         Ending = EndingOf(fold.LatestOutcome, inUse);
         Counts = fold.LastStatusCounts();
-        Finished = fold.LatestOutcome is RunOutcome.Complete;
+        IsFinished = fold.LatestOutcome is RunOutcome.Complete;
     }
 
     /// <summary>The journal's id, which <see cref="Journal.Continue"/> and <see cref="Journals.DeleteAsync"/> take.</summary>
@@ -47,18 +47,23 @@ public sealed record JournalSummary
     public JournalEnding Ending { get; }
 
     /// <summary>
-    /// How many tasks the journal records in each status, with every status present. Each path the journal has an entry for counts
-    /// once, by its last recorded status: its latest settle, pending once a later set-aside names it, and running when its latest
-    /// entry is a start, as for a task that was running when its run died. Paths no longer in a graph count as well, since the
-    /// listing has no graph. Ready is always zero.
+    /// How many tasks the journal records in each status, read as <see cref="Snapshot.Counts"/> is: by the indexer, with
+    /// <see cref="TaskCounts.Total"/> and the other sums. Each path the journal has an entry for counts once, by its last recorded
+    /// status: its latest settle, pending once a later set-aside names it, and running when its latest entry is a start, as for a
+    /// task that was running when its run died. Paths no longer in a graph count as well, since the listing has no graph.
     /// </summary>
-    public IReadOnlyDictionary<NodeStatus, int> Counts { get; }
+    /// <remarks>
+    /// Ready is always zero, and so are <see cref="TaskCounts.Waiting"/> and <see cref="TaskCounts.EarlierSuccesses"/>: a journal
+    /// records neither, and with no run under way there is no run for a success to be earlier than. A task that succeeded in any run
+    /// of the journal counts among the succeeded.
+    /// </remarks>
+    public TaskCounts Counts { get; }
 
     /// <summary>
     /// Whether the journal is finished: its latest run recorded that it was <see cref="RunOutcome.Complete"/>. A finished journal can
     /// still be continued: with an unchanged graph the run is complete at once.
     /// </summary>
-    public bool Finished { get; }
+    public bool IsFinished { get; }
 
     private static JournalEnding EndingOf(RunOutcome? latestOutcome, bool inUse)
     {

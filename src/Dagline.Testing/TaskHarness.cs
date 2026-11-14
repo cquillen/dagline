@@ -20,6 +20,12 @@ namespace Dagline.Testing;
 /// <see cref="DisposeAsync"/> deletes the directory.
 /// </para>
 /// <para>
+/// A checkpoint passed to <see cref="For"/> is planted in the first run without a run before it to save one: the harness
+/// saves it through <see cref="TaskContext.SaveCheckpointAsync"/> on the task's own context just before it calls the body, so
+/// the body reads it back as <see cref="TaskContext.Checkpoint"/>, and the journal holds it as it would hold the task's own
+/// save. The save publishes no event and changes no snapshot.
+/// </para>
+/// <para>
 /// The grace period is unlimited in every run, so the run never lets go of the task: a body that ignores a stop keeps the call
 /// from returning, and the test's own timeout is what fails it.
 /// </para>
@@ -34,41 +40,54 @@ public sealed class TaskHarness : IAsyncDisposable
     private readonly NodePath _task;
     private readonly TimeProvider _runClock;
     private readonly TimeProvider _stopClock;
+    private readonly string _seed;
+    private string _checkpoint;
     private string? _directory;
     private string? _journalId;
     private bool _disposed;
 
-    private TaskHarness(TaskBody body, TimeProvider? clock)
+    private TaskHarness(TaskBody body, TimeProvider? timeProvider, string checkpoint)
     {
+        _seed = checkpoint;
+        _checkpoint = checkpoint;
         var builder = new GraphBuilder();
-        _task = builder.Task("task", body).Path;
+        _task = builder.Task("task", context => RunBodyAsync(body, context)).Path;
         _graph = builder.Build();
-        _runClock = clock ?? new InstantClock();
-        _stopClock = clock ?? new NeverEndingClock();
+        _runClock = timeProvider ?? new InstantClock();
+        _stopClock = timeProvider ?? new NeverEndingClock();
     }
 
     /// <summary>Wraps <paramref name="body"/> in a harness. Nothing runs and nothing touches the disk until the first run.</summary>
     /// <param name="body">The task body to run, as it would be handed to <see cref="GraphBuilder.Task"/>.</param>
-    /// <param name="clock">
+    /// <param name="timeProvider">
     /// The clock every run uses, as <see cref="RunOptions.TimeProvider"/>, and so the one the body sees as
     /// <see cref="TaskContext.TimeProvider"/>. It is used as is. With none, <see cref="RunAsync"/> uses an
     /// <see cref="InstantClock"/> with the default guard, one for the life of the harness, so its guard counts fake time across
     /// runs, and <see cref="RunUntilWaitingThenStopAsync"/> uses a clock on which no delay ever ends, so a body that delays on
     /// its clock before it begins waiting never reaches the wait in that call.
     /// </param>
+    /// <param name="checkpoint">
+    /// A checkpoint for the task to read back as <see cref="TaskContext.Checkpoint"/> in the first run, as if an earlier run had
+    /// saved it, so that a test of how a task re-attaches needs no first run to save one. It is planted only in the first run,
+    /// which starts the harness's journal: a later run hands the task the checkpoint the run before it left, as
+    /// <see cref="TaskOutcome.Checkpoint"/> gives it. <see langword="null"/> or empty plants none, since an absent checkpoint is
+    /// empty text.
+    /// </param>
     /// <returns>The harness. Dispose it to delete its temporary journal.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="body"/> is <see langword="null"/>.</exception>
-    public static TaskHarness For(TaskBody body, TimeProvider? clock = null)
+    public static TaskHarness For(TaskBody body, TimeProvider? timeProvider = null, string? checkpoint = null)
     {
         ArgumentNullException.ThrowIfNull(body);
-        return new TaskHarness(body, clock);
+        return new TaskHarness(body, timeProvider, checkpoint ?? "");
     }
 
     /// <summary>Runs the task to the end of the run and returns its outcome from the run's final snapshot.</summary>
     /// <returns>
     /// The task's outcome. <see cref="TaskOutcome.Waited"/> is <see langword="true"/> if the task began waiting at least once in
     /// this run. When the task succeeded in an earlier run of this harness, the body is not called and the earlier success's
-    /// outcome is returned, with <see cref="TaskOutcome.Waited"/> <see langword="false"/>.
+    /// outcome is returned: its message, detail lines and warnings, with <see cref="TaskOutcome.Waited"/>
+    /// <see langword="false"/>, no <see cref="TaskOutcome.StatusText"/> and no <see cref="TaskOutcome.WaitingText"/>, since a
+    /// journal does not keep progress and the task began no wait in this run.
     /// </returns>
     /// <remarks>
     /// An exception the task body throws never comes out of this call: it is the task's unexpected failure, returned as an
@@ -88,7 +107,7 @@ public sealed class TaskHarness : IAsyncDisposable
     /// with. This is how a first run is cut short, so that a later <see cref="RunAsync"/> can test how the task re-attaches.
     /// </summary>
     /// <returns>
-    /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntil"/> it is
+    /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntilAsync"/> it is
     /// <see cref="NodeStatus.Cancelled"/> with <see cref="TaskOutcome.Waited"/> <see langword="true"/>. A task that handles the
     /// stop itself, by catching the cancellation and reporting, returns the outcome it chose. A task that settles without ever
     /// waiting returns its own outcome, and the call does not hang.
@@ -160,7 +179,32 @@ public sealed class TaskHarness : IAsyncDisposable
         }
 
         (clock as InstantClock)?.ThrowIfPastGuard();
-        return TaskOutcome.From(result.Snapshot[_task], watcher.Waited);
+        var task = result.Snapshot[_task];
+        if (task.Status is NodeStatus.Succeeded)
+        {
+            _checkpoint = "";
+        }
+
+        return TaskOutcome.From(task, watcher.Waited, watcher.WaitingText, _checkpoint);
+    }
+
+    private async Task RunBodyAsync(TaskBody body, TaskContext context)
+    {
+        try
+        {
+            // Saving the seed is the one way to hand a checkpoint to a task on a new journal through the public API. It takes no
+            // token, as a task's own save after a trigger should not: a stop under way must not lose the seed for every later run.
+            if (_journalId is null && _seed.Length > 0)
+            {
+                await context.SaveCheckpointAsync(_seed, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            await body(context).ConfigureAwait(false);
+        }
+        finally
+        {
+            _checkpoint = context.Checkpoint;
+        }
     }
 
     private static string CreateDirectory() => Directory.CreateTempSubdirectory("dagline-harness-").FullName;
@@ -169,12 +213,20 @@ public sealed class TaskHarness : IAsyncDisposable
     {
         public bool Waited { get; private set; }
 
+        public string? WaitingText { get; private set; }
+
         public string? JournalId { get; private set; }
 
         public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
         {
             JournalId ??= snapshot.Journal?.Id;
-            if (runEvent is WaitingChanged { Waiting: true } && !Waited)
+            if (runEvent is not WaitingChanged { Waiting: true } began)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            WaitingText = began.Text;
+            if (!Waited)
             {
                 Waited = true;
 

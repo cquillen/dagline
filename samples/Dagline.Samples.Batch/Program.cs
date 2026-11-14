@@ -111,19 +111,24 @@ var limits = Enumerable.Range(1, ShardCount).ToDictionary(shard => $"shard-{shar
 limits["scheduler"] = 3;
 
 // The journal policy: continue the newest unfinished journal for the same shards, or start a new one. A journal that
-// another run holds is not skipped, so that run refuses it below.
+// another run holds is not skipped, so that run refuses it below. A journal that cannot be read is named and passed over.
 var description = shards.Count == ShardCount ? "all shards" : $"shards {string.Join(',', shards)}";
-IReadOnlyList<JournalSummary> journals;
+JournalListing listing;
 try
 {
-    journals = await Journals.ListAsync(directory);
+    listing = await Journals.ListAsync(directory);
 }
-catch (DaglineException exception) when (exception is JournalOpenException or JournalFormatException)
+catch (JournalAccessException exception)
 {
     return await RefuseAsync(exception.Message);
 }
 
-var unfinished = startNew ? null : journals.LastOrDefault(summary => !summary.Finished && summary.Description == description);
+foreach (var unreadable in listing.Unreadable)
+{
+    await Console.Error.WriteLineAsync($"Passing over {unreadable.FilePath}: {unreadable.Exception.Message}");
+}
+
+var unfinished = startNew ? null : listing.Journals.LastOrDefault(summary => !summary.IsFinished && summary.Description == description);
 Journal journal;
 if (unfinished is null)
 {
@@ -139,7 +144,7 @@ else
     Console.WriteLine($"Continuing journal {unfinished.Id} for {description} (runs so far: {unfinished.Runs}).");
 }
 
-// Ctrl+C: the first press stops the run, the second stops waiting for the running tasks to end, the third kills.
+// Ctrl+C or SIGTERM: the first stops the run, the second stops waiting for the running tasks to end, the third kills.
 using var stop = ConsoleStop.Hook();
 
 RunResult result;
@@ -147,17 +152,17 @@ try
 {
     result = await Runner.RunAsync(graph, new RunOptions
     {
-        Cap = 16,
+        MaxRunningTasks = 16,
         Limits = limits,
         Journal = journal,
-        Reporters = [SpectreReporter.Auto(options: new SpectreOptions
+        Reporters = [SpectreReporter.Create(new SpectreOptions
         {
             Display = plain ? DisplayMode.Never : DisplayMode.Auto,
             Ascii = ascii,
         })],
     }, stop);
 }
-catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalOpenException or JournalFormatException)
+catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalAccessException or JournalFormatException)
 {
     return await RefuseAsync(exception.Message);
 }

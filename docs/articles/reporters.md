@@ -6,7 +6,7 @@ A reporter watches a run and cannot change it. Nothing a reporter does, or fails
 
 The `Dagline` package ships one reporter, [the plain-text reporter](#the-plain-text-reporter), which prints a run as timestamped lines. The sections before it are for writing your own.
 
-On a terminal, use the display from the `Dagline.Spectre` package instead: <xref:Dagline.Spectre.SpectreReporter.Auto*> gives the display when standard output is a terminal and the plain-text reporter when it is redirected, so the same code serves an operator and a log file. See [The terminal display](terminal-ui.md).
+On a terminal, use the display from the `Dagline.Spectre` package instead: <xref:Dagline.Spectre.SpectreReporter.Create*> gives the display when standard output is a terminal and the plain-text reporter when it is redirected, so the same code serves an operator and a log file. See [The terminal display](terminal-ui.md).
 
 > [!NOTE]
 > While the display is up, your app's own logging goes to a file and not to the console: see [The terminal display](terminal-ui.md#your-apps-own-output).
@@ -25,12 +25,12 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.WaitingChanged> | When a running task begins waiting on an external system and when it stops: once each per wait, however many waiting scopes overlap. | The path of the task, whether it is now waiting, the text saying what it waits for, and when the wait began. |
 | <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it, and never for one made only of earlier successes, which is settled from the start. | The path of the group, its status, and its <xref:Dagline.TaskCounts>: the tasks beneath it per status, with the earlier successes among the succeeded counted apart. Not the warnings beneath it: read the group's `WarningCount` from the snapshot handed with the event. |
 | <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | Who asked, `By`: the app through its `StopSignal`, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
-| <xref:Dagline.StoppedWaiting> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
+| <xref:Dagline.GraceEnded> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
 | <xref:Dagline.RunEnded> | Last, once per run. | Exactly one of the run outcome and an error: a run whose journal could no longer be written ends with a `JournalWriteException` in `Error` and a null `Outcome`. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
-Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same. `RunEnded` is the exception: its constructor takes exactly one of `Outcome` and `Error` and throws `ArgumentException` when given both or neither, and a `with` expression cannot change either.
+Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
 
 ### The order within one step
 
@@ -46,11 +46,11 @@ Each list is in declaration order. The steps of a run never overlap, so the even
 
 Once a stop has been applied, the last group is always empty: nothing starts.
 
-A warning is a step of its own, and so is a stop being applied, and so is a task beginning or ending a wait. A stop applied before any task has started gives `RunStarted`, the tasks that become ready, `StopRequested`, then `RunEnded`. When the run stops waiting with tasks still running, `StoppedWaiting` comes first, then each task it leaves behind, cancelled, in declaration order. A task that settles while it is still waiting ends its wait in the step in which it settles: the `WaitingChanged` that ends it comes immediately before that task's `TaskStatusChanged`, so a settled task is never waiting.
+A warning is a step of its own, and so is a stop being applied, and so is a task beginning or ending a wait. A stop applied before any task has started gives `RunStarted`, the tasks that become ready, `StopRequested`, then `RunEnded`. When the run stops waiting with tasks still running, `GraceEnded` comes first, then each task it leaves behind, cancelled, in declaration order. A task that settles while it is still waiting ends its wait in the step in which it settles: the `WaitingChanged` that ends it comes immediately before that task's `TaskStatusChanged`, so a settled task is never waiting.
 
 ### Waiting is a marker
 
-A task that triggers work in an external system and then waits for it opens a waiting scope with <xref:Dagline.TaskContext.Waiting(System.String)>. While a scope is open the task is **waiting**: it is idle, not working. Waiting is never a status. The task is running throughout, it keeps its slots, and its group and the run outcome are what they would be without the marker. A reporter uses it only to show idle tasks apart from working ones.
+A task that triggers work in an external system and then waits for it opens a waiting scope with <xref:Dagline.TaskContext.BeginWaiting(System.String)>. While a scope is open the task is **waiting**: it is idle, not working. Waiting is never a status. The task is running throughout, it keeps its slots, and its group and the run outcome are what they would be without the marker. A reporter uses it only to show idle tasks apart from working ones.
 
 A wait begins when the task's first open scope opens and ends when its last one closes, so `WaitingChanged` comes in pairs: one with `Waiting` true and `Since` equal to `At`, then one with `Waiting` false and the same `Text` and `Since`. Overlapping scopes make one wait with the text and time of the scope that opened first, and a task that waits twice in a run gives two pairs.
 
@@ -70,7 +70,7 @@ report: ready -> running
 
 A blocked task gets one event, pending to blocked, and its `Node` names the failed task in <xref:Dagline.NodeSnapshot.BlockedBy>. A reporter that would rather print one line for a whole cascade than one per task can group consecutive blocked events by that path, as the plain-text reporter does.
 
-A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, the counts of the run's tasks, and how full the cap and each limit are. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
+A **snapshot** is everything Dagline knows about the run at one instant: every node in declaration order with its status and times, the counts of the run's tasks, and how full the max running tasks and each limit are. A <xref:Dagline.Snapshot> is immutable, so a reporter can keep one, compare two, or hand one to another thread.
 
 A reporter gets snapshots in two ways:
 
@@ -110,6 +110,51 @@ A snapshot also answers the questions a summary asks, each in declaration order,
 - <xref:Dagline.Snapshot.WarningCount> counts every warning added, and <xref:Dagline.Snapshot.WithWarnings> lists the tasks that have any. Each task keeps its first 100 warnings in <xref:Dagline.NodeSnapshot.Warnings> and counts the rest in <xref:Dagline.NodeSnapshot.WarningsOmitted>.
 - <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line. <xref:Dagline.Snapshot.TryGetBlocked*> finds the entry for one failed task by its path, and gives `false` for a task that blocked nothing.
 - <xref:Dagline.Snapshot.Waiting> and <xref:Dagline.Snapshot.Working> list the running tasks that are waiting on an external system and those that are working. Together they are every running task, and no task is in both.
+- <xref:Dagline.Snapshot.EarlierSuccesses> lists the tasks a continuing run kept from its journal and did not run again. See [A run on a journal](#a-run-on-a-journal).
+
+Each list holds tasks only, never a group. A question none of them answers is a filter over <xref:Dagline.Snapshot.Nodes>, which holds every group and every task in declaration order. A node says whether it is a group with <xref:Dagline.NodeSnapshot.IsGroup>: there is no kind enum to test. Its <xref:Dagline.NodeSnapshot.Dependencies> are the dependencies declared on it, one <xref:Dagline.Dependency> for each upstream node: its `Upstream` path and its <xref:Dagline.DependencyKind>, `Requires` or `After`. A dependency declared on a group is listed on the group, not on the tasks beneath it.
+
+```csharp
+var ranThisRun = snapshot.Nodes
+    .Where(node => !node.IsGroup && !node.IsEarlierSuccess && node.Status is NodeStatus.Succeeded)
+    .Select(node => node.Path);
+
+var groupsWithWarnings = snapshot.Nodes.Where(node => node.IsGroup && node.WarningCount > 0);
+```
+
+### Which tasks did not run, and why
+
+A task that ends a run without having run is in one of three lists, and each has its own cause. Read all three to account for every such task:
+
+| List | Status | Why the task did not run | When it applies |
+| --- | --- | --- | --- |
+| <xref:Dagline.Snapshot.Blocked> | blocked | A task it *requires*, or one beneath a group it requires, failed. | In any run with a failure, stopped or not. Blocked is settled, so a group made only of blocked and other settled tasks settles. |
+| <xref:Dagline.Snapshot.NeverReached> | pending or ready | The run was stopped before the task could start: it was ready, or still waiting on a dependency, such as one on a task the stop cancelled. | Only once a stopped run has ended. Empty while the run is going and for a run that was not stopped. These tasks are not settled. |
+| <xref:Dagline.Snapshot.EarlierSuccesses> | succeeded | An earlier run of the journal succeeded with it, so this run kept that success. | Only in a run that continues a journal. |
+
+`NeverReached` is not the tasks a failure blocked: a failure never leaves a task pending, it blocks it. A task that runs *after* a failed task is not blocked either: it runs.
+
+```csharp
+var snapshot = result.Snapshot;
+
+foreach (var entry in snapshot.Blocked)
+{
+    Console.WriteLine($"{entry.Cause} failed and blocked {entry.Tasks.Count} tasks:");
+    foreach (var root in entry.Roots)
+    {
+        Console.WriteLine($"  {root.Path}");
+    }
+}
+
+foreach (var task in snapshot.NeverReached)
+{
+    Console.WriteLine($"{task.Path} was not reached before the run stopped");
+}
+
+Console.WriteLine($"{snapshot.EarlierSuccesses.Count} tasks were kept from earlier runs");
+```
+
+A later run of the journal has the blocked and the never-reached tasks left to do, along with the failed and the cancelled ones. <xref:Dagline.TaskCounts.Unsucceeded> on <xref:Dagline.Snapshot.Counts> counts them all.
 
 Each node answers the same way for itself, so a reporter never writes Dagline's rules again:
 
@@ -127,8 +172,8 @@ A task's <xref:Dagline.NodeSnapshot.Message> and <xref:Dagline.NodeSnapshot.Wait
 
 A run that continues a [journal](journals.md) begins with its earlier successes already succeeded. They are in the first snapshot, the one handed with `RunStarted`, and no event is ever published for them, so an event always means something happened in this run. What the snapshot says about the journal is fixed for the run:
 
-- <xref:Dagline.Snapshot.Journal> names the journal: its id, its description and which run of it this is, counting from 1. It is null for a run with `Journal.None`, and a new journal's id is known only from here.
-- `EarlierSuccesses` on the run's <xref:Dagline.Snapshot.Counts> counts the earlier successes. They are among the succeeded, and <xref:Dagline.NodeSnapshot.IsEarlierSuccess> marks each one. A group's counts give those beneath it, and `GroupSettled` carries the same counts, so a reporter can show how much this run did.
+- <xref:Dagline.Snapshot.Journal> is a <xref:Dagline.JournalInfo> that names the journal: its id, its description and which run of it this is, counting from 1. It is null for a run with `Journal.None`, and a new journal's id is known only from here.
+- <xref:Dagline.Snapshot.EarlierSuccesses> lists the earlier successes, in declaration order, and `EarlierSuccesses` on the run's <xref:Dagline.Snapshot.Counts> counts them. They are among the succeeded, and <xref:Dagline.NodeSnapshot.IsEarlierSuccess> marks each one. A group's counts give those beneath it, and `GroupSettled` carries the same counts, so a reporter can show how much this run did.
 - <xref:Dagline.Snapshot.SetAside> lists the tasks whose earlier success this run set aside, in declaration order. They start pending and run again.
 - <xref:Dagline.Snapshot.JournalPathsNotInGraph> counts the paths the journal holds that this graph does not have as a task, and <xref:Dagline.Snapshot.JournalPathsNotInGraphUnsucceeded> how many of those have not succeeded.
 
@@ -284,7 +329,7 @@ Pass the timer the same `TimeProvider` as the run, so that a test with a fake cl
 
 ## The plain-text reporter
 
-<xref:Dagline.PlainTextReporter> prints a run as lines of text: one timestamped line per thing that happened, and a summary at the end. It is the reporter to use when output is redirected to a file or shown by a build server. Give it the writer to print to:
+<xref:Dagline.PlainTextReporter> prints a run as lines of text: one timestamped line per thing that happened, and a summary at the end. It is the reporter to use when output is redirected to a file or shown by a build server. Its output is for people: the wording and layout may change in any release, so do not parse it, and write a reporter of your own when a program needs the run (see [Compatibility](compatibility.md)). Give it the writer to print to:
 
 ```csharp
 var result = await Runner.RunAsync(graph, new RunOptions

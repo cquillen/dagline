@@ -42,11 +42,11 @@ public class ArgumentTests
     }
 
     [Test]
-    public void RunOptions_defaults_to_a_cap_of_sixteen_and_no_sizes()
+    public void RunOptions_defaults_to_sixteen_max_running_tasks_and_no_sizes()
     {
         var options = new RunOptions { Journal = Journal.None };
 
-        options.Cap.ShouldBe(16);
+        options.MaxRunningTasks.ShouldBe(16);
         options.Limits.ShouldBeEmpty();
     }
 
@@ -137,75 +137,5 @@ public class ArgumentTests
         await run;
 
         late.Events.ShouldBeEmpty();
-    }
-
-    [Test]
-    public void An_event_rejects_null_when_it_is_made()
-    {
-        var at = DateTimeOffset.UnixEpoch;
-        var path = NodePath.Parse("shard-1");
-
-        Should.Throw<ArgumentNullException>(() => new RunStarted(at, null!)).ParamName.ShouldBe("Source");
-        Should.Throw<ArgumentNullException>(() => new TaskStatusChanged(at, null!, NodeStatus.Pending, NodeStatus.Ready))
-            .ParamName.ShouldBe("Node");
-        Should.Throw<ArgumentNullException>(() => new WarningAdded(at, path, null!)).ParamName.ShouldBe("Warning");
-        Should.Throw<ArgumentNullException>(() => new GroupSettled(at, path, NodeStatus.Succeeded, null!)).ParamName.ShouldBe("Counts");
-    }
-
-    [Test]
-    public async Task An_event_rejects_null_when_it_is_copied_with_a_change()
-    {
-        var builder = new GraphBuilder();
-        builder.Group("shard-1").Task("prepare", context =>
-        {
-            context.Warn("entity 9 has no region");
-            return Task.CompletedTask;
-        });
-        var reporter = new RecordingReporter();
-        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var started = reporter.Events.OfType<RunStarted>().Single();
-        var changed = reporter.Events.OfType<TaskStatusChanged>().First();
-        var warned = reporter.Events.OfType<WarningAdded>().Single();
-        var settled = reporter.Events.OfType<GroupSettled>().Single();
-
-        Should.Throw<ArgumentNullException>(() => started with { Source = null! });
-        Should.Throw<ArgumentNullException>(() => changed with { Node = null! });
-        Should.Throw<ArgumentNullException>(() => warned with { Warning = null! });
-        Should.Throw<ArgumentNullException>(() => settled with { Counts = null! });
-    }
-
-    [Test]
-    public void A_reporter_error_rejects_a_null_reporter_and_a_null_exception()
-    {
-        var reporter = new RecordingReporter();
-        var exception = new InvalidOperationException("the writer is closed");
-        var error = new ReporterError(reporter, Event: null, exception);
-
-        Should.Throw<ArgumentNullException>(() => new ReporterError(null!, Event: null, exception)).ParamName.ShouldBe("Reporter");
-        Should.Throw<ArgumentNullException>(() => new ReporterError(reporter, Event: null, null!)).ParamName.ShouldBe("Exception");
-        Should.Throw<ArgumentNullException>(() => error with { Reporter = null! });
-        Should.Throw<ArgumentNullException>(() => error with { Exception = null! });
-        error.Event.ShouldBeNull();
-    }
-
-    [Test]
-    public void What_a_failure_blocked_rejects_a_null_list()
-    {
-        var cause = NodePath.Parse("prepare");
-        var blocked = new BlockedTasks(cause, [], []);
-
-        Should.Throw<ArgumentNullException>(() => new BlockedTasks(cause, null!, [])).ParamName.ShouldBe("Tasks");
-        Should.Throw<ArgumentNullException>(() => new BlockedTasks(cause, [], null!)).ParamName.ShouldBe("Roots");
-        Should.Throw<ArgumentNullException>(() => blocked with { Tasks = null! });
-        Should.Throw<ArgumentNullException>(() => blocked with { Roots = null! });
-    }
-
-    [Test]
-    public void A_graph_problem_rejects_a_null_message()
-    {
-        var problem = new GraphProblem(Path: null, "'shard 1' is not a valid segment");
-
-        Should.Throw<ArgumentNullException>(() => new GraphProblem(Path: null, null!)).ParamName.ShouldBe("Message");
-        Should.Throw<ArgumentNullException>(() => problem with { Message = null! });
     }
 }

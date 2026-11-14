@@ -18,11 +18,12 @@ public class JournalHoldingTests
         var id = (await holder.Source).Current.Journal!.Id;
         var reporter = new RecordingReporter();
 
-        await Should.ThrowAsync<JournalInUseException>(() => Runner.RunAsync(
+        var thrown = await Should.ThrowAsync<JournalInUseException>(() => Runner.RunAsync(
             graph,
             new RunOptions { Journal = Journal.Continue(temporary.Path, id), Reporters = [reporter] }));
 
         reporter.Events.ShouldBeEmpty();
+        (thrown.Id, thrown.Directory).ShouldBe((id, temporary.Path));
         load.Release();
         await holding;
     }
@@ -42,7 +43,7 @@ public class JournalHoldingTests
 
         await Should.ThrowAsync<RunConfigurationException>(() => Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.Continue(temporary.Path, id), Cap = 0 }));
+            new RunOptions { Journal = Journal.Continue(temporary.Path, id), MaxRunningTasks = 0 }));
 
         load.Release();
         await holding;
@@ -92,7 +93,7 @@ public class JournalHoldingTests
         var listed = await Journals.ListAsync(temporary.Path);
         await Journals.DeleteAsync(temporary.Path, id);
 
-        listed.Single().Ending.ShouldBe(JournalEnding.Complete);
+        listed.Journals.Single().Ending.ShouldBe(JournalEnding.Complete);
         Directory.GetFiles(temporary.Path).ShouldBeEmpty();
     }
 
@@ -106,11 +107,34 @@ public class JournalHoldingTests
         builder.Task("load", _ => Task.CompletedTask);
         var reporter = new RecordingReporter();
 
-        await Should.ThrowAsync<JournalOpenException>(() => Runner.RunAsync(
+        var thrown = await Should.ThrowAsync<JournalAccessException>(() => Runner.RunAsync(
             builder.Build(),
             new RunOptions { Journal = Journal.New(notADirectory), Reporters = [reporter] }));
 
         reporter.Events.ShouldBeEmpty();
+        thrown.Directory.ShouldBe(notADirectory);
+        thrown.Id.ShouldBeNull();
+        thrown.Message.ShouldStartWith($"The journal directory '{notADirectory}' cannot be created: ");
+    }
+
+    [Test]
+    public async Task A_journal_whose_lock_file_cannot_be_opened_throws_carrying_its_id_and_directory()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var graph = builder.Build();
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var id = first.Snapshot.Journal!.Id;
+        File.Delete(temporary.Combine($"{id}.lock"));
+        Directory.CreateDirectory(temporary.Combine($"{id}.lock"));
+
+        var thrown = await Should.ThrowAsync<JournalAccessException>(() => Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Path, id) }));
+
+        (thrown.Id, thrown.Directory).ShouldBe((id, temporary.Path));
+        thrown.Message.ShouldStartWith($"The lock file '{temporary.Combine($"{id}.lock")}' of the journal '{id}' cannot be opened or created: ");
     }
 
     [Test]
@@ -174,7 +198,7 @@ public class JournalHoldingTests
     }
 
     [Test]
-    public async Task A_journal_with_an_entry_missing_its_path_throws_on_continuing_and_on_listing()
+    public async Task A_journal_with_an_entry_missing_its_path_throws_on_continuing_and_is_listed_unreadable()
     {
         using var temporary = new TemporaryDirectory();
         var builder = new GraphBuilder();
@@ -187,10 +211,11 @@ public class JournalHoldingTests
         var thrown = await Should.ThrowAsync<JournalFormatException>(() => Runner.RunAsync(
             graph,
             new RunOptions { Journal = Journal.Continue(temporary.Path, id) }));
-        var listed = await Should.ThrowAsync<JournalFormatException>(() => Journals.ListAsync(temporary.Path));
+        var listed = await Journals.ListAsync(temporary.Path);
 
         thrown.Version.ShouldBe(1);
-        listed.Version.ShouldBe(1);
+        listed.Journals.ShouldBeEmpty();
+        listed.Unreadable.ShouldHaveSingleItem().Exception.ShouldBeOfType<JournalFormatException>().Version.ShouldBe(1);
     }
 
     [Test]

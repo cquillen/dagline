@@ -23,8 +23,8 @@ public class TaskHarnessTests
     {
         await using var harness = TaskHarness.For(context =>
         {
-            context.Warn("the export was slow");
-            context.Message("17 rows exported");
+            context.AddWarning("the export was slow");
+            context.SetMessage("17 rows exported");
             return Task.CompletedTask;
         });
 
@@ -69,8 +69,8 @@ public class TaskHarnessTests
     {
         await using var harness = TaskHarness.For(context =>
         {
-            context.Warn("the first source was empty");
-            context.Warn("the second source was empty");
+            context.AddWarning("the first source was empty");
+            context.AddWarning("the second source was empty");
             throw context.Fail("nothing to export");
         });
 
@@ -89,7 +89,7 @@ public class TaskHarnessTests
         await using var harness = TaskHarness.For(async context =>
         {
             started = context.TimeProvider.GetUtcNow();
-            await context.WaitUntil(TimeSpan.FromHours(1), _ => Task.FromResult(++checks == 3), "the export to finish");
+            await context.WaitUntilAsync(TimeSpan.FromHours(1), _ => Task.FromResult(++checks == 3), "the export to finish");
             finished = context.TimeProvider.GetUtcNow();
         });
 
@@ -99,6 +99,46 @@ public class TaskHarnessTests
         outcome.Waited.ShouldBeTrue();
         checks.ShouldBe(3);
         (finished - started).ShouldBe(TimeSpan.FromHours(2));
+    }
+
+    [Test]
+    public async Task The_outcome_holds_the_status_text_the_task_last_set()
+    {
+        await using var harness = TaskHarness.For(context =>
+        {
+            context.SetStatusText("reading rows");
+            context.SetStatusText("writing 17 rows");
+            return Task.CompletedTask;
+        });
+
+        var outcome = await harness.RunAsync();
+
+        outcome.StatusText.ShouldBe("writing 17 rows");
+    }
+
+    [Test]
+    public async Task A_task_that_never_sets_status_text_or_waits_has_neither_in_its_outcome()
+    {
+        await using var harness = TaskHarness.For(_ => Task.CompletedTask);
+
+        var outcome = await harness.RunAsync();
+
+        outcome.StatusText.ShouldBeNull();
+        outcome.WaitingText.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task The_outcome_holds_the_text_of_the_last_wait_the_task_began_after_the_wait_has_ended()
+    {
+        await using var harness = TaskHarness.For(async context =>
+        {
+            await context.WaitUntilAsync(TimeSpan.FromMinutes(1), _ => Task.FromResult(true), "the export to start");
+            await context.WaitUntilAsync(TimeSpan.FromMinutes(1), _ => Task.FromResult(true), "the export to finish");
+        });
+
+        var outcome = await harness.RunAsync();
+
+        outcome.WaitingText.ShouldBe("the export to finish");
     }
 
     [Test]
@@ -122,7 +162,7 @@ public class TaskHarnessTests
     [Test]
     public async Task A_check_that_never_returns_true_ends_with_the_guard_exception_on_the_default_clock()
     {
-        await using var harness = TaskHarness.For(context => context.WaitUntil(TimeSpan.FromHours(1), _ => Task.FromResult(false)));
+        await using var harness = TaskHarness.For(context => context.WaitUntilAsync(TimeSpan.FromHours(1), _ => Task.FromResult(false)));
 
         await Should.ThrowAsync<ClockGuardException>(harness.RunAsync());
     }
@@ -132,7 +172,7 @@ public class TaskHarnessTests
     {
         var checks = 0;
         await using var harness = TaskHarness.For(
-            context => context.WaitUntil(
+            context => context.WaitUntilAsync(
                 TimeSpan.FromHours(1),
                 _ =>
                 {
@@ -149,7 +189,7 @@ public class TaskHarnessTests
     public async Task The_run_is_on_a_new_journal_in_a_temporary_directory_that_disposal_deletes()
     {
         var clock = new FakeTimeProvider(UniqueStart());
-        var harness = TaskHarness.For(_ => Task.CompletedTask, clock);
+        var harness = TaskHarness.For(_ => Task.CompletedTask, timeProvider: clock);
 
         await harness.RunAsync();
         var journal = FindJournal(clock.GetUtcNow());

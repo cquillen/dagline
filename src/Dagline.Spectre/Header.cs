@@ -50,7 +50,7 @@ internal static class Header
     private static StyledLine Slots(Snapshot snapshot, Glyphs glyphs)
     {
         var slots = StyledLine.Of(
-            $"cap {DisplayText.Number(snapshot.Cap.InUse)}/{DisplayText.Number(snapshot.Cap.Size)}",
+            $"cap {DisplayText.Number(snapshot.RunningTasks.InUse)}/{DisplayText.Number(snapshot.RunningTasks.Size)}",
             Palette.Dim);
         var full = snapshot.Limits.Values.Count(limit => limit.InUse >= limit.Size);
         if (full > 0)

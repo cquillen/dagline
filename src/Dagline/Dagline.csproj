@@ -2,9 +2,10 @@
 
   <PropertyGroup>
     <Description>A lightweight, in-process library for running directed acyclic graphs (DAGs) of tasks in .NET command-line apps.</Description>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
-  <!-- The core package never writes to the console: what an app prints is its own business. -->
+  <!-- The core package never writes to the console: what an app prints is its own business. The one exception is ConsoleStop, which listens for the cancel key and writes nothing. -->
   <ItemGroup>
     <AdditionalFiles Include="BannedSymbols.Console.txt" />
   </ItemGroup>

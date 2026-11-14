@@ -7,9 +7,6 @@ public static class SpectreReporter
     /// Gives a reporter that draws the run with the display on a terminal, or prints it as plain text elsewhere.
     /// Give it to the run in <see cref="RunOptions.Reporters"/>.
     /// </summary>
-    /// <param name="plainText">
-    /// Where the plain-text reporter writes, or <see langword="null"/> for standard output. The reporter never closes it.
-    /// </param>
     /// <param name="options">What the app chooses, or <see langword="null"/> for the defaults of <see cref="SpectreOptions"/>.</param>
     /// <returns>A reporter for one run at a time.</returns>
     /// <remarks>
@@ -20,8 +17,8 @@ public static class SpectreReporter
     /// Standard input, whether the process looks like it is in CI, and the size of the console are not looked at.
     /// <see cref="DisplayMode.Force"/> always chooses the display, also on a console that is not a terminal, and
     /// <see cref="DisplayMode.Never"/> always chooses plain text, which then draws nothing on the console.
-    /// The plain-text reporter is a <see cref="PlainTextReporter"/> on <paramref name="plainText"/>, or on standard output as it is
-    /// when the run starts, with the options' clock.
+    /// The plain-text reporter is a <see cref="PlainTextReporter"/> on <see cref="SpectreOptions.PlainText"/>, or on standard
+    /// output as it is when the run starts, with the options' clock.
     /// </para>
     /// <para>
     /// The display takes the terminal's alternate screen when it handles <see cref="RunStarted"/>: it hides the cursor and draws a
@@ -36,7 +33,8 @@ public static class SpectreReporter
     /// which run of it this is (or that there is no journal), the percentage of tasks settled and the time elapsed. The second is
     /// one bar for the whole run, split by status. The third counts the tasks per status, with the running tasks that are waiting
     /// apart from those that are working and the earlier successes in brackets after the succeeded, then the warnings, and at the
-    /// right the cap in use over its size, how many limits are full out of how many, and how many ready tasks are held.
+    /// right the running tasks over the max running tasks, labelled <c>cap</c>, how many limits are full out of how many, and how
+    /// many ready tasks are held.
     /// A count of zero is left out. Under the header come a stop banner once a stop has been applied, a row per group, the tasks
     /// that are working, the tasks that are waiting on external systems, and the problems so far, sharing the lines left. Below
     /// 60 columns or 15 rows the frame is the header alone. The terminal display article of the documentation describes every pane.
@@ -47,6 +45,10 @@ public static class SpectreReporter
     /// console: a rule, the run outcome with the duration and the journal's id and run number, the count of tasks per status
     /// with the earlier successes in brackets and the warnings, then every failure, cancelled task and warning of this run, and
     /// what a later run that continues the journal has left. No exit code is printed: the app chooses its own.
+    /// </para>
+    /// <para>
+    /// What the display draws and prints, like the plain-text output, is for people and may change in any release: a program must
+    /// not parse it.
     /// </para>
     /// <para>
     /// The display's drawing is serialised: a frame from the timer is never drawn while an event is being handled.
@@ -67,6 +69,5 @@ public static class SpectreReporter
     /// reporters while it was still busy. A process that is killed leaves the terminal as it was.
     /// </para>
     /// </remarks>
-    public static IReporter Auto(TextWriter? plainText = null, SpectreOptions? options = null)
-        => new AutoReporter(plainText, options ?? new SpectreOptions());
+    public static IReporter Create(SpectreOptions? options = null) => new AutoReporter(options ?? new SpectreOptions());
 }

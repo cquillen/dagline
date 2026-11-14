@@ -13,9 +13,9 @@ namespace Dagline;
 /// There is no default directory, so that continuing never depends on where the command was launched. An app with more than one
 /// kind of graph gives each kind a directory of its own.
 /// </para>
-/// <para>The set of choices is closed: a type outside Dagline cannot derive from this record.</para>
+/// <para>The set of choices is closed: a type outside Dagline cannot derive from this class.</para>
 /// </remarks>
-public abstract record Journal
+public abstract class Journal
 {
     private protected Journal()
     {
@@ -44,7 +44,7 @@ public abstract record Journal
     /// </para>
     /// <para>
     /// The journal's first line is written and flushed to the disk while it is created, before the run exists. Its lock file,
-    /// <c>&lt;id&gt;.lock</c>, is created beside it. <see cref="Runner.RunAsync"/> throws <see cref="JournalOpenException"/> when the
+    /// <c>&lt;id&gt;.lock</c>, is created beside it. <see cref="Runner.RunAsync"/> throws <see cref="JournalAccessException"/> when the
     /// directory, the lock file or the journal cannot be created, or the first line cannot be written.
     /// </para>
     /// </remarks>
@@ -80,12 +80,12 @@ public abstract record Journal
     /// are those of every task that is not an earlier success, set-aside tasks included.
     /// </para>
     /// <para>
-    /// The run may use a different cap and different limit sizes from the runs before it. A journal whose latest run was complete
+    /// The run may use a different <see cref="RunOptions.MaxRunningTasks"/> and different limit sizes from the runs before it. A journal whose latest run was complete
     /// can be continued like any other: with an unchanged graph the run is complete at once, and a path the graph gained runs.
     /// </para>
     /// <para>
     /// <see cref="Runner.RunAsync"/> throws <see cref="JournalNotFoundException"/> when the directory has no journal with the id,
-    /// <see cref="JournalInUseException"/> when another run holds it, <see cref="JournalOpenException"/> when it cannot be opened or
+    /// <see cref="JournalInUseException"/> when another run holds it, <see cref="JournalAccessException"/> when it cannot be opened or
     /// read, and <see cref="JournalFormatException"/> when it cannot be read as a journal. <see cref="Journals.ListAsync"/> lists the
     /// journals in a directory, to choose one from.
     /// </para>
@@ -105,18 +105,18 @@ public abstract record Journal
     /// <summary>Opens the journal the choice names, before the run exists: <see langword="null"/> for no journal.</summary>
     internal abstract JournalFile? Open(TimeProvider clock);
 
-    private sealed record NoJournal : Journal
+    private sealed class NoJournal : Journal
     {
         internal override JournalFile? Open(TimeProvider clock) => null;
     }
 
-    private sealed record NewJournal(string Directory, string? Description) : Journal
+    private sealed class NewJournal(string directory, string? description) : Journal
     {
-        internal override JournalFile Open(TimeProvider clock) => JournalFile.Create(Directory, Description, clock);
+        internal override JournalFile Open(TimeProvider clock) => JournalFile.Create(directory, description, clock);
     }
 
-    private sealed record ContinuedJournal(JournalLocation Location) : Journal
+    private sealed class ContinuedJournal(JournalLocation location) : Journal
     {
-        internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(Location);
+        internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(location);
     }
 }

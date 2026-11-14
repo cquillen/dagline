@@ -20,7 +20,7 @@ namespace Dagline;
 /// </remarks>
 /// <param name="atTheStart">Every node as it is when the run starts, in declaration order.</param>
 /// <param name="positions">The position of each node among the graph's nodes, by path.</param>
-/// <param name="slots">The run's slots, which give the size of the cap and of each limit.</param>
+/// <param name="slots">The run's slots, which give the size of the max running tasks and of each limit.</param>
 /// <param name="journal">What every snapshot of the run says about its journal, which is fixed for the run.</param>
 internal sealed class SnapshotTaker(
     IEnumerable<NodeSnapshot> atTheStart,
@@ -80,7 +80,7 @@ internal sealed class SnapshotTaker(
             _nodes,
             positions,
             change.RunCounts,
-            slots.CapIn(change.SlotsInUse),
+            slots.RunningTasksIn(change.SlotsInUse),
             slots.LimitsIn(change.SlotsInUse),
             journal);
     }

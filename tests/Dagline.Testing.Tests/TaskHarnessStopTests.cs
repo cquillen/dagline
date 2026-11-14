@@ -15,7 +15,7 @@ public class TaskHarnessStopTests
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
             await using var harness = TaskHarness.For(context =>
-                context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(false), "the export to finish"));
+                context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(false), "the export to finish"));
 
             var outcome = await harness.RunUntilWaitingThenStopAsync();
 
@@ -33,11 +33,11 @@ public class TaskHarnessStopTests
             {
                 try
                 {
-                    await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
+                    await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
                 }
                 catch (OperationCanceledException)
                 {
-                    context.Warn("stopped while the export was still running");
+                    context.AddWarning("stopped while the export was still running");
                     throw context.Fail("stopped before the export finished", "job 17 is still running");
                 }
             });
@@ -60,7 +60,7 @@ public class TaskHarnessStopTests
         {
             await using var harness = TaskHarness.For(context =>
             {
-                context.Message("nothing to wait for");
+                context.SetMessage("nothing to wait for");
                 return Task.CompletedTask;
             });
 
@@ -81,7 +81,7 @@ public class TaskHarnessStopTests
             await using var harness = TaskHarness.For(async context =>
             {
                 seen = context.TimeProvider;
-                await context.WaitUntil(TimeSpan.FromMilliseconds(1), _ => Task.FromResult(false));
+                await context.WaitUntilAsync(TimeSpan.FromMilliseconds(1), _ => Task.FromResult(false));
             });
 
             var outcome = await harness.RunUntilWaitingThenStopAsync();
@@ -104,7 +104,7 @@ public class TaskHarnessStopTests
                 async context =>
                 {
                     seen = context.TimeProvider;
-                    await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
+                    await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
                 },
                 clock);
 
@@ -126,7 +126,7 @@ public class TaskHarnessStopTests
                 {
                     try
                     {
-                        using (context.Waiting())
+                        using (context.BeginWaiting())
                         {
                             await Task.Delay(Timeout.InfiniteTimeSpan, context.TimeProvider, context.CancellationToken);
                         }
@@ -138,7 +138,7 @@ public class TaskHarnessStopTests
                             await Task.Delay(TimeSpan.FromHours(1), context.TimeProvider);
                         }
 
-                        context.Message("cleaned up after the stop");
+                        context.SetMessage("cleaned up after the stop");
                         throw;
                     }
                 },
@@ -161,7 +161,7 @@ public class TaskHarnessStopTests
             {
                 seen.Enqueue(context.Checkpoint);
                 await context.SaveCheckpointAsync("job-17");
-                await context.WaitUntil(TimeSpan.FromMinutes(5), _ => Task.FromResult(context.Checkpoint == "job-17" && seen.Count == 2));
+                await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(context.Checkpoint == "job-17" && seen.Count == 2));
             });
 
             var first = await harness.RunUntilWaitingThenStopAsync();

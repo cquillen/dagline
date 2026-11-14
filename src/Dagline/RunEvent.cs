@@ -33,35 +33,59 @@ public abstract record RunEvent
     }
 
     /// <summary>When it happened, read from the run's <see cref="RunOptions.TimeProvider"/>.</summary>
-    public DateTimeOffset At { get; init; }
+    public DateTimeOffset At { get; }
+
+    // A record that is not sealed must keep a protected copy constructor, through which code outside Dagline could derive an event.
+    // A concrete type must override every abstract member, and none outside can override this one, so the set stays closed.
+    private protected abstract void ClosedToOutsideDerivation();
 }
 
 /// <summary>The run started. This is the first event of every run.</summary>
-/// <param name="At">When the run started.</param>
-/// <param name="Source">A live source of snapshots of this run, which a reporter may keep and read at any time.</param>
-public sealed record RunStarted(DateTimeOffset At, ISnapshotSource Source) : RunEvent(At)
+public sealed record RunStarted : RunEvent
 {
+    internal RunStarted(DateTimeOffset at, ISnapshotSource source)
+        : base(at)
+    {
+        Source = source;
+    }
+
     /// <summary>A live source of snapshots of this run, which a reporter may keep and read at any time.</summary>
-    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
-    public ISnapshotSource Source { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Source);
+    public ISnapshotSource Source { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
 /// A task changed status. One is published for every change, pending to ready and pending to blocked included.
 /// </summary>
-/// <param name="At">When the status changed.</param>
-/// <param name="Node">The task as it is after the change. When the task has settled, this carries its whole outcome.</param>
-/// <param name="From">The status before the change.</param>
-/// <param name="To">The status after the change.</param>
-public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, NodeStatus From, NodeStatus To) : RunEvent(At)
+public sealed record TaskStatusChanged : RunEvent
 {
+    internal TaskStatusChanged(DateTimeOffset at, NodeSnapshot node, NodeStatus from, NodeStatus to)
+        : base(at)
+    {
+        Node = node;
+        From = from;
+        To = to;
+    }
+
     /// <summary>The task as it is after the change. When the task has settled, this carries its whole outcome.</summary>
-    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
-    public NodeSnapshot Node { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Node);
+    public NodeSnapshot Node { get; }
+
+    /// <summary>The status before the change.</summary>
+    public NodeStatus From { get; }
+
+    /// <summary>The status after the change.</summary>
+    public NodeStatus To { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
-/// A running task added a warning to its outcome with <see cref="TaskContext.Warn"/>, and Dagline kept it.
+/// A running task added a warning to its outcome with <see cref="TaskContext.AddWarning"/>, and Dagline kept it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -74,18 +98,28 @@ public sealed record TaskStatusChanged(DateTimeOffset At, NodeSnapshot Node, Nod
 /// <see cref="NodeSnapshot.WarningsOmitted"/> and gets no event, so one task never publishes more than 100 of these.
 /// </para>
 /// </remarks>
-/// <param name="At">When the warning was added.</param>
-/// <param name="Path">The path of the task that added the warning.</param>
-/// <param name="Warning">The warning, on one line: each line break in the text the task gave is replaced by a space.</param>
-public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warning) : RunEvent(At)
+public sealed record WarningAdded : RunEvent
 {
+    internal WarningAdded(DateTimeOffset at, NodePath path, string warning)
+        : base(at)
+    {
+        Path = path;
+        Warning = warning;
+    }
+
+    /// <summary>The path of the task that added the warning.</summary>
+    public NodePath Path { get; }
+
     /// <summary>The warning, on one line: each line break in the text the task gave is replaced by a space.</summary>
-    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
-    public string Warning { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Warning);
+    public string Warning { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
-/// A running task began or stopped waiting: its waiting marker, opened with <see cref="TaskContext.Waiting"/>, began or ended.
+/// A running task began or stopped waiting: its waiting marker, opened with <see cref="TaskContext.BeginWaiting"/>, began or ended.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -103,15 +137,36 @@ public sealed record WarningAdded(DateTimeOffset At, NodePath Path, string Warni
 /// Waiting is a marker and never a status: the task is running throughout, and keeps its slots.
 /// </para>
 /// </remarks>
-/// <param name="At">When the marker began or ended.</param>
-/// <param name="Path">The path of the task.</param>
-/// <param name="Waiting"><see langword="true"/> when the wait began, <see langword="false"/> when it ended.</param>
-/// <param name="Text">
-/// What the task is waiting for, as given to the scope that began the wait, on one line: each line break is a space.
-/// <see langword="null"/> when that scope gave no text or empty text.
-/// </param>
-/// <param name="Since">When the wait began. On a begin it equals <paramref name="At"/>; on an end it is the begin's time.</param>
-public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) : RunEvent(At);
+public sealed record WaitingChanged : RunEvent
+{
+    internal WaitingChanged(DateTimeOffset at, NodePath path, bool waiting, string? text, DateTimeOffset since)
+        : base(at)
+    {
+        Path = path;
+        Waiting = waiting;
+        Text = text;
+        Since = since;
+    }
+
+    /// <summary>The path of the task.</summary>
+    public NodePath Path { get; }
+
+    /// <summary><see langword="true"/> when the wait began, <see langword="false"/> when it ended.</summary>
+    public bool Waiting { get; }
+
+    /// <summary>
+    /// What the task is waiting for, as given to the scope that began the wait, on one line: each line break is a space.
+    /// <see langword="null"/> when that scope gave no text or empty text.
+    /// </summary>
+    public string? Text { get; }
+
+    /// <summary>When the wait began. On a begin it equals <see cref="RunEvent.At"/>; on an end it is the begin's time.</summary>
+    public DateTimeOffset Since { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
+}
 
 /// <summary>
 /// A group settled: the last task beneath it, at any depth, settled.
@@ -128,22 +183,30 @@ public sealed record WaitingChanged(DateTimeOffset At, NodePath Path, bool Waiti
 /// gets no event.
 /// A group's status before it settles is never an event: read it from a snapshot.
 /// </para>
+/// <para>Its <see cref="RunEvent.At"/> is when the group settled: the time its last task settled.</para>
 /// </remarks>
-/// <param name="At">When the group settled: the time its last task settled.</param>
-/// <param name="Path">The path of the group.</param>
-/// <param name="Status">
-/// The status the group settled with, derived from the tasks beneath it: failed if any failed, else cancelled if any was cancelled,
-/// else blocked if any is blocked, else succeeded.
-/// </param>
-/// <param name="Counts">
-/// How many tasks beneath the group, at any depth, have each status, with their sums and sub-counts, as the group's
-/// <see cref="NodeSnapshot.Counts"/> gives them in the snapshot handed with this event.
-/// </param>
-public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus Status, TaskCounts Counts)
-    : RunEvent(At)
+public sealed record GroupSettled : RunEvent
 {
+    internal GroupSettled(DateTimeOffset at, NodePath path, NodeStatus status, TaskCounts counts)
+        : base(at)
+    {
+        Path = path;
+        Status = status;
+        Counts = counts;
+    }
+
+    /// <summary>The path of the group.</summary>
+    public NodePath Path { get; }
+
     /// <summary>
-    /// How many tasks beneath the group, at any depth, have each status, with their sums and sub-counts.
+    /// The status the group settled with, derived from the tasks beneath it: failed if any failed, else cancelled if any was cancelled,
+    /// else blocked if any is blocked, else succeeded.
+    /// </summary>
+    public NodeStatus Status { get; }
+
+    /// <summary>
+    /// How many tasks beneath the group, at any depth, have each status, with their sums and sub-counts, as the group's
+    /// <see cref="NodeSnapshot.Counts"/> gives them in the snapshot handed with this event.
     /// <see cref="TaskCounts.EarlierSuccesses"/> counts the earlier successes among the succeeded, so that a reporter can show
     /// how much this run did, and none of the tasks is running, so none is waiting.
     /// </summary>
@@ -152,8 +215,11 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
     /// run always has at least one task beneath it that settled in that run. The event does not carry the warnings beneath the group:
     /// read the group's <see cref="NodeSnapshot.WarningCount"/> from the snapshot handed with it.
     /// </remarks>
-    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
-    public TaskCounts Counts { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Counts);
+    public TaskCounts Counts { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
@@ -178,24 +244,30 @@ public sealed record GroupSettled(DateTimeOffset At, NodePath Path, NodeStatus S
 /// and a task that fails still blocks its dependents.
 /// </para>
 /// </remarks>
-/// <param name="At">When the stop was applied.</param>
-/// <param name="By">Who asked for the stop: the app, through its <see cref="StopSignal"/>, or Dagline, when a journal write failed.</param>
-/// <param name="GracePeriod">
-/// How long the run waits for its running tasks to end. <see cref="Timeout.InfiniteTimeSpan"/> means the run waits until they have.
-/// </param>
-public sealed record StopRequested(DateTimeOffset At, StopRequester By, TimeSpan GracePeriod) : RunEvent(At)
+public sealed record StopRequested : RunEvent
 {
-    /// <summary>A stop the app asked for through its <see cref="StopSignal"/>.</summary>
-    /// <param name="at">When the stop was applied.</param>
-    /// <param name="gracePeriod">How long the run waits for its running tasks to end.</param>
-    public StopRequested(DateTimeOffset at, TimeSpan gracePeriod)
-        : this(at, StopRequester.App, gracePeriod)
+    internal StopRequested(DateTimeOffset at, StopRequester by, TimeSpan gracePeriod)
+        : base(at)
+    {
+        By = by;
+        GracePeriod = gracePeriod;
+    }
+
+    /// <summary>Who asked for the stop: the app, through its <see cref="StopSignal"/>, or Dagline, when a journal write failed.</summary>
+    public StopRequester By { get; }
+
+    /// <summary>
+    /// How long the run waits for its running tasks to end. <see cref="Timeout.InfiniteTimeSpan"/> means the run waits until they have.
+    /// </summary>
+    public TimeSpan GracePeriod { get; }
+
+    private protected override void ClosedToOutsideDerivation()
     {
     }
 }
 
 /// <summary>
-/// The run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
+/// The grace ended: the run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -209,9 +281,21 @@ public sealed record StopRequested(DateTimeOffset At, StopRequester By, TimeSpan
 /// Nothing a task's body does after this changes the run, and nothing is published when the body ends.
 /// </para>
 /// </remarks>
-/// <param name="At">When the run stopped waiting.</param>
-/// <param name="Reason">Why the run stopped waiting.</param>
-public sealed record StoppedWaiting(DateTimeOffset At, StoppedWaitingReason Reason) : RunEvent(At);
+public sealed record GraceEnded : RunEvent
+{
+    internal GraceEnded(DateTimeOffset at, GraceEndReason reason)
+        : base(at)
+    {
+        Reason = reason;
+    }
+
+    /// <summary>Why the grace ended: a second stop, or the grace period ran out.</summary>
+    public GraceEndReason Reason { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
+}
 
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <remarks>
@@ -219,32 +303,27 @@ public sealed record StoppedWaiting(DateTimeOffset At, StoppedWaitingReason Reas
 /// A run whose journal could no longer be written ends with a <see cref="JournalWriteException"/> and no run outcome, and
 /// <see cref="Runner.RunAsync"/> throws that same exception once reporters have handled every event.
 /// </remarks>
-/// <param name="At">When the run ended.</param>
-/// <param name="Outcome">How the run ended, or <see langword="null"/> when it ended with an error.</param>
-/// <param name="Error">The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</param>
-public sealed record RunEnded(DateTimeOffset At, RunOutcome? Outcome, Exception? Error) : RunEvent(At)
+public sealed record RunEnded : RunEvent
 {
-    /// <summary>A run that ended with a run outcome, and no error.</summary>
-    /// <param name="at">When the run ended.</param>
-    /// <param name="outcome">How the run ended.</param>
-    public RunEnded(DateTimeOffset at, RunOutcome outcome)
-        : this(at, outcome, null)
+    internal RunEnded(DateTimeOffset at, RunOutcome outcome)
+        : base(at)
     {
+        Outcome = outcome;
+    }
+
+    internal RunEnded(DateTimeOffset at, Exception error)
+        : base(at)
+    {
+        Error = error;
     }
 
     /// <summary>How the run ended, or <see langword="null"/> when it ended with an error.</summary>
-    /// <remarks>
-    /// Set only by the constructor, as is <see cref="Error"/>, so that an object initializer or a <see langword="with"/> expression
-    /// cannot give an event both or neither.
-    /// </remarks>
-    /// <exception cref="ArgumentException">
-    /// Both or neither of <see cref="Outcome"/> and <see cref="Error"/> are given when the event is constructed.
-    /// </exception>
-    public RunOutcome? Outcome { get; } = (Outcome is null) != (Error is null)
-        ? Outcome
-        : throw new ArgumentException("A run ends with exactly one of a run outcome and an error.", nameof(Error));
+    public RunOutcome? Outcome { get; }
 
     /// <summary>The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</summary>
-    /// <remarks>Set only by the constructor, as is <see cref="Outcome"/>.</remarks>
-    public Exception? Error { get; } = Error;
+    public Exception? Error { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }

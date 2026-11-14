@@ -85,7 +85,7 @@ public class StopTests
             var stop = new StopSignal();
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Cap = 2, Reporters = [reporter] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 2, Reporters = [reporter] }, stop);
             await honour.Started;
             await finish.Started;
             stop.Request();
@@ -207,11 +207,11 @@ public class StopTests
         {
             var load = new StoppedBody(context =>
             {
-                context.Status("loading entities");
-                context.Count(40, 100);
-                context.Warn("entity 9 has no region");
-                context.Message("loaded 40 of 100 entities");
-                context.Detail("stopped at entity 41");
+                context.SetStatusText("loading entities");
+                context.SetCount(40, 100);
+                context.AddWarning("entity 9 has no region");
+                context.SetMessage("loaded 40 of 100 entities");
+                context.AddDetail("stopped at entity 41");
                 context.CancellationToken.ThrowIfCancellationRequested();
             });
             var builder = new GraphBuilder();

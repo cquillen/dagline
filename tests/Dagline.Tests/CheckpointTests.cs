@@ -243,11 +243,11 @@ public class CheckpointTests
         });
         var graph = builder.Build();
 
-        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path), Cap = 1 });
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path), MaxRunningTasks = 1 });
         firstRun = false;
         await Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Cap = 1 });
+            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), MaxRunningTasks = 1 });
 
         refused.Select(exception => exception.ParamName).ShouldBe(["text", "text"]);
         handedBack.ShouldBe(["", "", fits, fitsInWideCharacters]);
@@ -417,7 +417,6 @@ public class CheckpointTests
         ]);
         reporter.Events.ShouldAllBe(runEvent => !runEvent.ToString().Contains(checkpoint, StringComparison.Ordinal));
         var node = result.Snapshot[export.Path];
-        node.ToString().ShouldNotContain(checkpoint);
         new[] { node.Message, node.StatusText, node.WaitingText }.Concat(node.Detail).Concat(node.Warnings)
             .ShouldAllBe(text => text == null || !text.Contains(checkpoint, StringComparison.Ordinal));
     }

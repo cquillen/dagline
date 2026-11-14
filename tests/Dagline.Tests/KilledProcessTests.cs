@@ -41,11 +41,11 @@ public class KilledProcessTests
         var cuts = JournalCutter.Cut(Directory.GetFiles(temporary.Path, "*.journal").Single());
 
         cuts[^2].WriteTo(copies.Path);
-        var summary = (await Journals.ListAsync(copies.Path)).ShouldHaveSingleItem();
+        var summary = (await Journals.ListAsync(copies.Path)).Journals.ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Died);
         summary.LatestRun!.Ended.ShouldBeNull();
-        summary.Finished.ShouldBeFalse();
+        summary.IsFinished.ShouldBeFalse();
     }
 
     [Test]
@@ -72,7 +72,8 @@ public class KilledProcessTests
             graph,
             new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id) });
 
-        fromTheCopy.Snapshot.Journal.ShouldBe(new JournalInfo(first.Snapshot.Journal.Id, "all shards", 2));
+        (fromTheCopy.Snapshot.Journal!.Id, fromTheCopy.Snapshot.Journal.Description, fromTheCopy.Snapshot.Journal.Run)
+            .ShouldBe((first.Snapshot.Journal.Id, "all shards", 2));
     }
 
     private static async Task ContinuesAsExpected(JournalCut cut, IEnumerable<Line> wholeLines, Work work)
@@ -137,7 +138,7 @@ public class KilledProcessTests
     }
 
     // One task at a time, so that the order of the journal's lines follows the order of the run's events.
-    private static RunOptions Sequential(Journal journal, IReporter reporter) => new() { Journal = journal, Cap = 1, Reporters = [reporter] };
+    private static RunOptions Sequential(Journal journal, IReporter reporter) => new() { Journal = journal, MaxRunningTasks = 1, Reporters = [reporter] };
 
     private enum Phase
     {

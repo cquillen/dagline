@@ -3,10 +3,10 @@ using Spectre.Console;
 namespace Dagline.Spectre;
 
 /// <summary>
-/// The reporter <see cref="SpectreReporter.Auto"/> gives: it chooses the display or the plain-text reporter when it handles
+/// The reporter <see cref="SpectreReporter.Create"/> gives: it chooses the display or the plain-text reporter when it handles
 /// <see cref="RunStarted"/>, and hands that event and every later one of the run to the reporter it chose.
 /// </summary>
-internal sealed class AutoReporter(TextWriter? plainText, SpectreOptions options) : IReporter
+internal sealed class AutoReporter(SpectreOptions options) : IReporter
 {
     private readonly IAnsiConsole _console = options.Console ?? AnsiConsole.Create(new AnsiConsoleSettings());
     private readonly TimeProvider _clock = options.TimeProvider ?? TimeProvider.System;
@@ -27,7 +27,7 @@ internal sealed class AutoReporter(TextWriter? plainText, SpectreOptions options
 
     private IReporter Choose()
     {
-        var writer = plainText ?? Console.Out;
+        var writer = options.PlainText ?? Console.Out;
         return UsesDisplay()
             ? new Display(new Terminal(_console), _clock, options.Ascii ? Glyphs.Ascii : Glyphs.Unicode, writer)
             : new PlainTextReporter(writer, _clock);

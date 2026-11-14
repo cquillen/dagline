@@ -20,7 +20,7 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 - `tests/Dagline.TestSupport`: helpers the test projects share (recording reporter, paused task bodies, fake clock helper); holds no tests, never packed
 - `samples/`: runnable console apps
 - `samples/Dagline.Samples.Batch`: the acceptance sample, about 1,500 tasks over 10 shards of 75 tenants, run against a fake entity store and a fake job scheduler
-- `samples/Dagline.Samples.Batch.Tests`: the sample's three harness tests, written as a consumer's; the acceptance test of `Dagline.Testing` and the worked example its docs point to
+- `samples/Dagline.Samples.Batch.Tests`: the sample's four harness tests, written as a consumer's; the acceptance test of `Dagline.Testing` and the worked example its docs point to
 - `benchmarks/Dagline.Benchmarks`: what a whole run costs in time and allocation, per scenario; never packed, holds no tests
 - `docs/`: DocFX site, published to GitHub Pages
 
@@ -34,6 +34,7 @@ Dagline: an in-process .NET 10 library for running DAGs of tasks in CLI apps, wi
 - Every public type and member needs an XML doc comment (CS1591 is an error in CI). These comments become the published API reference: write them for that reader, with as much behavioural and implementation detail as they would want (ordering, concurrency, failure modes).
 - Inside the code, names and structure are the documentation. Reserve `//` comments for the surprising: a non-obvious reason, a workaround, a constraint the code cannot show.
 - Factoring and design rules live in `CODING_STANDARDS.md`. Read it before writing or reviewing C#.
+- Each package lists its public surface in `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`. A change to public API updates `PublicAPI.Unshipped.txt` in the same PR (`RS0016`/`RS0017`; see `CONTRIBUTING.md`). `Dagline` and `Dagline.Testing` are `IsAotCompatible`: fix any trim or AOT warning, never suppress it.
 - Any change to public API or behaviour updates `docs/` and `CHANGELOG.md` (`[Unreleased]`) in the same PR.
 - Keep the GitHub Pages docs site current: each new feature gets user-facing docs in `docs/articles/` (new page or section, added to `toc.yml`), and replace TODO stubs as the features they describe land.
 - Never commit to `main`. Use a branch and PR. Versions come from git tags (MinVer); never set `<Version>`.

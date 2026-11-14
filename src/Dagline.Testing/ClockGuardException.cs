@@ -6,7 +6,7 @@ namespace Dagline.Testing;
 /// </summary>
 /// <remarks>
 /// It is not a <see cref="DaglineException"/>: Dagline itself never throws it. Thrown inside a task body, as from a delay of
-/// <see cref="TaskContext.WaitUntil"/>, it fails the task as an unexpected failure and the run goes on to its end.
+/// <see cref="TaskContext.WaitUntilAsync"/>, it fails the task as an unexpected failure and the run goes on to its end.
 /// </remarks>
 public sealed class ClockGuardException : Exception
 {

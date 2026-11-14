@@ -5,11 +5,11 @@ namespace Dagline.Tests;
 public class LimitUseTests
 {
     // None of these tests is repeated, because none has a race. In each, either the test pauses the bodies and reads the snapshot
-    // while nothing can change, or the cap or a limit of size 1 lets one body run at a time, so the events can come in one order only.
+    // while nothing can change, or a max running tasks or a limit of 1 lets one body run at a time, so the events can come in one order only.
     // The last two assert on what a snapshot names, not on what ran at once.
 
     [Test]
-    public async Task The_snapshot_shows_the_cap_and_each_limit_the_graph_names_with_its_size_and_slots_in_use()
+    public async Task The_snapshot_shows_the_max_running_tasks_and_each_limit_the_graph_names_with_its_size_and_slots_in_use()
     {
         var firstLoad = new PausedBody();
         var secondLoad = new PausedBody();
@@ -29,7 +29,7 @@ public class LimitUseTests
             new RunOptions
             {
                 Journal = Journal.None,
-                Cap = 3,
+                MaxRunningTasks = 3,
                 Limits = new Dictionary<string, int> { ["network"] = 5, ["files"] = 2, ["database"] = 1, ["queue"] = 9 },
                 Reporters = [reporter],
             });
@@ -45,14 +45,14 @@ public class LimitUseTests
         var result = await run;
 
         bodiesPaused[held.Path].Status.ShouldBe(NodeStatus.Ready);
-        bodiesPaused.Cap.ShouldBe(new LimitUse(Size: 3, InUse: 3));
-        bodiesPaused.Limits.ShouldBe(
+        (bodiesPaused.RunningTasks.Size, bodiesPaused.RunningTasks.InUse).ShouldBe((3, 3));
+        bodiesPaused.Limits.Select(limit => (limit.Key, limit.Value.Size, limit.Value.InUse)).ShouldBe(
         [
-            KeyValuePair.Create("database", new LimitUse(Size: 1, InUse: 1)),
-            KeyValuePair.Create("files", new LimitUse(Size: 2, InUse: 1)),
-            KeyValuePair.Create("network", new LimitUse(Size: 5, InUse: 0)),
+            ("database", 1, 1),
+            ("files", 2, 1),
+            ("network", 5, 0),
         ]);
-        result.Snapshot.Cap.ShouldBe(new LimitUse(Size: 3, InUse: 0));
+        (result.Snapshot.RunningTasks.Size, result.Snapshot.RunningTasks.InUse).ShouldBe((3, 0));
         result.Snapshot.Limits.Values.ShouldAllBe(limit => limit.InUse == 0);
     }
 
@@ -75,7 +75,7 @@ public class LimitUseTests
 
         // The snapshot handed with an event is the run as of that event, so it shows the slots as the event left them.
         result.Outcome.ShouldBe(RunOutcome.Complete);
-        reporter.Lines.Zip(reporter.Snapshots, (line, snapshot) => (line, snapshot.Cap.InUse, snapshot.Limits["database"].InUse)).ShouldBe(
+        reporter.Lines.Zip(reporter.Snapshots, (line, snapshot) => (line, snapshot.RunningTasks.InUse, snapshot.Limits["database"].InUse)).ShouldBe(
         [
             ("run started", 0, 0),
             ("load-1: pending -> ready", 0, 0),
@@ -103,14 +103,14 @@ public class LimitUseTests
             new RunOptions
             {
                 Journal = Journal.None,
-                Cap = 1,
+                MaxRunningTasks = 1,
                 Limits = new Dictionary<string, int> { ["database"] = 1 },
                 Reporters = [reporter],
             });
 
-        // load-2 is held by the cap and by the limit, and export by the cap alone, until the failed task gives both back.
+        // load-2 is held by the max running tasks and by the limit, and export by the max running tasks alone, until the failed task gives both back.
         result.Outcome.ShouldBe(RunOutcome.Incomplete);
-        reporter.Lines.Zip(reporter.Snapshots, (line, snapshot) => (line, snapshot.Cap.InUse, snapshot.Limits["database"].InUse)).ShouldBe(
+        reporter.Lines.Zip(reporter.Snapshots, (line, snapshot) => (line, snapshot.RunningTasks.InUse, snapshot.Limits["database"].InUse)).ShouldBe(
         [
             ("run started", 0, 0),
             ("load-1: pending -> ready", 0, 0),
@@ -150,7 +150,7 @@ public class LimitUseTests
     }
 
     [Test]
-    public async Task A_graph_that_names_no_limit_has_only_the_cap_which_defaults_to_sixteen()
+    public async Task A_graph_that_names_no_limit_has_only_the_max_running_tasks_which_default_to_sixteen()
     {
         var builder = new GraphBuilder();
         builder.Task("prepare", _ => Task.CompletedTask);
@@ -159,7 +159,7 @@ public class LimitUseTests
             builder.Build(),
             new RunOptions { Journal = Journal.None, Limits = new Dictionary<string, int> { ["database"] = 2 } });
 
-        result.Snapshot.Cap.ShouldBe(new LimitUse(Size: 16, InUse: 0));
+        (result.Snapshot.RunningTasks.Size, result.Snapshot.RunningTasks.InUse).ShouldBe((16, 0));
         result.Snapshot.Limits.ShouldBeEmpty();
     }
 }

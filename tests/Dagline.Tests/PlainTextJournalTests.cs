@@ -15,7 +15,7 @@ public class PlainTextJournalTests
         var firstBuilder = new GraphBuilder();
         firstBuilder.Task("a", context =>
         {
-            context.Warn("entity 9 has no region");
+            context.AddWarning("entity 9 has no region");
             return Task.CompletedTask;
         });
         var firstB = firstBuilder.Task("b", context => throw context.Fail("2 bad entities"));
@@ -43,7 +43,7 @@ public class PlainTextJournalTests
         b.Release();
         var reportContext = await report.Started;
         clock.Advance(TimeSpan.FromSeconds(1));
-        reportContext.Message("2 of 2 checks passed");
+        reportContext.SetMessage("2 of 2 checks passed");
         report.Release();
         await run;
 
@@ -187,13 +187,13 @@ public class PlainTextJournalTests
         var builder = new GraphBuilder();
         builder.Task("load", context =>
         {
-            context.Warn("entity 9 has no region");
-            context.Warn("entity 12 has no region");
+            context.AddWarning("entity 9 has no region");
+            context.AddWarning("entity 12 has no region");
             return Task.CompletedTask;
         });
         builder.Task("store", context =>
         {
-            context.Warn("entity 3 has a bad date");
+            context.AddWarning("entity 3 has a bad date");
             return Task.CompletedTask;
         });
         builder.Task("publish", context =>
@@ -203,7 +203,7 @@ public class PlainTextJournalTests
                 throw context.Fail("no connection");
             }
 
-            context.Warn("nothing new to publish");
+            context.AddWarning("nothing new to publish");
             return Task.CompletedTask;
         });
         var graph = builder.Build();
@@ -288,13 +288,12 @@ public class PlainTextJournalTests
         var reporter = new PlainTextReporter(writer, clock);
 
         await reporter.OnEventAsync(
-            new StopRequested(_firstRunStart.AddSeconds(5), StopRequester.Dagline, TimeSpan.FromSeconds(30)), running, CancellationToken.None);
+            FailedJournalWrite.StopRequested(_firstRunStart.AddSeconds(5), TimeSpan.FromSeconds(30)), running, CancellationToken.None);
         await reporter.OnEventAsync(
-            new StopRequested(_firstRunStart.AddSeconds(5), StopRequester.Dagline, Timeout.InfiniteTimeSpan), running, CancellationToken.None);
+            FailedJournalWrite.StopRequested(_firstRunStart.AddSeconds(5), Timeout.InfiniteTimeSpan), running, CancellationToken.None);
         await reporter.OnEventAsync(
-            new RunEnded(
+            FailedJournalWrite.RunEnded(
                 _firstRunStart.AddSeconds(5),
-                null,
                 new InvalidOperationException("The journal can no longer be written.", new IOException("disk full"))),
             final,
             CancellationToken.None);

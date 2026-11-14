@@ -23,7 +23,7 @@ static Task PrepareAsync(TaskContext context) => Task.CompletedTask;
 static Task PublishAsync(TaskContext context) => Task.CompletedTask;
 ```
 
-Every task starts pending, except a task that a [journal](journals.md) the run continues records as succeeded and whose success [stands](journals.md#an-after-task-runs-again-when-what-it-is-after-runs-again). A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the cap and its limits](#sizing-the-cap-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
+Every task starts pending, except a task that a [journal](journals.md) the run continues records as succeeded and whose success [stands](journals.md#an-after-task-runs-again-when-what-it-is-after-runs-again). A task becomes ready once every dependency it has is met, and a ready task starts as soon as [the max running tasks and its limits](#sizing-the-max-running-tasks-and-limits) have room, in [declaration order](defining-a-graph.md#declaration-order). Here `prepare` runs first and `publish` runs once it has succeeded. [Defining a graph](defining-a-graph.md) covers groups, paths and both kinds of dependency.
 
 Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock, through which it also reports progress, warnings and its outcome: see [Writing tasks](writing-tasks.md).
 
@@ -38,7 +38,7 @@ The graph is not changed by a run. You can run the same built graph again, and e
 | Option | Default | What it is |
 | --- | --- | --- |
 | `Journal` | none: you must set it | The journal choice of the run. |
-| `Cap` | 16 | The most tasks that may be running at once. |
+| `MaxRunningTasks` | 16 | The most tasks that may be running at once. |
 | `Limits` | no sizes | The size of each limit the graph names. |
 | `TimeProvider` | `TimeProvider.System` | The clock of the run. |
 | `GracePeriod` | 30 seconds | How long a stopped run waits for its running tasks. See [the grace period](#the-grace-period). |
@@ -75,13 +75,13 @@ A reporter is something that presents a run to people while it happens. Each rep
 
 The list is read once when the run starts. A reporter cannot change the run, and Dagline itself never writes to the console: what your app prints is up to you and your reporters.
 
-The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Auto()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
+The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Create()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
 
-## Sizing the cap and limits
+## Sizing the max running tasks and limits
 
 Two options bound how much runs at once.
 
-The **cap** is the most tasks that may be running at once, whatever limits they hold. It defaults to 16. The default is fixed and not derived from the processor count, because a task mostly waits on other systems.
+The **max running tasks**, <xref:Dagline.RunOptions.MaxRunningTasks>, is the most tasks that may be running at once, whatever limits they hold. It defaults to 16. The default is fixed and not derived from the processor count, because a task mostly waits on other systems.
 
 A **limit** is a ceiling on the tasks that hold it. The graph [names limits](defining-a-graph.md#limits) on tasks and on groups, and the run gives each one a size:
 
@@ -89,7 +89,7 @@ A **limit** is a ceiling on the tasks that hold it. The graph [names limits](def
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = Journal.None,
-    Cap = 32,
+    MaxRunningTasks = 32,
     Limits = new Dictionary<string, int>
     {
         ["database"] = 4,
@@ -101,25 +101,25 @@ var result = await Runner.RunAsync(graph, new RunOptions
 Sizes belong to the run and not to the graph because they are tuning: the graph is the same work whatever machine runs it.
 
 - Every limit the graph names needs a size. A missing one is an [error before the run starts](#errors-before-a-run-starts), so a misspelt limit name cannot silently remove a bound.
-- The cap and every size must be at least 1.
+- The max running tasks and every size must be at least 1.
 - A size for a limit the graph does not name is ignored, so one set of sizes can serve several graphs.
 - Names are compared exactly: `database` and `Database` are two limits.
 
 ### How ready tasks start
 
-A running task holds one slot of the cap and one slot of each of its limits, from the moment it starts until it settles, whatever its status. That includes the time it spends waiting on another system. If your tasks wait a lot, set a high cap and put limits on the heavy work.
+A running task holds one slot of the max running tasks and one slot of each of its limits, from the moment it starts until it settles, whatever its status. That includes the time it spends waiting on another system. If your tasks wait a lot, set a high max running tasks and put limits on the heavy work.
 
-When the run starts, and whenever a task settles after that, Dagline tries the ready tasks in declaration order. Each one that finds a free slot in the cap and in every one of its limits takes them all and starts. One that does not fit takes none and is passed over: it stays ready, and the tasks behind it are still tried. A task held by a full limit therefore never holds up a task that does not need that limit.
+When the run starts, and whenever a task settles after that, Dagline tries the ready tasks in declaration order. Each one that finds a free slot in the max running tasks and in every one of its limits takes them all and starts. One that does not fit takes none and is passed over: it stays ready, and the tasks behind it are still tried. A task held by a full limit therefore never holds up a task that does not need that limit.
 
 There are no priorities and no fairness. A task that needs two busy limits can be passed over many times.
 
 ### How full they are
 
-A snapshot shows how busy the run is. <xref:Dagline.Snapshot.Cap> is the cap, and <xref:Dagline.Snapshot.Limits> has every limit the graph names. Each is a <xref:Dagline.LimitUse>: its size and how many of its slots are in use.
+A snapshot shows how busy the run is. <xref:Dagline.Snapshot.RunningTasks> is the max running tasks, and <xref:Dagline.Snapshot.Limits> has every limit the graph names. Each is a <xref:Dagline.LimitUse>: its size and how many of its slots are in use.
 
 ```csharp
 var database = snapshot.Limits["database"];
-Console.WriteLine($"{snapshot.Cap.InUse} of {snapshot.Cap.Size} running, database {database.InUse} of {database.Size}");
+Console.WriteLine($"{snapshot.RunningTasks.InUse} of {snapshot.RunningTasks.Size} running, database {database.InUse} of {database.Size}");
 ```
 
 ## The result
@@ -132,7 +132,7 @@ Console.WriteLine($"{snapshot.Cap.InUse} of {snapshot.Cap.Size} running, databas
 - **Incomplete**: the run went as far as it could and at least one task did not succeed.
 - **Stopped**: the run was [asked to stop](#stopping-a-run) and at least one task did not succeed.
 
-`Snapshot` is the final snapshot of the run: every node in declaration order with its status, its start and settle times and the dependencies and limits declared on it, plus the count of tasks per status, the cap and each limit, the start and end of the run, and the stop if there was one.
+`Snapshot` is the final snapshot of the run: every node in declaration order with its status, its start and settle times and the dependencies and limits declared on it, plus the count of tasks per status, the max running tasks and each limit, the start and end of the run, and the stop if there was one.
 
 ```csharp
 foreach (var node in result.Snapshot.Nodes)
@@ -181,20 +181,20 @@ foreach (var blocked in result.Snapshot.Blocked)
 
 ## Stopping a run
 
-An app can ask a run to stop. It passes a <xref:Dagline.StopSignal> to `RunAsync`, and a request on the signal stops the run. The usual one is Ctrl+C, which the `Dagline.Spectre` package hooks in one call:
+An app can ask a run to stop. It passes a <xref:Dagline.StopSignal> to `RunAsync`, and a request on the signal stops the run. The usual ones are Ctrl+C and SIGTERM, which the core package hooks in one call:
 
 ```csharp
-using Dagline.Spectre;
-
 using var stop = ConsoleStop.Hook();
 
 var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, stop);
 return result.Outcome.ToExitCode();
 ```
 
-<xref:Dagline.Spectre.ConsoleStop.Hook*> gives a signal hooked to the console's cancel key. The first Ctrl+C requests a stop and the second requests again, which ends the [grace period](#the-grace-period); both are swallowed so that the process lives on and the run winds down. From the third on nothing is swallowed, so the operating system ends the process. Disposing it unhooks the key. See [The terminal display](terminal-ui.md#stopping).
+<xref:Dagline.ConsoleStop.Hook*> gives a signal hooked to the console's cancel key and to SIGTERM, which a service manager or a container runtime sends to ask a process to end. The hook counts Ctrl+C and SIGTERM together. The first requests a stop and the second requests again, which ends the [grace period](#the-grace-period); both are swallowed so that the process lives on and the run winds down. From the third on nothing is swallowed, so the operating system ends the process. There is no option to leave SIGTERM out. Disposing it unhooks both. See [The terminal display](terminal-ui.md#stopping).
 
-Dagline itself never hooks Ctrl+C or a process signal: a library should not take over your process, so what asks for a stop is up to your app. To wire a stop yourself, create a `new StopSignal()` and call <xref:Dagline.StopSignal.Request*> from wherever you decide: a file appearing, a timer, a message from another process.
+On Windows, .NET raises SIGTERM when the machine shuts down or the user logs off, and Windows ends the process a few seconds later whatever the hook does. On a platform where .NET cannot hook SIGTERM, the signal hooks Ctrl+C alone.
+
+Dagline hooks no Ctrl+C and no process signal unless your app calls `ConsoleStop.Hook`: a library should not take over your process, so what asks for a stop is up to your app. To wire a stop yourself, create a `new StopSignal()` and call <xref:Dagline.StopSignal.Request*> from wherever you decide: a file appearing, a timer, a message from another process. A plain `StopSignal` holds nothing to release and is not disposable.
 
 `Request` is safe to call from any thread, a console's cancel handler included. It never blocks and never throws. `IsRequested` says whether a stop has been asked for, and `Requests` counts every call. A run given no signal cannot be stopped.
 
@@ -222,7 +222,7 @@ The wait ends in one of three ways:
 - **The grace period runs out** with tasks still running.
 - **A second stop:** a second `Request` on the same signal ends the wait at once, so an operator who presses Ctrl+C twice is not held for the whole grace period. A third request changes nothing.
 
-In the last two cases the run publishes a <xref:Dagline.StoppedWaiting> event with the reason, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
+In the last two cases the run publishes a <xref:Dagline.GraceEnded> event whose `Reason` is a <xref:Dagline.GraceEndReason>, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
 
 Both extremes are a setting:
 
@@ -243,7 +243,7 @@ A signal requested twice before the run starts gives the same result as one requ
 A stopped run leaves two kinds of unfinished work, and the snapshot tells them apart:
 
 - **Cancelled** tasks were running and ended because of the stop: their body ended with a cancellation exception, or was still running when the run stopped waiting. Cancelled is a settled status. <xref:Dagline.Snapshot.Cancelled> lists them in declaration order. A cancelled task never blocks: a task that requires it stays pending.
-- **Never reached** tasks had not started: they keep their status, pending or ready, and are not settled. <xref:Dagline.Snapshot.NeverReached> lists them in declaration order once the run has ended, and is empty before then. A group with such a task beneath it does not settle.
+- **Never reached** tasks had not started: they keep their status, pending or ready, and are not settled. <xref:Dagline.Snapshot.NeverReached> lists them in declaration order once the run has ended, and is empty before then. A group with such a task beneath it does not settle. Tasks a failure blocked are not among them: see [Which tasks did not run, and why](reporters.md#which-tasks-did-not-run-and-why).
 
 A task that finished in spite of the stop keeps its real status, succeeded or failed. <xref:Dagline.Snapshot.Stop> holds when the stop was applied, from the `StopRequested` snapshot on.
 
@@ -297,13 +297,15 @@ Dagline never sets the exit code of your process. <xref:Dagline.RunOutcomeExtens
 | Incomplete | 1 |
 | Stopped | 2 |
 
+The mapping is stable: these three codes keep their meaning in every release, so a script that calls your app can rely on them. See [Compatibility](compatibility.md).
+
 ## Errors before a run starts
 
 `RunAsync` throws `ArgumentNullException` when the graph or the options are null, and `ArgumentException` when a reporter in the options is null. Both are thrown at the call, before any task starts and before any reporter is called.
 
 `RunAsync` throws <xref:Dagline.RunConfigurationException> when the options cannot work for the graph:
 
-- the cap is below 1,
+- `MaxRunningTasks` is below 1,
 - a size in `Limits` is below 1,
 - the graph names a limit that `Limits` gives no size,
 - the grace period is below zero or above about 49.7 days (`uint.MaxValue - 1` milliseconds), and is not `Timeout.InfiniteTimeSpan`.
@@ -312,8 +314,22 @@ Its message lists every problem, one to a line, so you can fix them all in one p
 
 ```text
 The options cannot be used to run the graph:
-- The cap is 0. It must be at least 1.
+- MaxRunningTasks is 0. It must be at least 1.
 - The graph names the limit 'database', and the options give it no size.
+```
+
+<xref:Dagline.RunConfigurationException.Problems> holds the same problems, in the same order, without the heading or the dashes, so you can show each one your own way without splitting the message:
+
+```csharp
+catch (RunConfigurationException refused)
+{
+    foreach (var problem in refused.Problems)
+    {
+        Console.Error.WriteLine($"error: {problem}");
+    }
+
+    return 64;
+}
 ```
 
 It is thrown at the call too: no task has started, no event has been published and no reporter has been called.
@@ -324,10 +340,10 @@ A run on a journal then holds, opens and reads it, also before anything has happ
 | --- | --- |
 | <xref:Dagline.JournalInUseException> | Another run holds the journal, in this process or another. |
 | <xref:Dagline.JournalNotFoundException> | <xref:Dagline.Journal.Continue*> names a journal that is not in its directory. |
-| <xref:Dagline.JournalOpenException> | The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written. |
+| <xref:Dagline.JournalAccessException> | The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written. |
 | <xref:Dagline.JournalFormatException> | The file cannot be read as a journal: its first line is not a journal header, its format version is unknown (in `Version`), or a line other than the last is not an entry. |
 
-See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.
+The first three carry the journal's `Id` and `Directory`; for a directory that cannot be created, `JournalAccessException.Id` is null. Each message names the file or directory and says what could not be done with it. See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.
 
 `RunConfigurationException` and the journal exceptions derive from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
 

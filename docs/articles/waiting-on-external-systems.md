@@ -4,19 +4,19 @@ Some tasks do little work themselves. They ask another system to do it, such as 
 
 ## The wait helper
 
-<xref:Dagline.TaskContext.WaitUntil(System.TimeSpan,System.Func{System.Threading.CancellationToken,System.Threading.Tasks.Task{System.Boolean}},System.String)> takes an interval, a check and a line of text:
+<xref:Dagline.TaskContext.WaitUntilAsync(System.TimeSpan,System.Func{System.Threading.CancellationToken,System.Threading.Tasks.Task{System.Boolean}},System.String)> takes an interval, a check and a line of text:
 
 ```csharp
 builder.Task("export", async context =>
 {
     var job = await jobs.SubmitAsync("export", context.CancellationToken);
 
-    await context.WaitUntil(
+    await context.WaitUntilAsync(
         TimeSpan.FromSeconds(30),
         async token => (await jobs.GetStateAsync(job, token)).IsFinished,
         $"job {job} to finish");
 
-    context.Message($"job {job} finished");
+    context.SetMessage($"job {job} finished");
 });
 ```
 
@@ -32,10 +32,10 @@ The interval runs from the end of one check to the start of the next, so a slow 
 The check receives the task's <xref:Dagline.TaskContext.CancellationToken>: pass it to everything the check awaits. A check may use the context as the body does, so it can show how far the external work has got:
 
 ```csharp
-await context.WaitUntil(TimeSpan.FromSeconds(30), async token =>
+await context.WaitUntilAsync(TimeSpan.FromSeconds(30), async token =>
 {
     var state = await jobs.GetStateAsync(job, token);
-    context.Count(state.ItemsDone, state.ItemsTotal);
+    context.SetCount(state.ItemsDone, state.ItemsTotal);
     return state.IsFinished;
 }, $"job {job} to finish");
 ```
@@ -55,9 +55,9 @@ Reporters see a <xref:Dagline.WaitingChanged> when the wait begins and another w
 
 ### A waiting task keeps its slots
 
-A waiting task holds its slot of the cap and of each of its limits for the whole wait, as any running task does. A limit on triggered work therefore bounds the work that is in flight in the external system, not only the moment of triggering it: with a limit of 4, no more than four jobs are ever waited on at once.
+A waiting task holds its slot of the max running tasks and of each of its limits for the whole wait, as any running task does. A limit on triggered work therefore bounds the work that is in flight in the external system, not only the moment of triggering it: with a limit of 4, no more than four jobs are ever waited on at once.
 
-The cost is that idle tasks take up the cap. A run with many long waits wants a high <xref:Dagline.RunOptions.Cap>, so that waiting tasks do not keep working tasks from starting, and a [limit](defining-a-graph.md) on the heavy local work, so that a high cap does not let too much of it run at once.
+The cost is that idle tasks count towards the max running tasks. A run with many long waits wants a high <xref:Dagline.RunOptions.MaxRunningTasks>, so that waiting tasks do not keep working tasks from starting, and a [limit](defining-a-graph.md) on the heavy local work, so that a high max running tasks does not let too much of it run at once.
 
 ## When a check fails
 
@@ -66,7 +66,7 @@ The helper does not catch an exception from the check. An exception that escapes
 When the external system says the work itself went wrong, report it from inside the check, and the task fails as a reported failure with your message:
 
 ```csharp
-await context.WaitUntil(TimeSpan.FromSeconds(30), async token =>
+await context.WaitUntilAsync(TimeSpan.FromSeconds(30), async token =>
 {
     var state = await jobs.GetStateAsync(job, token);
     if (state.HasFailed)
@@ -83,7 +83,7 @@ await context.WaitUntil(TimeSpan.FromSeconds(30), async token =>
 A check that throws ends the wait, and the external work it was watching is still running. Every task waiting on the same system calls it, so one network blip can fail every waiting task at once. Whether a failed check means the work failed is your decision, so make it in the check: catch the errors you expect to pass, and return `false` to check again at the next interval.
 
 ```csharp
-await context.WaitUntil(TimeSpan.FromSeconds(30), async token =>
+await context.WaitUntilAsync(TimeSpan.FromSeconds(30), async token =>
 {
     try
     {
@@ -91,7 +91,7 @@ await context.WaitUntil(TimeSpan.FromSeconds(30), async token =>
     }
     catch (HttpRequestException exception)
     {
-        context.Status($"could not reach the job service, trying again: {exception.Message}");
+        context.SetStatusText($"could not reach the job service, trying again: {exception.Message}");
         return false;
     }
 }, $"job {job} to finish");
@@ -107,7 +107,7 @@ A wait has no deadline. Dagline never gives up on work that may still be running
 var began = context.TimeProvider.GetTimestamp();
 var limit = TimeSpan.FromHours(2);
 
-await context.WaitUntil(TimeSpan.FromMinutes(1), async token =>
+await context.WaitUntilAsync(TimeSpan.FromMinutes(1), async token =>
 {
     if (context.TimeProvider.GetElapsedTime(began) > limit)
     {
@@ -122,10 +122,10 @@ The same pattern counts failed checks in a row, if you want to ride out a few tr
 
 ## A loop of your own
 
-When the helper does not fit, such as a wait on a message rather than on a check, write the loop yourself inside a waiting scope. <xref:Dagline.TaskContext.Waiting(System.String)> marks the task as waiting until the scope is disposed:
+When the helper does not fit, such as a wait on a message rather than on a check, write the loop yourself inside a waiting scope. <xref:Dagline.TaskContext.BeginWaiting(System.String)> marks the task as waiting until the scope is disposed:
 
 ```csharp
-using (context.Waiting($"job {job} to finish"))
+using (context.BeginWaiting($"job {job} to finish"))
 {
     while (!(await jobs.GetStateAsync(job, context.CancellationToken)).IsFinished)
     {
@@ -149,7 +149,7 @@ A check that is running when the stop arrives is not interrupted: it sees the to
 ```csharp
 try
 {
-    await context.WaitUntil(TimeSpan.FromSeconds(30), CheckAsync, $"job {job} to finish");
+    await context.WaitUntilAsync(TimeSpan.FromSeconds(30), CheckAsync, $"job {job} to finish");
 }
 catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
 {
@@ -184,13 +184,13 @@ builder.Task("export", async context =>
         await context.SaveCheckpointAsync(job);
     }
 
-    context.Status($"job {job}");
-    await context.WaitUntil(
+    context.SetStatusText($"job {job}");
+    await context.WaitUntilAsync(
         TimeSpan.FromSeconds(30),
         async token => (await jobs.GetStateAsync(job, token)).IsFinished,
         $"job {job} to finish");
 
-    context.Message($"job {job} finished");
+    context.SetMessage($"job {job} finished");
 });
 ```
 

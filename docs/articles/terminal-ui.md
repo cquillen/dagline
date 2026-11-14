@@ -6,7 +6,7 @@ The core `Dagline` package has no console or UI dependency. The display is a [re
 
 ## Using it
 
-Add the package and give the run the reporter that <xref:Dagline.Spectre.SpectreReporter.Auto*> returns:
+Add the package and give the run the reporter that <xref:Dagline.Spectre.SpectreReporter.Create*> returns:
 
 ```csharp
 using Dagline;
@@ -17,13 +17,13 @@ using var stop = ConsoleStop.Hook();
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = Journal.None,
-    Reporters = [SpectreReporter.Auto()],
+    Reporters = [SpectreReporter.Create()],
 }, stop);
 
 return result.Outcome.ToExitCode();
 ```
 
-There is nothing to configure: the layout is fixed, and the display needs nothing from your app beyond the run. It prints the summary itself, so your app prints nothing at the end of a run. <xref:Dagline.Spectre.ConsoleStop> turns Ctrl+C into a stop: see [Stopping](#stopping). [Getting started](getting-started.md) builds a whole app around these lines.
+There is nothing to configure: the layout is fixed, and the display needs nothing from your app beyond the run. It prints the summary itself, so your app prints nothing at the end of a run. <xref:Dagline.ConsoleStop>, from the core package, turns Ctrl+C and SIGTERM into a stop: see [Stopping](#stopping). [Getting started](getting-started.md) builds a whole app around these lines.
 
 Give one reporter to one run at a time.
 
@@ -81,9 +81,9 @@ Three lines about the whole run.
 
 - **The first** names the run: the journal's description, its id and which run of it this is, as in `Dagline  all shards  journal 20261111T041200Z-a3f9c2 · run 2`, or `no journal`. Two displays side by side can be told apart by it. At the right are the percentage of tasks settled, rounded down, and the time elapsed since the run started. There is no estimate of the time remaining, since the run cannot know it.
 - **The second** is one bar for the whole run, split by status: earlier successes first and dimmer, then the successes of this run, the failed, blocked and cancelled tasks, the working and the waiting ones. The rest of the bar, the tasks not yet started, is empty.
-- **The third** counts the tasks per status: succeeded, working, waiting, ready, pending, failed, blocked, cancelled, then the warnings. Earlier successes follow the succeeded in brackets, as in `✓ 1,560 (1,543 earlier)`, so you can see how much this run did itself. At the right are the cap in use over its size (`cap 55/96`), how many limits are full out of how many (`1 of 11 limits full`), and how many ready tasks are [held](../../GLOSSARY.md#scheduling) (`6 ready, held`), so a busy run can be told from a throttled one.
+- **The third** counts the tasks per status: succeeded, working, waiting, ready, pending, failed, blocked, cancelled, then the warnings. Earlier successes follow the succeeded in brackets, as in `✓ 1,560 (1,543 earlier)`, so you can see how much this run did itself. At the right are the running tasks over the [max running tasks](running-and-stopping.md#sizing-the-max-running-tasks-and-limits) (`cap 55/96`), how many limits are full out of how many (`1 of 11 limits full`), and how many ready tasks are [held](../../GLOSSARY.md#scheduling) (`6 ready, held`), so a busy run can be told from a throttled one.
 
-A count of zero is left out, and so are full limits and held tasks when there are none. The cap is always shown.
+A count of zero is left out, and so are full limits and held tasks when there are none. The running tasks over the max running tasks are always shown.
 
 ### Groups
 
@@ -132,14 +132,14 @@ Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a nar
 
 ## Stopping
 
-<xref:Dagline.Spectre.ConsoleStop.Hook*> gives a <xref:Dagline.StopSignal> hooked to the console's cancel key. Pass it to the run and dispose it when the run has ended, as `using var` does:
+<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, gives a <xref:Dagline.StopSignal> hooked to the console's cancel key and to SIGTERM. Pass it to the run and dispose it when the run has ended, as `using var` does. The hook counts Ctrl+C and SIGTERM together:
 
-- **The first Ctrl+C** requests a stop: the run starts nothing more and waits for its running tasks to end, for at most its [grace period](running-and-stopping.md#the-grace-period).
-- **The second Ctrl+C** requests again, which ends that wait at once.
+- **The first Ctrl+C or SIGTERM** requests a stop: the run starts nothing more and waits for its running tasks to end, for at most its [grace period](running-and-stopping.md#the-grace-period).
+- **The second**, of either kind, requests again, which ends that wait at once.
 - Both are swallowed, so your process lives on, the run winds down and `RunAsync` returns its result.
-- **From the third Ctrl+C on** nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
+- **From the third on** nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Disposing unhooks the key, and a press after that is your app's own business again. The signal hooks nothing but the console's cancel key event, and the core package still hooks nothing at all. Of that event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. The two presses are counted by the hook itself, so a `Request` your app makes on the same signal does not use one up. The display does not depend on the hook: any stop signal shows the banner.
+Disposing unhooks both, and a Ctrl+C or SIGTERM after that is your app's own business again. The signal hooks nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. The two are counted by the hook itself, so a `Request` your app makes on the same signal does not use one up. The display does not depend on the hook: any stop signal shows the banner.
 
 ### The stop banner
 
@@ -195,17 +195,24 @@ There is no exit code in the summary, so it never disagrees with the code your a
 
 ## Plain text instead
 
-`SpectreReporter.Auto` decides once, when it handles <xref:Dagline.RunStarted>, and keeps that choice for the run:
+`SpectreReporter.Create` decides once, when it handles <xref:Dagline.RunStarted>, and keeps that choice for the run:
 
 - With `DisplayMode.Auto`, the default, it chooses the display when standard output is not redirected and the console accepts ANSI sequences, and the plain-text reporter otherwise. Standard input is not looked at, so piping input into your app keeps the display, and neither is whether the process looks like it runs in CI, nor the size of the terminal.
 - `DisplayMode.Force` always chooses the display, even on a console that is not a terminal.
 - `DisplayMode.Never` always chooses plain text, and nothing is drawn on the console.
 
-The plain-text reporter is a <xref:Dagline.PlainTextReporter> on the writer you pass as `plainText`, or on standard output, and prints the run as timestamped lines: see [the plain-text reporter](reporters.md#the-plain-text-reporter). Give an operator with an unusual terminal a flag to fall back on:
+The plain-text reporter is a <xref:Dagline.PlainTextReporter> on the writer you set as <xref:Dagline.Spectre.SpectreOptions.PlainText>, or on standard output as it is when the run starts, and prints the run as timestamped lines: see [the plain-text reporter](reporters.md#the-plain-text-reporter). The reporter never closes the writer. If the display is chosen and drawing fails, the rest of the run goes to the same writer as plain text, after one line saying so.
+
+```csharp
+using var log = File.CreateText("run.log");
+var reporter = SpectreReporter.Create(new SpectreOptions { PlainText = log });
+```
+
+Give an operator with an unusual terminal a flag to fall back on:
 
 ```csharp
 var plain = args.Contains("--plain");
-var reporter = SpectreReporter.Auto(options: new SpectreOptions
+var reporter = SpectreReporter.Create(new SpectreOptions
 {
     Display = plain ? DisplayMode.Never : DisplayMode.Auto,
 });
@@ -216,7 +223,7 @@ var reporter = SpectreReporter.Auto(options: new SpectreOptions
 For a terminal or font that lacks the Unicode glyphs, set `Ascii`:
 
 ```csharp
-var reporter = SpectreReporter.Auto(options: new SpectreOptions { Ascii = true });
+var reporter = SpectreReporter.Create(new SpectreOptions { Ascii = true });
 ```
 
 The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Text from your graph and tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the error a run ended with, is drawn with each character outside ASCII as `?`, so `café` becomes `caf?`. Neither a frame nor the summary then writes any character outside ASCII.

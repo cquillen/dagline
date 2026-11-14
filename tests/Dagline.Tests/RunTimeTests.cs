@@ -61,12 +61,12 @@ public class RunTimeTests
         {
             for (var entity = 1; entity <= 60; entity++)
             {
-                context.Status($"loading entity {entity}");
-                context.Count(entity, 60);
+                context.SetStatusText($"loading entity {entity}");
+                context.SetCount(entity, 60);
             }
 
-            context.Message("loaded 60 entities");
-            context.Detail("entity 3: no owner");
+            context.SetMessage("loaded 60 entities");
+            context.AddDetail("entity 3: no owner");
             _ = context.Fail("1 bad entity", "entity 3: no owner");
             return Task.CompletedTask;
         });

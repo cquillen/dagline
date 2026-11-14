@@ -18,28 +18,28 @@ public class AsciiTests
         var builder = new GraphBuilder();
         builder.Task("ok", context =>
         {
-            context.Warn("odd café");
+            context.AddWarning("odd café");
             return Task.CompletedTask;
         }).Title("Größe");
         builder.Task("after", _ => Task.CompletedTask).Requires(builder.Task("bad", context => throw context.Fail("no input ✗", "détail 🙂")));
         builder.Task("work", context =>
         {
-            context.Count(1, 4);
-            context.Status("a long status text… that the ellipsis has to cut off before the time at the end");
+            context.SetCount(1, 4);
+            context.SetStatusText("a long status text… that the ellipsis has to cut off before the time at the end");
             return work.Body(context);
         });
         builder.Task("wait", async context =>
         {
-            using var job = context.Waiting("job → 17");
+            using var job = context.BeginWaiting("job → 17");
             await wait.Body(context);
         });
         builder.Task("cancel", async context =>
         {
-            context.Message("arrêté");
+            context.SetMessage("arrêté");
             await cancel.Body(context);
         });
         builder.Task("later", _ => Task.CompletedTask).Requires(builder.Task("held", _ => Task.CompletedTask));
-        var options = new RunOptions { Journal = Journal.New(temporary.Path, "all shards ✓"), Cap = 3 };
+        var options = new RunOptions { Journal = Journal.New(temporary.Path, "all shards ✓"), MaxRunningTasks = 3 };
 
         await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 30, options, stop, ascii: true);
         await work.Started;
@@ -91,14 +91,12 @@ public class AsciiTests
         builder.Task("load", _ => Task.CompletedTask);
         var recording = new RecordingReporter();
         var final = (await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [recording] })).Snapshot;
-        var source = await recording.Source;
         using var console = new TestConsole().Size(new Size(60, 20)).EmitAnsiSequences();
-        var display = SpectreReporter.Auto(
-            options: new SpectreOptions { Display = DisplayMode.Force, Ascii = true, Console = console, TimeProvider = clock });
+        var display = SpectreReporter.Create(new SpectreOptions { Display = DisplayMode.Force, Ascii = true, Console = console, TimeProvider = clock });
 
-        await display.OnEventAsync(new RunStarted(DisplayRun.RunStart, source), final, CancellationToken.None);
+        await display.OnEventAsync(recording.Events.OfType<RunStarted>().Single(), final, CancellationToken.None);
         await display.OnEventAsync(
-            new RunEnded(DisplayRun.RunStart.AddSeconds(5), null, new InvalidOperationException("disk full — no space")),
+            FailedJournalWrite.RunEnded(DisplayRun.RunStart.AddSeconds(5), new InvalidOperationException("disk full — no space")),
             final,
             CancellationToken.None);
 

@@ -58,12 +58,12 @@ _Avoid_: Semaphore, lock, pool, throttle
 One unit of a limit's size, held by one task from the moment it starts until it settles.
 _Avoid_: Permit, token, lease
 
-**Cap**:
-The most tasks that may be running at once in a run, whatever limits they hold.
-_Avoid_: Max parallelism, degree of parallelism, global limit
+**Max running tasks**:
+The most tasks that may be running at once in a run, whatever limits they hold. Every running task holds one slot of it.
+_Avoid_: Cap, max parallelism, degree of parallelism, global limit
 
 **Held**:
-Said of a ready task that cannot start because a limit it holds is full or the cap is reached.
+Said of a ready task that cannot start because a limit it holds is full or the max running tasks is reached.
 _Avoid_: Queued, throttled, starved
 
 **Declaration order**:
@@ -143,6 +143,10 @@ _Avoid_: Cancel, abort, kill, shut down
 **Grace period**:
 How long a run waits after a stop for its running tasks to end.
 _Avoid_: Timeout, drain time
+
+**Grace end**:
+The end of the wait after a stop while tasks are still running, because the grace period ran out or a second stop came. The run lets go of the tasks still running.
+_Avoid_: Stopped waiting, timeout
 
 **Run outcome**:
 How a run ended: complete, incomplete or stopped.

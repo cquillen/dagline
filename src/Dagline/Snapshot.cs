@@ -15,6 +15,7 @@ public sealed class Snapshot
     private readonly FrozenDictionary<NodePath, int> _positions;
     private IReadOnlyList<NodeSnapshot>? _failed;
     private IReadOnlyList<NodeSnapshot>? _cancelled;
+    private IReadOnlyList<NodeSnapshot>? _earlierSuccesses;
     private IReadOnlyList<NodeSnapshot>? _neverReached;
     private IReadOnlyList<NodeSnapshot>? _waiting;
     private IReadOnlyList<NodeSnapshot>? _working;
@@ -30,7 +31,7 @@ public sealed class Snapshot
         ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
         TaskCounts counts,
-        LimitUse cap,
+        LimitUse runningTasks,
         IReadOnlyDictionary<string, LimitUse> limits,
         SnapshotJournal journal)
     {
@@ -41,7 +42,7 @@ public sealed class Snapshot
         Nodes = nodes;
         _positions = positions;
         Counts = counts;
-        Cap = cap;
+        RunningTasks = runningTasks;
         Limits = limits;
         Journal = journal.Info;
         SetAside = journal.SetAside;
@@ -78,10 +79,10 @@ public sealed class Snapshot
     public TaskCounts Counts { get; }
 
     /// <summary>
-    /// The cap of the run: its size, from <see cref="RunOptions.Cap"/>, and how many of its slots are in use,
-    /// which is the number of tasks running at the instant of this snapshot.
+    /// The max running tasks of the run and how full it is: <see cref="LimitUse.Size"/> is <see cref="RunOptions.MaxRunningTasks"/>,
+    /// and <see cref="LimitUse.InUse"/> is the number of tasks running at the instant of this snapshot.
     /// </summary>
-    public LimitUse Cap { get; }
+    public LimitUse RunningTasks { get; }
 
     /// <summary>
     /// Every limit the graph names, on a task or on a group, by name: its size, from <see cref="RunOptions.Limits"/>,
@@ -142,6 +143,19 @@ public sealed class Snapshot
     /// as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> Cancelled => TasksWith(ref _cancelled, task => task.Status is NodeStatus.Cancelled);
+
+    /// <summary>
+    /// Every task that is an earlier success, as <see cref="NodeSnapshot.IsEarlierSuccess"/> says: a task a continuing run kept
+    /// as succeeded from its journal and did not run again. Tasks only, in declaration order. Empty for a run with no journal,
+    /// for a new journal, and when the journal kept no success.
+    /// </summary>
+    /// <remarks>
+    /// The list is the same in every snapshot of the run, from the one handed with <see cref="RunStarted"/> on: an earlier success
+    /// is succeeded from the start and never changes. A success the run set aside is not one: it is in <see cref="SetAside"/>
+    /// instead, and runs again. <see cref="TaskCounts.EarlierSuccesses"/> of <see cref="Counts"/> is the length of this list.
+    /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> EarlierSuccesses => TasksWith(ref _earlierSuccesses, task => task.IsEarlierSuccess);
 
     /// <summary>
     /// Every task that is waiting, as <see cref="NodeSnapshot.IsWaiting"/> says: running with a waiting scope open.

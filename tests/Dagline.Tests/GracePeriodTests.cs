@@ -59,13 +59,13 @@ public class GracePeriodTests
                 "run ended: stopped",
             ]);
             var requested = reporter.Events.OfType<StopRequested>().Single();
-            requested.ShouldBe(new StopRequested(_runStart.AddSeconds(5), TimeSpan.FromSeconds(30)));
-            reporter.Events.OfType<StoppedWaiting>().Single()
-                .ShouldBe(new StoppedWaiting(_runStart.AddSeconds(35), StoppedWaitingReason.GracePeriodOver));
+            (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart.AddSeconds(5), StopRequester.App, TimeSpan.FromSeconds(30)));
+            var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
+            (graceEnded.At, graceEnded.Reason).ShouldBe((_runStart.AddSeconds(35), GraceEndReason.GracePeriodOver));
             result.Snapshot[slowTask.Path].Message.ShouldBe(_leftBehind);
             result.Snapshot[stuckTask.Path].Settled.ShouldBe(_runStart.AddSeconds(35));
             result.Snapshot[tidy.Path].Status.ShouldBe(NodeStatus.Ready);
-            result.Snapshot.Cap.InUse.ShouldBe(0);
+            result.Snapshot.RunningTasks.InUse.ShouldBe(0);
             (await slow.Started).CancellationToken.IsCancellationRequested.ShouldBeTrue();
             slow.Release();
             stuck.Release();
@@ -93,7 +93,7 @@ public class GracePeriodTests
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
-            reporter.Events.OfType<StoppedWaiting>().ShouldBeEmpty();
+            reporter.Events.OfType<GraceEnded>().ShouldBeEmpty();
             reporter.Lines[^1].ShouldBe("run ended: stopped");
             result.Snapshot.Ended.ShouldBe(_runStart);
         }
@@ -191,8 +191,8 @@ public class GracePeriodTests
                 "run ended: stopped",
             ]);
             var requested = reporter.Events.OfType<StopRequested>().Single();
-            reporter.Events.OfType<StoppedWaiting>().Single().At.ShouldBe(requested.At);
-            result.Snapshot.Stop.ShouldBe(new StopState(requested.At, TimeSpan.Zero, requested.At, StopRequester.App));
+            reporter.Events.OfType<GraceEnded>().Single().At.ShouldBe(requested.At);
+            StopFacts(result.Snapshot).ShouldBe((requested.At, TimeSpan.Zero, requested.At, StopRequester.App));
             load.Release();
         }
     }
@@ -221,9 +221,9 @@ public class GracePeriodTests
             load.Release();
             var result = await run;
 
-            reporter.Events.OfType<StoppedWaiting>().ShouldBeEmpty();
+            reporter.Events.OfType<GraceEnded>().ShouldBeEmpty();
             result.Snapshot[loadTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
-            result.Snapshot.Stop.ShouldBe(new StopState(_runStart, Timeout.InfiniteTimeSpan, Deadline: null, StopRequester.App));
+            StopFacts(result.Snapshot).ShouldBe((_runStart, Timeout.InfiniteTimeSpan, Deadline: null, StopRequester.App));
             reporter.Events.OfType<StopRequested>().Single().GracePeriod.ShouldBe(Timeout.InfiniteTimeSpan);
         }
     }
@@ -302,7 +302,7 @@ public class GracePeriodTests
         var result = await run;
 
         var requestedAt = _runStart.AddSeconds(10);
-        result.Snapshot.Stop.ShouldBe(new StopState(requestedAt, TimeSpan.FromMinutes(2), requestedAt.AddMinutes(2), StopRequester.App));
+        StopFacts(result.Snapshot).ShouldBe((requestedAt, TimeSpan.FromMinutes(2), requestedAt.AddMinutes(2), StopRequester.App));
     }
 
     [Test]
@@ -314,14 +314,14 @@ public class GracePeriodTests
         builder.Task("load", _ => Task.CompletedTask);
         var reporter = new RecordingReporter();
         var gracePeriod = TimeSpan.FromMilliseconds(milliseconds);
-        var options = new RunOptions { Journal = Journal.None, Cap = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
+        var options = new RunOptions { Journal = Journal.None, MaxRunningTasks = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
 
         var exception = Should.Throw<RunConfigurationException>(() => { _ = Runner.RunAsync(builder.Build(), options); });
 
         exception.Message.Split(Environment.NewLine).ShouldBe(
         [
             "The options cannot be used to run the graph:",
-            "- The cap is 0. It must be at least 1.",
+            "- MaxRunningTasks is 0. It must be at least 1.",
             $"- The grace period is {gracePeriod}. It must be zero or more, or Timeout.InfiniteTimeSpan to wait with no limit.",
         ]);
         reporter.Events.ShouldBeEmpty();
@@ -336,14 +336,14 @@ public class GracePeriodTests
         builder.Task("load", _ => Task.CompletedTask);
         var reporter = new RecordingReporter();
         var gracePeriod = TimeSpan.FromTicks(ticks);
-        var options = new RunOptions { Journal = Journal.None, Cap = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
+        var options = new RunOptions { Journal = Journal.None, MaxRunningTasks = 0, GracePeriod = gracePeriod, Reporters = [reporter] };
 
         var exception = Should.Throw<RunConfigurationException>(() => { _ = Runner.RunAsync(builder.Build(), options); });
 
         exception.Message.Split(Environment.NewLine).ShouldBe(
         [
             "The options cannot be used to run the graph:",
-            "- The cap is 0. It must be at least 1.",
+            "- MaxRunningTasks is 0. It must be at least 1.",
             $"- The grace period is {gracePeriod}. It must be at most 49.17:02:47.2940000, about 49.7 days, or Timeout.InfiniteTimeSpan to wait with no limit.",
         ]);
         reporter.Events.ShouldBeEmpty();
@@ -388,11 +388,11 @@ public class GracePeriodTests
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", async context =>
             {
-                context.Status("loading entities");
-                context.Count(40, 100);
-                context.Warn("entity 9 has no region");
-                context.Message("loaded 40 of 100 entities");
-                context.Detail("stopped at entity 41");
+                context.SetStatusText("loading entities");
+                context.SetCount(40, 100);
+                context.AddWarning("entity 9 has no region");
+                context.SetMessage("loaded 40 of 100 entities");
+                context.AddDetail("stopped at entity 41");
                 await load.Body(context);
             });
             var stop = new StopSignal();
@@ -455,7 +455,7 @@ public class GracePeriodTests
             var builder = new GraphBuilder();
             builder.Task("job", async context =>
             {
-                using (context.Waiting("job 17 to finish"))
+                using (context.BeginWaiting("job 17 to finish"))
                 {
                     await poll.Body(context);
                 }
@@ -506,13 +506,13 @@ public class GracePeriodTests
             var source = await reporter.Source;
             var events = reporter.Events.Count;
 
-            context.Status("still going");
-            context.Count(99, 100);
-            context.Warn("late warning");
-            context.Message("late message");
-            context.Detail("late detail");
+            context.SetStatusText("still going");
+            context.SetCount(99, 100);
+            context.AddWarning("late warning");
+            context.SetMessage("late message");
+            context.AddDetail("late detail");
             _ = context.Fail("late failure");
-            context.Waiting("late wait").Dispose();
+            context.BeginWaiting("late wait").Dispose();
 
             reporter.Events.Count.ShouldBe(events);
             source.Current[loadTask.Path].ShouldBe(result.Snapshot[loadTask.Path]);
@@ -623,5 +623,11 @@ public class GracePeriodTests
                 unobserved.Add(args.Exception);
             }
         }
+    }
+
+    private static (DateTimeOffset RequestedAt, TimeSpan GracePeriod, DateTimeOffset? Deadline, StopRequester By) StopFacts(Snapshot snapshot)
+    {
+        var stop = snapshot.Stop.ShouldNotBeNull();
+        return (stop.RequestedAt, stop.GracePeriod, stop.Deadline, stop.By);
     }
 }

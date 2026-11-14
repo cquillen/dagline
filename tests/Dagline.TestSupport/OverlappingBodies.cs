@@ -2,7 +2,7 @@ namespace Dagline.TestSupport;
 
 /// <summary>
 /// A task body, shared by several tasks of one run, that counts how many of them are running at once
-/// and remembers the highest number seen. A test of the cap or of a limit gives it to every task the bound covers
+/// and remembers the highest number seen. A test of the max running tasks or of a limit gives it to every task the bound covers
 /// and asserts on <see cref="Highest"/> once the run has ended.
 /// </summary>
 /// <remarks>

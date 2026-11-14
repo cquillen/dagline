@@ -2,18 +2,18 @@ using Dagline.TestSupport;
 
 namespace Dagline.Tests;
 
-public class CapTests
+public class MaxRunningTasksTests
 {
     private const int _repeats = 50;
 
     [Test]
-    public async Task The_number_of_task_bodies_running_at_once_never_exceeds_the_cap()
+    public async Task The_number_of_task_bodies_running_at_once_never_exceeds_the_max_running_tasks()
     {
-        const int cap = 3;
+        const int maxRunningTasks = 3;
 
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
-            var bodies = new OverlappingBodies(expected: cap);
+            var bodies = new OverlappingBodies(expected: maxRunningTasks);
             var builder = new GraphBuilder();
             for (var shard = 1; shard <= 20; shard++)
             {
@@ -24,15 +24,15 @@ public class CapTests
 
             var result = await Runner.RunAsync(
                 builder.Build(),
-                new RunOptions { Journal = Journal.None, Cap = cap, Reporters = [reporter] });
+                new RunOptions { Journal = Journal.None, MaxRunningTasks = maxRunningTasks, Reporters = [reporter] });
 
             result.Outcome.ShouldBe(RunOutcome.Complete);
-            bodies.Highest.ShouldBe(cap);
+            bodies.Highest.ShouldBe(maxRunningTasks);
 
             // A body the run should not have started can begin after the others have left, and then it is not counted above.
             // The snapshot handed with its start counts it whenever its body gets a thread.
-            reporter.Snapshots.Max(snapshot => snapshot.Counts[NodeStatus.Running]).ShouldBe(cap);
-            reporter.Snapshots.Max(snapshot => snapshot.Cap.InUse).ShouldBe(cap);
+            reporter.Snapshots.Max(snapshot => snapshot.Counts[NodeStatus.Running]).ShouldBe(maxRunningTasks);
+            reporter.Snapshots.Max(snapshot => snapshot.RunningTasks.InUse).ShouldBe(maxRunningTasks);
         }
     }
 
@@ -48,7 +48,7 @@ public class CapTests
         builder.Task("shard-4", bodies[3].Body);
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Cap = 2, Reporters = [reporter] });
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 2, Reporters = [reporter] });
         await bodies[0].Started;
         await bodies[1].Started;
         bodies[1].Release();
@@ -79,7 +79,7 @@ public class CapTests
     [Test]
     public async Task A_task_that_has_just_become_ready_starts_before_a_held_task_later_in_declaration_order()
     {
-        // Not repeated: a cap of 1 lets one body run at a time, so the events can come in one order only.
+        // Not repeated: a max running tasks of 1 lets one body run at a time, so the events can come in one order only.
         var builder = new GraphBuilder();
         var prepare = builder.Task("prepare", _ => Task.CompletedTask);
         builder.Task("publish", _ => Task.CompletedTask).Requires(prepare);
@@ -88,7 +88,7 @@ public class CapTests
 
         var result = await Runner.RunAsync(
             builder.Build(),
-            new RunOptions { Journal = Journal.None, Cap = 1, Reporters = [reporter] });
+            new RunOptions { Journal = Journal.None, MaxRunningTasks = 1, Reporters = [reporter] });
 
         // Declaration order decides, not how long a task has been ready: there is no fairness.
         result.Outcome.ShouldBe(RunOutcome.Complete);
@@ -109,9 +109,9 @@ public class CapTests
     }
 
     [Test]
-    public async Task With_a_cap_of_one_the_ready_tasks_run_one_at_a_time_in_declaration_order()
+    public async Task With_a_max_running_tasks_of_one_the_ready_tasks_run_one_at_a_time_in_declaration_order()
     {
-        // Not repeated: a cap of 1 lets one body run at a time, so the events can come in one order only.
+        // Not repeated: a max running tasks of 1 lets one body run at a time, so the events can come in one order only.
         var builder = new GraphBuilder();
         builder.Task("shard-1", _ => Task.CompletedTask);
         builder.Task("shard-2", _ => Task.CompletedTask);
@@ -120,7 +120,7 @@ public class CapTests
 
         var result = await Runner.RunAsync(
             builder.Build(),
-            new RunOptions { Journal = Journal.None, Cap = 1, Reporters = [reporter] });
+            new RunOptions { Journal = Journal.None, MaxRunningTasks = 1, Reporters = [reporter] });
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
         reporter.Lines.ShouldBe(

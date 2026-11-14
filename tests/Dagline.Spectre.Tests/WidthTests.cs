@@ -13,14 +13,14 @@ public class WidthTests
         var check = builder.Group("validate").Title("a group title far too long to fit in its column at all").Group("shard-04").Group("tenant-035");
         check.Task("totals-across-every-entity", context =>
         {
-            context.Count(1928, 4087);
-            context.Status("summing entities\nacross every ledger");
+            context.SetCount(1928, 4087);
+            context.SetStatusText("summing entities\nacross every ledger");
             return totals.Body(context);
         });
         check.Task("broken-beyond-repair-entirely", context => throw context.Fail("a message that is much longer than the sixty columns of this console"));
         builder.Group("process").Group("shard-02").Task("extract-the-whole-history", async context =>
         {
-            using var wait = context.Waiting("external job 48067 running on the remote side, queued behind others");
+            using var wait = context.BeginWaiting("external job 48067 running on the remote side, queued behind others");
             await extract.Body(context);
         });
         var options = new RunOptions { Journal = Journal.None };

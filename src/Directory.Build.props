@@ -22,4 +22,11 @@
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
   </ItemGroup>
 
+  <!-- Each package records its public surface in PublicAPI.Shipped.txt and PublicAPI.Unshipped.txt beside its project file, so every change to it shows as a diff. CONTRIBUTING.md says how to update them. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
 </Project>

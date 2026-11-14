@@ -111,7 +111,7 @@ public class SpaceTests
         bodies.Add(waited);
         builder.Group("wait").Task("a1", async context =>
         {
-            using var job = context.Waiting("job");
+            using var job = context.BeginWaiting("job");
             await waited.Body(context);
         });
         for (var i = 1; i <= 6; i++)
@@ -191,7 +191,7 @@ public class SpaceTests
                     bodies.Add(body);
                     wait.Task($"a{i}", async context =>
                     {
-                        using var job = context.Waiting("job");
+                        using var job = context.BeginWaiting("job");
                         await body.Body(context);
                     });
                 }
@@ -203,7 +203,7 @@ public class SpaceTests
                 bad.Task($"f{i}", context => throw context.Fail("broken"));
             }
 
-            var display = await DisplayRun.StartAsync(builder.Build(), 80, height, new RunOptions { Journal = Journal.None, Cap = 96 });
+            var display = await DisplayRun.StartAsync(builder.Build(), 80, height, new RunOptions { Journal = Journal.None, MaxRunningTasks = 96 });
             foreach (var body in bodies)
             {
                 await body.Started;

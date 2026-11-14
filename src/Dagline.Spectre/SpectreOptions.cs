@@ -3,11 +3,23 @@ using Spectre.Console;
 namespace Dagline.Spectre;
 
 /// <summary>
-/// What an app may choose about the reporter that <see cref="SpectreReporter.Auto"/> gives. Every property has a default,
+/// What an app may choose about the reporter that <see cref="SpectreReporter.Create"/> gives. Every property has a default,
 /// and the display itself has nothing to configure: its layout is fixed.
 /// </summary>
 public sealed record SpectreOptions
 {
+    /// <summary>
+    /// Where plain text is written, or <see langword="null"/> for standard output as it is when the run starts.
+    /// The reporter never closes it.
+    /// </summary>
+    /// <remarks>
+    /// The plain-text reporter writes every line here when it is chosen in place of the display. When the display is chosen,
+    /// it writes here only if drawing fails: one line saying so, then the rest of the run as plain text. Standard output is
+    /// read when the reporter handles <see cref="RunStarted"/>, not when the options are made, so a writer the app sets with
+    /// <see cref="System.Console.SetOut(TextWriter)"/> before the run starts is the one used.
+    /// </remarks>
+    public TextWriter? PlainText { get; init; }
+
     /// <summary>
     /// Whether to give the display or the plain-text reporter. The default, <see cref="DisplayMode.Auto"/>, decides from the terminal.
     /// </summary>

@@ -68,20 +68,20 @@ public class RunConfigurationTests
     [Test]
     [Arguments(0)]
     [Arguments(-3)]
-    public void A_cap_below_one_is_refused_before_anything_happens(int cap)
+    public void A_max_running_tasks_below_one_is_refused_before_anything_happens(int maxRunningTasks)
     {
         var builder = new GraphBuilder();
         builder.Task("load", _ => Task.CompletedTask);
         var graph = builder.Build();
         var reporter = new RecordingReporter();
-        var options = new RunOptions { Journal = Journal.None, Cap = cap, Reporters = [reporter] };
+        var options = new RunOptions { Journal = Journal.None, MaxRunningTasks = maxRunningTasks, Reporters = [reporter] };
 
         var exception = Should.Throw<RunConfigurationException>(() => { _ = Runner.RunAsync(graph, options); });
 
         Lines(exception).ShouldBe(
         [
             "The options cannot be used to run the graph:",
-            $"- The cap is {cap}. It must be at least 1.",
+            $"- MaxRunningTasks is {maxRunningTasks}. It must be at least 1.",
         ]);
         reporter.Events.ShouldBeEmpty();
     }
@@ -96,7 +96,7 @@ public class RunConfigurationTests
         var options = new RunOptions
         {
             Journal = Journal.None,
-            Cap = 0,
+            MaxRunningTasks = 0,
             Limits = new Dictionary<string, int> { ["files"] = 0 },
         };
 
@@ -105,10 +105,17 @@ public class RunConfigurationTests
         Lines(exception).ShouldBe(
         [
             "The options cannot be used to run the graph:",
-            "- The cap is 0. It must be at least 1.",
+            "- MaxRunningTasks is 0. It must be at least 1.",
             "- The size of the limit 'files' is 0. It must be at least 1.",
             "- The graph names the limit 'database', and the options give it no size.",
             "- The graph names the limit 'network', and the options give it no size.",
+        ]);
+        exception.Problems.ShouldBe(
+        [
+            "MaxRunningTasks is 0. It must be at least 1.",
+            "The size of the limit 'files' is 0. It must be at least 1.",
+            "The graph names the limit 'database', and the options give it no size.",
+            "The graph names the limit 'network', and the options give it no size.",
         ]);
     }
 

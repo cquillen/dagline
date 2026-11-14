@@ -25,7 +25,7 @@ The faults:
 - `poll`: the first status call of the first job throws.
 - `job`: the last job ends in error.
 
-A run without `--fault` is the operator having fixed things. Before each run the sample prints one line saying whether it starts a new journal or continues the newest unfinished one for the same shards. The tenant count is not part of that match, so keep `--tenants` the same when you continue, or pass `--new`.
+A run without `--fault` is the operator having fixed things. Before each run the sample prints one line saying whether it starts a new journal or continues the newest unfinished one for the same shards. A journal file in the directory that cannot be read, such as one a later Dagline wrote, is named on standard error and passed over. The tenant count is not part of that match, so keep `--tenants` the same when you continue, or pass `--new`.
 
 ## Exit codes
 
@@ -36,6 +36,8 @@ A run without `--fault` is the operator having fixed things. Before each run the
 | 2 | The run was stopped. |
 | 64 | A bad option, a graph that fails to build, options the run refuses, or a journal that is in use or cannot be opened. The message is on standard error. |
 | 70 | A journal write failed. The message is on standard error. |
+
+Codes 0, 1 and 2 come from `RunOutcome.ToExitCode()`, a mapping Dagline keeps stable in every release. Codes 64 and 70 are the sample's own. What the sample prints is for people and may change: a script should go by the exit code alone, as CI does.
 
 ## Things to try
 

@@ -14,7 +14,7 @@ public class BuildProblemTests
         task.ShouldNotBeNull();
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(null, $"'shard 1' is not a valid segment for a node at the root: {_segmentRule}"),
+            Problem(null, $"'shard 1' is not a valid segment for a node at the root: {_segmentRule}"),
         ]);
     }
 
@@ -33,8 +33,8 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(null, $"'{segment}' is not a valid segment for a node in 'shard-1': {_segmentRule}"),
-            new GraphProblem(null, $"'{segment}' is not a valid segment for a node in 'shard-1/tenant-a': {_segmentRule}"),
+            Problem(null, $"'{segment}' is not a valid segment for a node in 'shard-1': {_segmentRule}"),
+            Problem(null, $"'{segment}' is not a valid segment for a node in 'shard-1/tenant-a': {_segmentRule}"),
         ]);
     }
 
@@ -59,7 +59,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(NodePath.Parse("shard-1/load"), "'shard-1/load' was added 2 times: a path is one node."),
+            Problem(NodePath.Parse("shard-1/load"), "'shard-1/load' was added 2 times: a path is one node."),
         ]);
     }
 
@@ -73,7 +73,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(NodePath.Parse("load"), "'load' was added 2 times: a path is one node."),
+            Problem(NodePath.Parse("load"), "'load' was added 2 times: a path is one node."),
         ]);
     }
 
@@ -88,7 +88,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(
+            Problem(
                 NodePath.Parse("shard-1"),
                 "'shard-1' was added 3 times: a path is one node. Adding a group again does not reopen it: keep its handle to add more children."),
         ]);
@@ -106,9 +106,9 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(null, $"'shard 1' is not a valid segment for a node at the root: {_segmentRule}"),
-            new GraphProblem(null, $"'shard 1' is not a valid segment for a node at the root: {_segmentRule}"),
-            new GraphProblem(null, "'shard 1/load' was added 2 times: a path is one node."),
+            Problem(null, $"'shard 1' is not a valid segment for a node at the root: {_segmentRule}"),
+            Problem(null, $"'shard 1' is not a valid segment for a node at the root: {_segmentRule}"),
+            Problem(null, "'shard 1/load' was added 2 times: a path is one node."),
         ]);
     }
 
@@ -125,7 +125,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(
+            Problem(
                 NodePath.Parse("shard-1/load"),
                 "'shard-1/load', 'shard-1/Load' and 'shard-1/LOAD' differ only by case: siblings must differ by more than case."),
         ]);
@@ -154,8 +154,8 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(NodePath.Parse("load"), "'load' was added 2 times: a path is one node."),
-            new GraphProblem(NodePath.Parse("load"), "'load' and 'Load' differ only by case: siblings must differ by more than case."),
+            Problem(NodePath.Parse("load"), "'load' was added 2 times: a path is one node."),
+            Problem(NodePath.Parse("load"), "'load' and 'Load' differ only by case: siblings must differ by more than case."),
         ]);
     }
 
@@ -173,8 +173,8 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(NodePath.Parse("publish"), "'publish' requires 'load', a handle from another builder."),
-            new GraphProblem(NodePath.Parse("reports"), "'reports' runs after 'shard-1', a handle from another builder."),
+            Problem(NodePath.Parse("publish"), "'publish' requires 'load', a handle from another builder."),
+            Problem(NodePath.Parse("reports"), "'reports' runs after 'shard-1', a handle from another builder."),
         ]);
         other.Build().Count.ShouldBe(2);
     }
@@ -191,8 +191,8 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(NodePath.Parse("load"), "'load' requires itself."),
-            new GraphProblem(NodePath.Parse("shard-1"), "'shard-1' runs after itself."),
+            Problem(NodePath.Parse("load"), "'load' requires itself."),
+            Problem(NodePath.Parse("shard-1"), "'shard-1' runs after itself."),
         ]);
     }
 
@@ -208,8 +208,8 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(NodePath.Parse("shard-1/tenant-a/load"), "'shard-1/tenant-a/load' requires 'shard-1', its own ancestor."),
-            new GraphProblem(NodePath.Parse("shard-1/tenant-a"), "'shard-1/tenant-a' runs after 'shard-1', its own ancestor."),
+            Problem(NodePath.Parse("shard-1/tenant-a/load"), "'shard-1/tenant-a/load' requires 'shard-1', its own ancestor."),
+            Problem(NodePath.Parse("shard-1/tenant-a"), "'shard-1/tenant-a' runs after 'shard-1', its own ancestor."),
         ]);
     }
 
@@ -226,8 +226,8 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(NodePath.Parse("shard-1"), "'shard-1' requires 'shard-1/tenant-a/load', its own descendant."),
-            new GraphProblem(NodePath.Parse("shard-1"), "'shard-1' runs after 'shard-1/tenant-a', its own descendant."),
+            Problem(NodePath.Parse("shard-1"), "'shard-1' requires 'shard-1/tenant-a/load', its own descendant."),
+            Problem(NodePath.Parse("shard-1"), "'shard-1' runs after 'shard-1/tenant-a', its own descendant."),
         ]);
     }
 
@@ -246,7 +246,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(
+            Problem(
                 NodePath.Parse("publish"),
                 "These dependencies form a cycle: 'publish' requires 'verify', 'verify' runs after 'load', 'load' requires 'publish'."),
         ]);
@@ -265,7 +265,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(
+            Problem(
                 NodePath.Parse("publish"),
                 "These dependencies form a cycle: 'publish' requires 'shard-1', 'shard-1/tenant-a/load' runs after 'publish'."),
         ]);
@@ -284,7 +284,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(
+            Problem(
                 NodePath.Parse("shard-1"),
                 "These dependencies form a cycle: 'shard-1' requires 'publish', 'publish' requires 'shard-1/tenant-a/load'."),
         ]);
@@ -302,7 +302,7 @@ public class BuildProblemTests
 
         ProblemsOf(builder).ShouldBe(
         [
-            new GraphProblem(
+            Problem(
                 NodePath.Parse("shard-1"),
                 "These dependencies form a cycle: 'shard-1' runs after 'publish', 'publish' requires 'shard-1'."),
         ]);
@@ -399,6 +399,8 @@ public class BuildProblemTests
         exception.ShouldBeAssignableTo<DaglineException>();
     }
 
-    private static IReadOnlyList<GraphProblem> ProblemsOf(GraphBuilder builder)
-        => Should.Throw<GraphException>(() => builder.Build()).Problems;
+    private static IReadOnlyList<(NodePath? Path, string Message)> ProblemsOf(GraphBuilder builder)
+        => [.. Should.Throw<GraphException>(() => builder.Build()).Problems.Select(problem => (problem.Path, problem.Message))];
+
+    private static (NodePath? Path, string Message) Problem(NodePath? path, string message) => (path, message);
 }

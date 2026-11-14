@@ -4,26 +4,26 @@ using System.Collections.ObjectModel;
 namespace Dagline;
 
 /// <summary>
-/// The slots of one run: how many are in use of the cap and of each limit the graph names,
-/// kept up to date as tasks start and settle. The cap behaves as a limit that every task holds.
+/// The slots of one run: how many are in use of the max running tasks and of each limit the graph names,
+/// kept up to date as tasks start and settle. The max running tasks behaves as a limit that every task holds.
 /// </summary>
 /// <remarks>
 /// It is not safe to use from several threads at once: <see cref="RunSteps"/> owns it and changes it one step at a time.
 /// </remarks>
 /// <param name="limitNames">Every limit the graph names, as <see cref="Graph.LimitNames"/> gives them.</param>
-/// <param name="sizes">The size of the cap and of each of those limits.</param>
+/// <param name="sizes">The max running tasks and the size of each of those limits.</param>
 internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes sizes)
 {
     private readonly int[] _inUse = new int[sizes.Limits.Length];
     private int _running;
 
-    /// <summary>How many numbers a tally of the slots in use takes: one for the cap, then one for each limit.</summary>
+    /// <summary>How many numbers a tally of the slots in use takes: one for the max running tasks, then one for each limit.</summary>
     public int TallyLength => 1 + _inUse.Length;
 
-    private bool CapIsFull => _running == sizes.Cap;
+    private bool IsAtMaxRunningTasks => _running == sizes.MaxRunningTasks;
 
     /// <summary>
-    /// Writes the slots in use now to the start of <paramref name="tally"/>: the cap's, then each limit's,
+    /// Writes the slots in use now to the start of <paramref name="tally"/>: the max running tasks', then each limit's,
     /// in the order the graph first names them.
     /// </summary>
     public void CopyTo(Span<int> tally)
@@ -32,8 +32,8 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
         _inUse.CopyTo(tally[1..]);
     }
 
-    /// <summary>The cap with its size and the slots in use that <see cref="CopyTo"/> wrote to <paramref name="tally"/>.</summary>
-    public LimitUse CapIn(ReadOnlySpan<int> tally) => new(sizes.Cap, tally[0]);
+    /// <summary>The max running tasks with its size and the slots in use that <see cref="CopyTo"/> wrote to <paramref name="tally"/>.</summary>
+    public LimitUse RunningTasksIn(ReadOnlySpan<int> tally) => new(sizes.MaxRunningTasks, tally[0]);
 
     /// <summary>
     /// Each limit the graph names with its size and the slots in use that <see cref="CopyTo"/> wrote to <paramref name="tally"/>,
@@ -52,15 +52,15 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     }
 
     /// <summary>
-    /// Takes one slot of the cap and of every limit a task holds, if each has one free.
+    /// Takes one slot of the max running tasks and of every limit a task holds, if each has one free.
     /// A task that does not fit takes none, so it never holds one slot while it waits for another.
-    /// The cap is looked at first, since every task holds a slot of it.
+    /// The max running tasks is looked at first, since every task holds a slot of it.
     /// </summary>
     public SlotsAnswer Take(BuiltTask task)
     {
-        if (CapIsFull)
+        if (IsAtMaxRunningTasks)
         {
-            return SlotsAnswer.CapFull;
+            return SlotsAnswer.MaxRunningTasksReached;
         }
 
         if (task.HeldLimits.Any(limit => _inUse[limit] == sizes.Limits[limit]))

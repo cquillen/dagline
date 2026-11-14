@@ -17,7 +17,7 @@ var graph = builder.Build();
 
 A task is a segment and a body. The body is an async delegate over a <xref:Dagline.TaskContext>, so a method, a lambda and a method group all work.
 
-A dependency is declared on a handle and never on a string, so a misspelt upstream does not compile.
+`Task` returns a <xref:Dagline.TaskNode> and `Group` a <xref:Dagline.GroupNode>, both kinds of <xref:Dagline.Node>. A dependency is declared on a handle and never on a string, so a misspelt upstream does not compile. A snapshot of a run shows the dependencies declared on each node as <xref:Dagline.Dependency> entries, each with its <xref:Dagline.DependencyKind>: see [Answers the snapshot gives](reporters.md#answers-the-snapshot-gives).
 
 <xref:Dagline.GraphBuilder.Build*> returns a <xref:Dagline.Graph>. A graph is immutable and can be run any number of times.
 
@@ -185,7 +185,7 @@ foreach (var shard in shards)
 }
 ```
 
-The graph only names a limit. Its size is an option of the run, so tuning can change from one run to the next while the graph stays the same work. [Sizing the cap and limits](running-and-stopping.md#sizing-the-cap-and-limits) covers the sizes, and a run that gives no size for a limit the graph names is refused before any task starts.
+The graph only names a limit. Its size is an option of the run, so tuning can change from one run to the next while the graph stays the same work. [Sizing the max running tasks and limits](running-and-stopping.md#sizing-the-max-running-tasks-and-limits) covers the sizes, and a run that gives no size for a limit the graph names is refused before any task starts.
 
 A limit name is any text that is not empty. Names are compared exactly, so `database` and `Database` are two limits. Call `Limit` again to name another limit on the same node. Naming one limit twice is the same as naming it once.
 
@@ -231,7 +231,7 @@ Dagline uses this one order everywhere:
 - A snapshot lists its nodes in declaration order.
 - Tasks that become ready at the same moment do so in declaration order, and ready tasks start in it.
 
-Declaration order is not a priority. It never makes a task wait: only a dependency, a full limit or the cap does.
+Declaration order is not a priority. It never makes a task wait: only a dependency, a full limit or reaching the max running tasks does.
 
 ## Build errors
 

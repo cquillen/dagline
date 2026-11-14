@@ -5,4 +5,9 @@
     <ProjectReference Include="..\Dagline.TestSupport\Dagline.TestSupport.csproj" />
   </ItemGroup>
 
+  <!-- Journals as earlier releases wrote them, which every later Dagline must still read. -->
+  <ItemGroup>
+    <None Include="CompatibilityJournals\*.journal" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

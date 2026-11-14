@@ -193,7 +193,7 @@ internal sealed class RunSteps
         _requestsApplied = requests;
         if (heardNew && _milestones.Stop?.By is StopRequester.Dagline)
         {
-            LetGo(StoppedWaitingReason.SecondStop, now);
+            LetGo(GraceEndReason.SecondStop, now);
             return Decided();
         }
 
@@ -206,7 +206,7 @@ internal sealed class RunSteps
 
         if (requests >= 2)
         {
-            LetGo(StoppedWaitingReason.SecondStop, now);
+            LetGo(GraceEndReason.SecondStop, now);
         }
 
         return Decided();
@@ -254,7 +254,7 @@ internal sealed class RunSteps
     /// <summary>The grace period is over: the run lets go of the tasks still running, if it has not ended.</summary>
     public IReadOnlyList<Step> GracePeriodOver(DateTimeOffset now)
     {
-        LetGo(StoppedWaitingReason.GracePeriodOver, now);
+        LetGo(GraceEndReason.GracePeriodOver, now);
         return Decided();
     }
 
@@ -324,7 +324,7 @@ internal sealed class RunSteps
 
         if (_gracePeriod == TimeSpan.Zero)
         {
-            LetGo(StoppedWaitingReason.GracePeriodOver, now);
+            LetGo(GraceEndReason.GracePeriodOver, now);
             return;
         }
 
@@ -333,10 +333,10 @@ internal sealed class RunSteps
 
     /// <summary>
     /// Ends the wait for the running tasks after a stop, if the run is still waiting for any. In a step of its own it publishes
-    /// <see cref="StoppedWaiting"/>, then records each running task as cancelled in declaration order and lets go of it.
+    /// <see cref="GraceEnded"/>, then records each running task as cancelled in declaration order and lets go of it.
     /// What follows is applied once for all of them, as after any task settles. Nothing is left running, so the end input that follows ends the run.
     /// </summary>
-    private void LetGo(StoppedWaitingReason reason, DateTimeOffset now)
+    private void LetGo(GraceEndReason reason, DateTimeOffset now)
     {
         if (HasEnded || NothingIsRunning)
         {
@@ -344,7 +344,7 @@ internal sealed class RunSteps
         }
 
         Begin();
-        Publish(new StoppedWaiting(now, reason));
+        Publish(new GraceEnded(now, reason));
         List<BuiltTask> leftBehind = [.. _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Running)];
         foreach (var task in leftBehind)
         {
@@ -484,8 +484,8 @@ internal sealed class RunSteps
 
     /// <summary>
     /// Tries the ready tasks in declaration order and starts each one whose slots it can take. One that does not fit is passed over
-    /// and stays ready, so it never holds up the tasks behind it. The walk ends once the slots answer that the cap is full,
-    /// since every task holds a slot of the cap and none after that point could start.
+    /// and stays ready, so it never holds up the tasks behind it. The walk ends once the slots answer that the max running tasks is reached,
+    /// since every task holds a slot of the max running tasks and none after that point could start.
     /// </summary>
     private void StartWhatFits(DateTimeOffset now)
     {
@@ -494,7 +494,7 @@ internal sealed class RunSteps
         {
             var task = _graph.TaskAt(position);
             var answer = _slots.Take(task);
-            if (answer is SlotsAnswer.CapFull)
+            if (answer is SlotsAnswer.MaxRunningTasksReached)
             {
                 break;
             }
