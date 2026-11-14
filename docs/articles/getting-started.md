@@ -15,7 +15,7 @@ dotnet add package Dagline
 dotnet add package Dagline.Spectre
 ```
 
-`Dagline` builds and runs the graph. `Dagline.Spectre` draws the run on the terminal and hooks Ctrl+C. The core package has no console or UI dependency, so an app that never shows a terminal can leave the second one out.
+`Dagline` builds and runs the graph, and turns Ctrl+C into a stop when the app asks. `Dagline.Spectre` draws the run on the terminal. The core package has no console or UI dependency, so an app that never shows a terminal can leave the second one out.
 
 Replace `Program.cs` with the code below, in the order it is shown.
 
@@ -73,14 +73,25 @@ A journal is a file that records what each run did, so that a later run can cont
 
 Dagline never picks a journal for you. These few lines are this app's policy, and [Journals](journals.md#the-app-always-chooses) says why the choice is yours.
 
-## Hook Ctrl+C
+## Hook Ctrl+C and SIGTERM
 
 ```csharp
-// Ctrl+C: the first press stops the run, the second stops waiting for the running tasks to end.
+// Ctrl+C or SIGTERM: the first stops the run, the second stops waiting for the running tasks to end.
 using var stop = ConsoleStop.Hook();
 ```
 
-<xref:Dagline.Spectre.ConsoleStop.Hook*> gives a <xref:Dagline.StopSignal> hooked to the console's cancel key. The first Ctrl+C asks the run to stop: it starts nothing more and waits for the running tasks to end, for at most 30 seconds. A second Ctrl+C ends that wait at once. Both are swallowed, so the run winds down and your app still gets its result. A third Ctrl+C is not swallowed, and ends the process: the way out of an app that hangs. `using` unhooks the key when the app ends.
+<xref:Dagline.ConsoleStop.Hook*>, in the core package, gives a <xref:Dagline.StopSignal> hooked to the console's cancel key and to SIGTERM, the signal a service manager or a container runtime sends to ask a process to end. The first Ctrl+C or SIGTERM asks the run to stop: it starts nothing more and waits for the running tasks to end, for at most 30 seconds. A second one, of either kind, ends that wait at once. Both are swallowed, so the run winds down and your app still gets its result. A third is not swallowed, and ends the process: the way out of an app that hangs. `using` unhooks both when the app ends. Dagline hooks nothing unless your app calls `Hook`.
+
+An app with a stop trigger of its own, such as a file appearing or a timer, needs no hook. It makes a plain signal, passes it to the run, and requests it from that trigger:
+
+```csharp
+var stop = new StopSignal();
+
+// Later, from wherever the app decides:
+stop.Request();
+```
+
+A signal made with `new StopSignal()` holds nothing to release and is not disposable, so it takes no `using`. Only the hooked `ConsoleStop` is disposable.
 
 ## Run it
 

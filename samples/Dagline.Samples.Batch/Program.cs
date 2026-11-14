@@ -139,7 +139,7 @@ else
     Console.WriteLine($"Continuing journal {unfinished.Id} for {description} (runs so far: {unfinished.Runs}).");
 }
 
-// Ctrl+C: the first press stops the run, the second stops waiting for the running tasks to end, the third kills.
+// Ctrl+C or SIGTERM: the first stops the run, the second stops waiting for the running tasks to end, the third kills.
 using var stop = ConsoleStop.Hook();
 
 RunResult result;

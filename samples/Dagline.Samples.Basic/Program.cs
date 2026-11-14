@@ -36,7 +36,7 @@ var journal = open is null
     ? Journal.New(directory, "basic sample")
     : Journal.Continue(directory, open.Id);
 
-// Ctrl+C: the first press stops the run, the second stops waiting for the running tasks to end.
+// Ctrl+C or SIGTERM: the first stops the run, the second stops waiting for the running tasks to end.
 using var stop = ConsoleStop.Hook();
 
 // The run: the display on a terminal, or plain text when output is redirected.

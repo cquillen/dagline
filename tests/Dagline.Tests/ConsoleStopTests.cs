@@ -1,6 +1,6 @@
-namespace Dagline.Spectre.Tests;
+namespace Dagline.Tests;
 
-// The key presses themselves cannot be made in a test: they are checked by hand with the Basic sample.
+// Neither a key press nor a SIGTERM can be made in a test: both are checked by hand with the Basic sample.
 public class ConsoleStopTests
 {
     [Test]

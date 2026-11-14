@@ -23,7 +23,7 @@ var result = await Runner.RunAsync(graph, new RunOptions
 return result.Outcome.ToExitCode();
 ```
 
-There is nothing to configure: the layout is fixed, and the display needs nothing from your app beyond the run. It prints the summary itself, so your app prints nothing at the end of a run. <xref:Dagline.Spectre.ConsoleStop> turns Ctrl+C into a stop: see [Stopping](#stopping). [Getting started](getting-started.md) builds a whole app around these lines.
+There is nothing to configure: the layout is fixed, and the display needs nothing from your app beyond the run. It prints the summary itself, so your app prints nothing at the end of a run. <xref:Dagline.ConsoleStop>, from the core package, turns Ctrl+C and SIGTERM into a stop: see [Stopping](#stopping). [Getting started](getting-started.md) builds a whole app around these lines.
 
 Give one reporter to one run at a time.
 
@@ -132,14 +132,14 @@ Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a nar
 
 ## Stopping
 
-<xref:Dagline.Spectre.ConsoleStop.Hook*> gives a <xref:Dagline.StopSignal> hooked to the console's cancel key. Pass it to the run and dispose it when the run has ended, as `using var` does:
+<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, gives a <xref:Dagline.StopSignal> hooked to the console's cancel key and to SIGTERM. Pass it to the run and dispose it when the run has ended, as `using var` does. The hook counts Ctrl+C and SIGTERM together:
 
-- **The first Ctrl+C** requests a stop: the run starts nothing more and waits for its running tasks to end, for at most its [grace period](running-and-stopping.md#the-grace-period).
-- **The second Ctrl+C** requests again, which ends that wait at once.
+- **The first Ctrl+C or SIGTERM** requests a stop: the run starts nothing more and waits for its running tasks to end, for at most its [grace period](running-and-stopping.md#the-grace-period).
+- **The second**, of either kind, requests again, which ends that wait at once.
 - Both are swallowed, so your process lives on, the run winds down and `RunAsync` returns its result.
-- **From the third Ctrl+C on** nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
+- **From the third on** nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Disposing unhooks the key, and a press after that is your app's own business again. The signal hooks nothing but the console's cancel key event, and the core package still hooks nothing at all. Of that event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. The two presses are counted by the hook itself, so a `Request` your app makes on the same signal does not use one up. The display does not depend on the hook: any stop signal shows the banner.
+Disposing unhooks both, and a Ctrl+C or SIGTERM after that is your app's own business again. The signal hooks nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. The two are counted by the hook itself, so a `Request` your app makes on the same signal does not use one up. The display does not depend on the hook: any stop signal shows the banner.
 
 ### The stop banner
 

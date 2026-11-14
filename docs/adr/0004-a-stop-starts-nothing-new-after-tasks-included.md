@@ -20,4 +20,4 @@ After a stop the run waits a grace period, 30 seconds by default, for its runnin
 - One thing a task left behind does is not ignored: a checkpoint save throws. A save must never look as though it worked when nothing was written (see ADR 0006). A save made during the grace period, before the task is recorded as cancelled, succeeds.
 - The grace period may be zero, to return at once, or unlimited, to wait until the second stop.
 - A stop that arrives before anything has started starts nothing, and the run outcome is stopped.
-- The core never hooks Ctrl+C or process signals itself. A stop arrives from outside.
+- The core hooks no Ctrl+C and no process signal unless the app calls `ConsoleStop.Hook`, which turns Ctrl+C and SIGTERM into stop requests. A stop arrives from outside.
