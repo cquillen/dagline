@@ -284,7 +284,7 @@ Pass the timer the same `TimeProvider` as the run, so that a test with a fake cl
 
 ## The plain-text reporter
 
-<xref:Dagline.PlainTextReporter> prints a run as lines of text: one timestamped line per thing that happened, and a summary at the end. It is the reporter to use when output is redirected to a file or shown by a build server. Give it the writer to print to:
+<xref:Dagline.PlainTextReporter> prints a run as lines of text: one timestamped line per thing that happened, and a summary at the end. It is the reporter to use when output is redirected to a file or shown by a build server. Its output is for people: the wording and layout may change in any release, so do not parse it, and write a reporter of your own when a program needs the run (see [Compatibility](compatibility.md)). Give it the writer to print to:
 
 ```csharp
 var result = await Runner.RunAsync(graph, new RunOptions

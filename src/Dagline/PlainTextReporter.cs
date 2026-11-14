@@ -8,6 +8,11 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
+/// The output is for people. Its wording, its layout and the lines it prints may change in any release, so a program must not
+/// parse it: one that needs to know what happened in a run reads the events through an <see cref="IReporter"/> of its own, or
+/// the <see cref="RunResult"/>. The lines described below are those of this release.
+/// </para>
+/// <para>
 /// It prints a line when the run starts, when a task starts, when a task succeeds, fails or is cancelled (with its duration
 /// and its message), when a task adds a warning, when a group settles (with its count of tasks per status), and when the run ends.
 /// A failed task's detail lines follow its line. A task that becomes ready is not printed, and neither is progress.

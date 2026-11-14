@@ -297,6 +297,8 @@ Dagline never sets the exit code of your process. <xref:Dagline.RunOutcomeExtens
 | Incomplete | 1 |
 | Stopped | 2 |
 
+The mapping is stable: these three codes keep their meaning in every release, so a script that calls your app can rely on them. See [Compatibility](compatibility.md).
+
 ## Errors before a run starts
 
 `RunAsync` throws `ArgumentNullException` when the graph or the options are null, and `ArgumentException` when a reporter in the options is null. Both are thrown at the call, before any task starts and before any reporter is called.

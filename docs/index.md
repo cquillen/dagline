@@ -9,7 +9,7 @@ A lightweight, in-process .NET library for running directed acyclic graphs (DAGs
 Think Apache Airflow, but purely local: no scheduler service, no database, no web server.
 
 > [!NOTE]
-> Dagline is in early development. The API is not yet usable and will change.
+> Dagline is an alpha. It runs real work and is tested on every change, but until 1.0 the names and shapes of its public API may change in any release, each change listed in the [changelog](https://github.com/cquillen/dagline/blob/main/CHANGELOG.md). The plain-text output may change in any release and is not for parsing. The exit codes 0, 1 and 2 are stable, and every later release reads the journals an earlier one wrote: see [Compatibility](articles/compatibility.md).
 
 ## Install
 
@@ -24,4 +24,5 @@ dotnet add package Dagline.Spectre   # optional terminal display
 - [Concepts](articles/concepts.md)
 - [Running and stopping](articles/running-and-stopping.md)
 - [The terminal display](articles/terminal-ui.md)
+- [Compatibility](articles/compatibility.md)
 - [API reference](api/index.md)
