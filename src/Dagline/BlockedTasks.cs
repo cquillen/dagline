@@ -6,29 +6,28 @@ namespace Dagline;
 /// What one failed task blocked: an entry of <see cref="Snapshot.Blocked"/>.
 /// </summary>
 /// <remarks>
-/// A summary names the <paramref name="Roots"/> and counts the <paramref name="Tasks"/>, so a failure that blocked
+/// A summary names the <see cref="Roots"/> and counts the <see cref="Tasks"/>, so a failure that blocked
 /// a thousand tasks beneath one group reads as that one group.
 /// </remarks>
-/// <param name="Cause">
-/// The path of the failed task. Every task in <paramref name="Tasks"/> has it as its <see cref="NodeSnapshot.BlockedBy"/>.
-/// </param>
-/// <param name="Tasks">
-/// Every task this failure blocked, directly, through a group or through a chain of blocked tasks, in declaration order. Never empty.
-/// </param>
-/// <param name="Roots">
-/// The highest nodes whose every task this failure blocked, in declaration order. A root is a group when the failure blocked
-/// every task beneath it at any depth and did not block every task beneath the group that holds it. Otherwise it is
-/// a blocked task itself. Every task in <paramref name="Tasks"/> is one root or beneath exactly one, and a group with no tasks
-/// beneath it is never a root.
-/// </param>
-public sealed record BlockedTasks(NodePath Cause, IReadOnlyList<NodeSnapshot> Tasks, IReadOnlyList<NodeSnapshot> Roots)
+public sealed record BlockedTasks
 {
+    private BlockedTasks(NodePath cause, IReadOnlyList<NodeSnapshot> tasks, IReadOnlyList<NodeSnapshot> roots)
+    {
+        Cause = cause;
+        Tasks = tasks;
+        Roots = roots;
+    }
+
+    /// <summary>
+    /// The path of the failed task. Every task in <see cref="Tasks"/> has it as its <see cref="NodeSnapshot.BlockedBy"/>.
+    /// </summary>
+    public NodePath Cause { get; }
+
     /// <summary>
     /// Every task this failure blocked, directly, through a group or through a chain of blocked tasks, in declaration order.
-    /// Never empty in an entry of <see cref="Snapshot.Blocked"/>.
+    /// Never empty.
     /// </summary>
-    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
-    public IReadOnlyList<NodeSnapshot> Tasks { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Tasks);
+    public IReadOnlyList<NodeSnapshot> Tasks { get; }
 
     /// <summary>
     /// The highest nodes whose every task this failure blocked, in declaration order. A root is a group when the failure blocked
@@ -36,8 +35,7 @@ public sealed record BlockedTasks(NodePath Cause, IReadOnlyList<NodeSnapshot> Ta
     /// a blocked task itself. Every task in <see cref="Tasks"/> is one root or beneath exactly one, and a group with no tasks
     /// beneath it is never a root.
     /// </summary>
-    /// <exception cref="ArgumentNullException">The value given is <see langword="null"/>.</exception>
-    public IReadOnlyList<NodeSnapshot> Roots { get; init => field = Arguments.NotNull(value); } = Arguments.NotNull(Roots);
+    public IReadOnlyList<NodeSnapshot> Roots { get; }
 
     /// <summary>One entry for each failed task that blocked anything among <paramref name="nodes"/>, in declaration order of the cause.</summary>
     /// <param name="nodes">Every node of a run at one instant, in declaration order.</param>

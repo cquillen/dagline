@@ -30,7 +30,7 @@ An **event** is a record of one thing that happened in the run, with the time it
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
-Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. The event types are records with public constructors, and each rejects a null argument with `ArgumentNullException`, when it is made and when it is copied by a `with` expression. <xref:Dagline.ReporterError>, <xref:Dagline.BlockedTasks> and <xref:Dagline.GraphProblem> do the same. `RunEnded` is the exception: its constructor takes exactly one of `Outcome` and `Error` and throws `ArgumentException` when given both or neither, and a `with` expression cannot change either.
+Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
 
 ### The order within one step
 

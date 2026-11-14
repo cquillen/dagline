@@ -23,7 +23,9 @@ public class JournalCompatibilityTests
         summary.Created.ShouldBe(_created);
         summary.Description.ShouldBe("all shards");
         summary.Runs.ShouldBe(1);
-        summary.LatestRun.ShouldBe(new JournalRunSummary(_created, _created.AddSeconds(5), "operator", "build-host"));
+        var latestRun = summary.LatestRun.ShouldNotBeNull();
+        (latestRun.Started, latestRun.Ended, latestRun.User, latestRun.Machine)
+            .ShouldBe((_created, _created.AddSeconds(5), "operator", "build-host"));
         summary.Ending.ShouldBe(JournalEnding.Incomplete);
         summary.IsFinished.ShouldBeFalse();
         summary.Counts[NodeStatus.Succeeded].ShouldBe(1);
@@ -55,7 +57,7 @@ public class JournalCompatibilityTests
         var run = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.Continue(temporary.Path, _id) });
 
         run.Outcome.ShouldBe(RunOutcome.Complete);
-        run.Snapshot.Journal.ShouldBe(new JournalInfo(_id, "all shards", 2));
+        (run.Snapshot.Journal!.Id, run.Snapshot.Journal.Description, run.Snapshot.Journal.Run).ShouldBe((_id, "all shards", 2));
         loads.ShouldBe(0);
         var loaded = run.Snapshot[load.Path];
         loaded.IsEarlierSuccess.ShouldBeTrue();

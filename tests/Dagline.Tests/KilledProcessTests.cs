@@ -72,7 +72,8 @@ public class KilledProcessTests
             graph,
             new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id) });
 
-        fromTheCopy.Snapshot.Journal.ShouldBe(new JournalInfo(first.Snapshot.Journal.Id, "all shards", 2));
+        (fromTheCopy.Snapshot.Journal!.Id, fromTheCopy.Snapshot.Journal.Description, fromTheCopy.Snapshot.Journal.Run)
+            .ShouldBe((first.Snapshot.Journal.Id, "all shards", 2));
     }
 
     private static async Task ContinuesAsExpected(JournalCut cut, IEnumerable<Line> wholeLines, Work work)

@@ -857,8 +857,10 @@ public class PlainTextReporterTests
     [Test]
     public async Task The_reporter_rejects_a_null_writer_a_null_event_and_a_null_snapshot()
     {
+        var recording = new RecordingReporter();
+        await Runner.RunAsync(new GraphBuilder().Build(), new RunOptions { Journal = Journal.None, Reporters = [recording] });
+        var ended = recording.Events[^1];
         var reporter = new PlainTextReporter(new StringWriter());
-        var ended = new RunEnded(_runStart, RunOutcome.Complete);
 
         Should.Throw<ArgumentNullException>(() => new PlainTextReporter(null!)).ParamName.ShouldBe("writer");
         var noEvent = await Should.ThrowAsync<ArgumentNullException>(

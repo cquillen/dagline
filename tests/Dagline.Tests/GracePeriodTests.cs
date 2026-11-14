@@ -59,9 +59,9 @@ public class GracePeriodTests
                 "run ended: stopped",
             ]);
             var requested = reporter.Events.OfType<StopRequested>().Single();
-            requested.ShouldBe(new StopRequested(_runStart.AddSeconds(5), TimeSpan.FromSeconds(30)));
-            reporter.Events.OfType<GraceEnded>().Single()
-                .ShouldBe(new GraceEnded(_runStart.AddSeconds(35), GraceEndReason.GracePeriodOver));
+            (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart.AddSeconds(5), StopRequester.App, TimeSpan.FromSeconds(30)));
+            var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
+            (graceEnded.At, graceEnded.Reason).ShouldBe((_runStart.AddSeconds(35), GraceEndReason.GracePeriodOver));
             result.Snapshot[slowTask.Path].Message.ShouldBe(_leftBehind);
             result.Snapshot[stuckTask.Path].Settled.ShouldBe(_runStart.AddSeconds(35));
             result.Snapshot[tidy.Path].Status.ShouldBe(NodeStatus.Ready);
@@ -192,7 +192,7 @@ public class GracePeriodTests
             ]);
             var requested = reporter.Events.OfType<StopRequested>().Single();
             reporter.Events.OfType<GraceEnded>().Single().At.ShouldBe(requested.At);
-            result.Snapshot.Stop.ShouldBe(new StopState(requested.At, TimeSpan.Zero, requested.At, StopRequester.App));
+            StopFacts(result.Snapshot).ShouldBe((requested.At, TimeSpan.Zero, requested.At, StopRequester.App));
             load.Release();
         }
     }
@@ -223,7 +223,7 @@ public class GracePeriodTests
 
             reporter.Events.OfType<GraceEnded>().ShouldBeEmpty();
             result.Snapshot[loadTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
-            result.Snapshot.Stop.ShouldBe(new StopState(_runStart, Timeout.InfiniteTimeSpan, Deadline: null, StopRequester.App));
+            StopFacts(result.Snapshot).ShouldBe((_runStart, Timeout.InfiniteTimeSpan, Deadline: null, StopRequester.App));
             reporter.Events.OfType<StopRequested>().Single().GracePeriod.ShouldBe(Timeout.InfiniteTimeSpan);
         }
     }
@@ -302,7 +302,7 @@ public class GracePeriodTests
         var result = await run;
 
         var requestedAt = _runStart.AddSeconds(10);
-        result.Snapshot.Stop.ShouldBe(new StopState(requestedAt, TimeSpan.FromMinutes(2), requestedAt.AddMinutes(2), StopRequester.App));
+        StopFacts(result.Snapshot).ShouldBe((requestedAt, TimeSpan.FromMinutes(2), requestedAt.AddMinutes(2), StopRequester.App));
     }
 
     [Test]
@@ -623,5 +623,11 @@ public class GracePeriodTests
                 unobserved.Add(args.Exception);
             }
         }
+    }
+
+    private static (DateTimeOffset RequestedAt, TimeSpan GracePeriod, DateTimeOffset? Deadline, StopRequester By) StopFacts(Snapshot snapshot)
+    {
+        var stop = snapshot.Stop.ShouldNotBeNull();
+        return (stop.RequestedAt, stop.GracePeriod, stop.Deadline, stop.By);
     }
 }

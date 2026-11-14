@@ -20,7 +20,7 @@ public class ContinueTests
         var id = first.Snapshot.Journal!.Id;
         var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) });
 
-        second.Snapshot.Journal.ShouldBe(new JournalInfo(id, "all shards", 2));
+        (second.Snapshot.Journal!.Id, second.Snapshot.Journal.Description, second.Snapshot.Journal.Run).ShouldBe((id, "all shards", 2));
     }
 
     [Test]

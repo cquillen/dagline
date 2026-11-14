@@ -288,13 +288,12 @@ public class PlainTextJournalTests
         var reporter = new PlainTextReporter(writer, clock);
 
         await reporter.OnEventAsync(
-            new StopRequested(_firstRunStart.AddSeconds(5), StopRequester.Dagline, TimeSpan.FromSeconds(30)), running, CancellationToken.None);
+            FailedJournalWrite.StopRequested(_firstRunStart.AddSeconds(5), TimeSpan.FromSeconds(30)), running, CancellationToken.None);
         await reporter.OnEventAsync(
-            new StopRequested(_firstRunStart.AddSeconds(5), StopRequester.Dagline, Timeout.InfiniteTimeSpan), running, CancellationToken.None);
+            FailedJournalWrite.StopRequested(_firstRunStart.AddSeconds(5), Timeout.InfiniteTimeSpan), running, CancellationToken.None);
         await reporter.OnEventAsync(
-            new RunEnded(
+            FailedJournalWrite.RunEnded(
                 _firstRunStart.AddSeconds(5),
-                null,
                 new InvalidOperationException("The journal can no longer be written.", new IOException("disk full"))),
             final,
             CancellationToken.None);

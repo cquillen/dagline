@@ -46,8 +46,8 @@ public class WaitingTests
             "run ended: complete",
         ]);
         var waits = reporter.Events.OfType<WaitingChanged>().ToList();
-        waits[0].ShouldBe(new WaitingChanged(waitBegan, NodePath.Parse("job"), Waiting: true, "job 17 to finish", Since: waitBegan));
-        waits[1].ShouldBe(new WaitingChanged(waitEnded, NodePath.Parse("job"), Waiting: false, "job 17 to finish", Since: waitBegan));
+        WaitFacts(waits[0]).ShouldBe((waitBegan, NodePath.Parse("job"), Waiting: true, "job 17 to finish", Since: waitBegan));
+        WaitFacts(waits[1]).ShouldBe((waitEnded, NodePath.Parse("job"), Waiting: false, "job 17 to finish", Since: waitBegan));
     }
 
     [Test]
@@ -132,8 +132,8 @@ public class WaitingTests
             "job: running -> succeeded",
             "run ended: complete",
         ]);
-        reporter.Events.OfType<WaitingChanged>().Last()
-            .ShouldBe(new WaitingChanged(_runStart.AddSeconds(30), jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
+        WaitFacts(reporter.Events.OfType<WaitingChanged>().Last())
+            .ShouldBe((_runStart.AddSeconds(30), jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
         afterTheFirstClosed.WaitingSince.ShouldBe(_runStart);
         afterTheFirstClosed.WaitingText.ShouldBe("job 17 to finish");
     }
@@ -295,7 +295,7 @@ public class WaitingTests
         await run;
 
         waiting[otherTask.Path].Status.ShouldBe(NodeStatus.Ready);
-        waiting.Limits["external"].ShouldBe(new LimitUse(Size: 1, InUse: 1));
+        (waiting.Limits["external"].Size, waiting.Limits["external"].InUse).ShouldBe((1, 1));
         reporter.Lines.ShouldBe(
         [
             "run started",
@@ -362,4 +362,7 @@ public class WaitingTests
         result.Snapshot[jobTask.Path].WaitingSince.ShouldBeNull();
         (await reporter.Source).Current[jobTask.Path].WaitingSince.ShouldBeNull();
     }
+
+    private static (DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) WaitFacts(WaitingChanged wait)
+        => (wait.At, wait.Path, wait.Waiting, wait.Text, wait.Since);
 }

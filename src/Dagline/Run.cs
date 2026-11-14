@@ -393,7 +393,7 @@ internal sealed class Run : ISnapshotSource
         var final = _steps.TakeSnapshot();
         _current = final;
         var endedWith = new JournalWriteException(_recorder.Failure!, final);
-        _delivery.Publish(new RunEnded(final.Ended!.Value, null, endedWith), final);
+        _delivery.Publish(new RunEnded(final.Ended!.Value, endedWith), final);
         return endedWith;
     }
 

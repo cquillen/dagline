@@ -45,14 +45,14 @@ public class LimitUseTests
         var result = await run;
 
         bodiesPaused[held.Path].Status.ShouldBe(NodeStatus.Ready);
-        bodiesPaused.RunningTasks.ShouldBe(new LimitUse(Size: 3, InUse: 3));
-        bodiesPaused.Limits.ShouldBe(
+        (bodiesPaused.RunningTasks.Size, bodiesPaused.RunningTasks.InUse).ShouldBe((3, 3));
+        bodiesPaused.Limits.Select(limit => (limit.Key, limit.Value.Size, limit.Value.InUse)).ShouldBe(
         [
-            KeyValuePair.Create("database", new LimitUse(Size: 1, InUse: 1)),
-            KeyValuePair.Create("files", new LimitUse(Size: 2, InUse: 1)),
-            KeyValuePair.Create("network", new LimitUse(Size: 5, InUse: 0)),
+            ("database", 1, 1),
+            ("files", 2, 1),
+            ("network", 5, 0),
         ]);
-        result.Snapshot.RunningTasks.ShouldBe(new LimitUse(Size: 3, InUse: 0));
+        (result.Snapshot.RunningTasks.Size, result.Snapshot.RunningTasks.InUse).ShouldBe((3, 0));
         result.Snapshot.Limits.Values.ShouldAllBe(limit => limit.InUse == 0);
     }
 
@@ -159,7 +159,7 @@ public class LimitUseTests
             builder.Build(),
             new RunOptions { Journal = Journal.None, Limits = new Dictionary<string, int> { ["database"] = 2 } });
 
-        result.Snapshot.RunningTasks.ShouldBe(new LimitUse(Size: 16, InUse: 0));
+        (result.Snapshot.RunningTasks.Size, result.Snapshot.RunningTasks.InUse).ShouldBe((16, 0));
         result.Snapshot.Limits.ShouldBeEmpty();
     }
 }

@@ -7,7 +7,7 @@ namespace Dagline;
 /// A summary is read from the journal's file at the moment it was listed, and does not change after. It is folded from the
 /// journal's entries by the same code that a run continuing the journal uses.
 /// </remarks>
-public sealed record JournalSummary
+public sealed class JournalSummary
 {
     internal JournalSummary(JournalFold fold, bool inUse)
     {

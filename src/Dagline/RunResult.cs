@@ -1,7 +1,7 @@
 namespace Dagline;
 
 /// <summary>What a run leaves behind once it has ended.</summary>
-public sealed record RunResult
+public sealed class RunResult
 {
     internal RunResult(RunOutcome outcome, Snapshot snapshot, IReadOnlyList<ReporterError> reporterErrors)
     {

@@ -18,11 +18,11 @@ public class SnapshotTests
         nodes.Select(node => node.Path.ToString()).ShouldBe(["prepare", "process", "publish"]);
         nodes.Select(node => node.Status).ShouldBe([NodeStatus.Succeeded, NodeStatus.Succeeded, NodeStatus.Succeeded]);
         nodes[0].Dependencies.ShouldBeEmpty();
-        nodes[1].Dependencies.ShouldBe([new Dependency(prepare.Path, DependencyKind.Requires)]);
-        nodes[2].Dependencies.ShouldBe(
+        nodes[1].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe([(prepare.Path, DependencyKind.Requires)]);
+        nodes[2].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(prepare.Path, DependencyKind.Requires),
-            new Dependency(process.Path, DependencyKind.Requires),
+            (prepare.Path, DependencyKind.Requires),
+            (process.Path, DependencyKind.Requires),
         ]);
     }
 

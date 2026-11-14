@@ -260,7 +260,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         _waitingSince = now;
         _waitingText = LineBreaks.OneLineOrNone(text);
 
-        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: true, _waitingText, Since: now));
+        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, waiting: true, _waitingText, since: now));
     }
 
     /// <summary>
@@ -313,7 +313,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         _waitingSince = null;
         _waitingText = null;
 
-        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, Waiting: false, text, since));
+        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, waiting: false, text, since));
     }
 
     /// <summary>The task as it is after a report that is never an event.</summary>
