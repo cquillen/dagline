@@ -1,0 +1,31 @@
+#nullable enable
+Dagline.Testing.ClockGuardException
+Dagline.Testing.InstantClock
+Dagline.Testing.InstantClock.InstantClock(System.TimeSpan? guard = null) -> void
+Dagline.Testing.TaskHarness
+Dagline.Testing.TaskHarness.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Dagline.Testing.TaskHarness.RunAsync() -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
+Dagline.Testing.TaskHarness.RunUntilWaitingThenStopAsync() -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
+Dagline.Testing.TaskOutcome
+Dagline.Testing.TaskOutcome.<Clone>$() -> Dagline.Testing.TaskOutcome!
+Dagline.Testing.TaskOutcome.Checkpoint.get -> string!
+Dagline.Testing.TaskOutcome.Detail.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Dagline.Testing.TaskOutcome.Equals(Dagline.Testing.TaskOutcome? other) -> bool
+Dagline.Testing.TaskOutcome.Failure.get -> Dagline.FailureKind?
+Dagline.Testing.TaskOutcome.Message.get -> string?
+Dagline.Testing.TaskOutcome.Status.get -> Dagline.NodeStatus
+Dagline.Testing.TaskOutcome.StatusText.get -> string?
+Dagline.Testing.TaskOutcome.Waited.get -> bool
+Dagline.Testing.TaskOutcome.WaitingText.get -> string?
+Dagline.Testing.TaskOutcome.Warnings.get -> System.Collections.Generic.IReadOnlyList<string!>!
+override Dagline.Testing.InstantClock.CreateTimer(System.Threading.TimerCallback! callback, object? state, System.TimeSpan dueTime, System.TimeSpan period) -> System.Threading.ITimer!
+override Dagline.Testing.InstantClock.GetTimestamp() -> long
+override Dagline.Testing.InstantClock.GetUtcNow() -> System.DateTimeOffset
+override Dagline.Testing.InstantClock.LocalTimeZone.get -> System.TimeZoneInfo!
+override Dagline.Testing.InstantClock.TimestampFrequency.get -> long
+override Dagline.Testing.TaskOutcome.Equals(object? obj) -> bool
+override Dagline.Testing.TaskOutcome.GetHashCode() -> int
+override Dagline.Testing.TaskOutcome.ToString() -> string!
+static Dagline.Testing.TaskHarness.For(Dagline.TaskBody! body, System.TimeProvider? timeProvider = null, string? checkpoint = null) -> Dagline.Testing.TaskHarness!
+static Dagline.Testing.TaskOutcome.operator !=(Dagline.Testing.TaskOutcome? left, Dagline.Testing.TaskOutcome? right) -> bool
+static Dagline.Testing.TaskOutcome.operator ==(Dagline.Testing.TaskOutcome? left, Dagline.Testing.TaskOutcome? right) -> bool

@@ -130,6 +130,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A test of one task asserts what the operator saw and what was saved: `TaskOutcome.StatusText` is the status text the task last set, `TaskOutcome.WaitingText` the text of the last wait it began in the run (kept after the wait ends, null when it began none), and `TaskOutcome.Checkpoint` the checkpoint as the run left it, which a later run hands the task: empty when it has none, cleared it or succeeded. An earlier success comes back with no status text and no waiting text.
 - `TaskHarness.For(body, timeProvider, checkpoint)` plants a checkpoint that the task reads back in the first run, so a re-attach test needs no first run to save one. The harness saves it through `TaskContext.SaveCheckpointAsync` just before it calls the body, on Dagline's public API alone.
 - Docs: the new outcome members, the seed and reading a checkpoint back in the Testing your tasks article.
+- `Dagline` and `Dagline.Testing` are marked compatible with native AOT and trimming (`IsAotCompatible`), so the trim, AOT and single-file analyzers check them on every build; they report nothing. `Dagline.Spectre` is not marked, since Spectre.Console decides that for itself.
+- Each of the three packages records its public surface in `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt`, checked by `Microsoft.CodeAnalysis.PublicApiAnalyzers`, so every change to a public type or member shows as a diff in a pull request and a change the files do not record fails the CI build. Nothing has shipped yet, so the whole surface is in the unshipped files.
+- Docs: native AOT and trimming in the Compatibility article, and how to update the surface files in `CONTRIBUTING.md`.
 
 ### Changed
 

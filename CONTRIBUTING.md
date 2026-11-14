@@ -48,11 +48,37 @@ dotnet docfx docs/docfx.json --serve   # http://localhost:8080
 
 Code style is defined in `.editorconfig` and enforced at build time. Design and factoring rules are in [CODING_STANDARDS.md](CODING_STANDARDS.md). All files use LF line endings.
 
+### The public surface files
+
+Each package records its public surface, every public and protected type and member, in two files beside its project file:
+`PublicAPI.Shipped.txt`, what the last release on NuGet.org published, and `PublicAPI.Unshipped.txt`, what has changed since.
+[Microsoft.CodeAnalysis.PublicApiAnalyzers](https://github.com/dotnet/roslyn/blob/main/src/RoslynAnalyzers/PublicApiAnalyzers/PublicApiAnalyzers.Help.md)
+compares them with the code on every build. A public member the files do not list is `RS0016`, and one they list that the code no
+longer has is `RS0017`. Both are warnings locally and errors in CI.
+
+When you add, change or remove public API:
+
+- Let your IDE apply the code fix for `RS0016` or `RS0017`, or update the files from the command line:
+
+  ```shell
+  dotnet format analyzers src/Dagline/Dagline.csproj --diagnostics RS0016 RS0017 --severity info
+  ```
+
+  Run it for each package you changed (`src/Dagline.Spectre/Dagline.Spectre.csproj`, `src/Dagline.Testing/Dagline.Testing.csproj`).
+  The fix writes to `PublicAPI.Unshipped.txt` only. A shipped member you remove keeps its line in `PublicAPI.Shipped.txt`,
+  and the fix lists it again in `PublicAPI.Unshipped.txt` with the `*REMOVED*` prefix.
+- Read the diff of the files before you commit. It is the change to the public surface that the pull request makes, and a line
+  you did not mean to add is a member you did not mean to make public.
+
+At a release, a maintainer moves every line of each `PublicAPI.Unshipped.txt` into its `PublicAPI.Shipped.txt`, dropping the
+lines with `*REMOVED*` and the shipped lines they name, and leaves the unshipped file holding only `#nullable enable`.
+
 ## Releasing (maintainers)
 
 Versions come from git tags via [MinVer](https://github.com/adamralph/minver).
 
-1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new version heading and merge that to `main`.
+1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new version heading, move each package's `PublicAPI.Unshipped.txt`
+   into its `PublicAPI.Shipped.txt` (see [The public surface files](#the-public-surface-files)), and merge that to `main`.
 2. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
 3. The **Release** workflow packs, publishes to NuGet.org and creates a GitHub Release.
 
