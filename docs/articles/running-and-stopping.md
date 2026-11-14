@@ -343,7 +343,7 @@ A run on a journal then holds, opens and reads it, also before anything has happ
 | <xref:Dagline.JournalAccessException> | The journal, its lock file or its directory cannot be opened, created or read, or a new journal's first line cannot be written. |
 | <xref:Dagline.JournalFormatException> | The file cannot be read as a journal: its first line is not a journal header, its format version is unknown (in `Version`), or a line other than the last is not an entry. |
 
-The first three carry the journal's `Id` and `Directory`; for a directory that cannot be created, `JournalAccessException.Id` is null. See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.
+The first three carry the journal's `Id` and `Directory`; for a directory that cannot be created, `JournalAccessException.Id` is null. Each message names the file or directory and says what could not be done with it. See [Journals](journals.md#when-a-journal-cannot-be-used) for what each means for the operator.
 
 `RunConfigurationException` and the journal exceptions derive from <xref:Dagline.DaglineException>, the base of every exception that Dagline itself throws.
 

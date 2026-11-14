@@ -10,14 +10,14 @@ namespace Dagline;
 /// </remarks>
 public sealed class UnreadableJournal
 {
-    internal UnreadableJournal(string path, DaglineException exception)
+    internal UnreadableJournal(string filePath, DaglineException exception)
     {
-        Path = path;
+        FilePath = filePath;
         Exception = exception;
     }
 
     /// <summary>The full path of the journal file, <c>&lt;id&gt;.journal</c> in the directory listed.</summary>
-    public string Path { get; }
+    public string FilePath { get; }
 
     /// <summary>
     /// Why it could not be read: a <see cref="JournalFormatException"/> when the file cannot be read as a journal, with the format

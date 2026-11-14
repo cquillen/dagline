@@ -114,6 +114,7 @@ public class JournalHoldingTests
         reporter.Events.ShouldBeEmpty();
         thrown.Directory.ShouldBe(notADirectory);
         thrown.Id.ShouldBeNull();
+        thrown.Message.ShouldStartWith($"The journal directory '{notADirectory}' cannot be created: ");
     }
 
     [Test]
@@ -133,7 +134,7 @@ public class JournalHoldingTests
             new RunOptions { Journal = Journal.Continue(temporary.Path, id) }));
 
         (thrown.Id, thrown.Directory).ShouldBe((id, temporary.Path));
-        thrown.Message.ShouldContain(temporary.Combine($"{id}.lock"));
+        thrown.Message.ShouldStartWith($"The lock file '{temporary.Combine($"{id}.lock")}' of the journal '{id}' cannot be opened or created: ");
     }
 
     [Test]

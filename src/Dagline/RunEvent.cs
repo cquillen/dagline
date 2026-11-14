@@ -34,6 +34,10 @@ public abstract record RunEvent
 
     /// <summary>When it happened, read from the run's <see cref="RunOptions.TimeProvider"/>.</summary>
     public DateTimeOffset At { get; }
+
+    // A record that is not sealed must keep a protected copy constructor, through which code outside Dagline could derive an event.
+    // A concrete type must override every abstract member, and none outside can override this one, so the set stays closed.
+    private protected abstract void ClosedToOutsideDerivation();
 }
 
 /// <summary>The run started. This is the first event of every run.</summary>
@@ -47,6 +51,10 @@ public sealed record RunStarted : RunEvent
 
     /// <summary>A live source of snapshots of this run, which a reporter may keep and read at any time.</summary>
     public ISnapshotSource Source { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
@@ -70,6 +78,10 @@ public sealed record TaskStatusChanged : RunEvent
 
     /// <summary>The status after the change.</summary>
     public NodeStatus To { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
@@ -100,6 +112,10 @@ public sealed record WarningAdded : RunEvent
 
     /// <summary>The warning, on one line: each line break in the text the task gave is replaced by a space.</summary>
     public string Warning { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
@@ -146,6 +162,10 @@ public sealed record WaitingChanged : RunEvent
 
     /// <summary>When the wait began. On a begin it equals <see cref="RunEvent.At"/>; on an end it is the begin's time.</summary>
     public DateTimeOffset Since { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
@@ -196,6 +216,10 @@ public sealed record GroupSettled : RunEvent
     /// read the group's <see cref="NodeSnapshot.WarningCount"/> from the snapshot handed with it.
     /// </remarks>
     public TaskCounts Counts { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
@@ -236,6 +260,10 @@ public sealed record StopRequested : RunEvent
     /// How long the run waits for its running tasks to end. <see cref="Timeout.InfiniteTimeSpan"/> means the run waits until they have.
     /// </summary>
     public TimeSpan GracePeriod { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>
@@ -263,6 +291,10 @@ public sealed record GraceEnded : RunEvent
 
     /// <summary>Why the grace ended: a second stop, or the grace period ran out.</summary>
     public GraceEndReason Reason { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }
 
 /// <summary>The run ended. This is the last event of every run.</summary>
@@ -290,4 +322,8 @@ public sealed record RunEnded : RunEvent
 
     /// <summary>The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</summary>
     public Exception? Error { get; }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
 }

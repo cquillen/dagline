@@ -80,12 +80,12 @@ The listing reads each journal with the same code that a continuing run uses, so
 
 ### Journals that cannot be read
 
-One bad file never stops a listing. A journal in a format version this Dagline does not know, as one a later Dagline wrote may be, a file named like a journal that is not one or was overwritten, and a journal whose file or lock file the process cannot read, each go into <xref:Dagline.JournalListing.Unreadable> as an <xref:Dagline.UnreadableJournal>, with the file's `Path` and the `Exception` that says why: a <xref:Dagline.JournalFormatException> or a <xref:Dagline.JournalAccessException>. The other journals are listed as usual, so you can still continue or delete them. No journal is ever left out unseen, so show the unreadable ones to the operator:
+One bad file never stops a listing. A journal in a format version this Dagline does not know, as one a later Dagline wrote may be, a file named like a journal that is not one or was overwritten, and a journal whose file or lock file the process cannot read, each go into <xref:Dagline.JournalListing.Unreadable> as an <xref:Dagline.UnreadableJournal>, with the file's `FilePath` and the `Exception` that says why: a <xref:Dagline.JournalFormatException> or a <xref:Dagline.JournalAccessException>. The other journals are listed as usual, so you can still continue or delete them. No journal is ever left out unseen, so show the unreadable ones to the operator:
 
 ```csharp
 foreach (var unreadable in listing.Unreadable)
 {
-    Console.Error.WriteLine($"Passing over {unreadable.Path}: {unreadable.Exception.Message}");
+    Console.Error.WriteLine($"Passing over {unreadable.FilePath}: {unreadable.Exception.Message}");
 }
 ```
 
@@ -184,7 +184,7 @@ Dagline never deletes or expires a journal itself. How long a record is kept is 
 
 - <xref:Dagline.JournalInUseException>: another run holds the journal. Wait for it to end, or choose another.
 - <xref:Dagline.JournalNotFoundException>: the directory has no journal with the id.
-- <xref:Dagline.JournalAccessException>: the journal, its lock file or its directory cannot be opened, created or read, for example for lack of permission. Its inner exception is the file system's own.
+- <xref:Dagline.JournalAccessException>: the journal, its lock file or its directory cannot be opened, created, read or deleted, for example for lack of permission. Its message names the file or directory and says which of those failed, and its inner exception is the file system's own.
 - <xref:Dagline.JournalFormatException>: the file is not a journal, a line other than the last cannot be read, or it was written in a format version this Dagline does not know. `Version` carries the version when the header gives one.
 
 `JournalInUseException`, `JournalNotFoundException` and `JournalAccessException` carry the journal's `Id` and `Directory`, so a message can name the journal without parsing text. A `JournalAccessException` for the directory itself, which could not be created or listed, has no journal to name: its `Id` is null. `JournalFormatException` names the file in its message. `ListAsync` does not throw `JournalFormatException`, nor `JournalAccessException` for one journal's files: it lists that journal as [unreadable](#journals-that-cannot-be-read). All of them derive from <xref:Dagline.DaglineException>.
