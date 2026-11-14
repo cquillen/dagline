@@ -290,7 +290,7 @@ Dagline.TaskStatusChanged.Node.get -> Dagline.NodeSnapshot!
 Dagline.TaskStatusChanged.To.get -> Dagline.NodeStatus
 Dagline.UnreadableJournal
 Dagline.UnreadableJournal.Exception.get -> Dagline.DaglineException!
-Dagline.UnreadableJournal.Path.get -> string!
+Dagline.UnreadableJournal.FilePath.get -> string!
 Dagline.WaitingChanged
 Dagline.WaitingChanged.Equals(Dagline.WaitingChanged? other) -> bool
 Dagline.WaitingChanged.Path.get -> Dagline.NodePath

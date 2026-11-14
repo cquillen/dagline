@@ -350,7 +350,7 @@ public class JournalListingTests
 
         listed.Journals.ShouldHaveSingleItem().Id.ShouldBe(healthy.Snapshot.Journal!.Id);
         var unreadable = listed.Unreadable.ShouldHaveSingleItem();
-        unreadable.Path.ShouldBe(file);
+        unreadable.FilePath.ShouldBe(file);
         var thrown = unreadable.Exception.ShouldBeOfType<JournalFormatException>();
         thrown.Version.ShouldBe(2);
         thrown.Message.ShouldContain(file);
@@ -374,7 +374,7 @@ public class JournalListingTests
         var listed = await Journals.ListAsync(temporary.Path);
 
         listed.Journals.ShouldHaveSingleItem().Id.ShouldBe(healthy.Snapshot.Journal!.Id);
-        listed.Unreadable.Select(unreadable => unreadable.Path).ShouldBe([cutShort, overwritten, notAJournal]);
+        listed.Unreadable.Select(unreadable => unreadable.FilePath).ShouldBe([cutShort, overwritten, notAJournal]);
         listed.Unreadable.ShouldAllBe(unreadable => unreadable.Exception is JournalFormatException);
     }
 
@@ -393,7 +393,7 @@ public class JournalListingTests
 
         listed.Journals.ShouldBeEmpty();
         var unreadable = listed.Unreadable.ShouldHaveSingleItem();
-        unreadable.Path.ShouldBe(temporary.Combine($"{id}.journal"));
+        unreadable.FilePath.ShouldBe(temporary.Combine($"{id}.journal"));
         var thrown = unreadable.Exception.ShouldBeOfType<JournalAccessException>();
         (thrown.Id, thrown.Directory).ShouldBe((id, temporary.Path));
     }
@@ -409,6 +409,6 @@ public class JournalListingTests
 
         thrown.Directory.ShouldBe(notADirectory);
         thrown.Id.ShouldBeNull();
-        thrown.Message.ShouldContain(notADirectory);
+        thrown.Message.ShouldStartWith($"The journal directory '{notADirectory}' cannot be listed: ");
     }
 }

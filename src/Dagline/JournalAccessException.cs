@@ -1,13 +1,18 @@
 namespace Dagline;
 
 /// <summary>
-/// Thrown when a journal's file, its lock file or its directory cannot be opened, created or read: by <see cref="Runner.RunAsync"/>
-/// before a run exists, and by <see cref="Journals.ListAsync"/> and <see cref="Journals.DeleteAsync"/>.
+/// Thrown when a journal's file, its lock file or its directory cannot be opened, created, read, written or deleted: by
+/// <see cref="Runner.RunAsync"/> before a run exists, and by <see cref="Journals.ListAsync"/> and <see cref="Journals.DeleteAsync"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The cause may be a permission the process lacks, a path that names something other than a directory, a full disk, or a failure
 /// of the device. A new journal whose first line could not be written and flushed is this too.
+/// </para>
+/// <para>
+/// The message names the file or the directory and says what could not be done with it: a directory that cannot be created or
+/// listed, a lock file that cannot be opened or created, or a journal file that cannot be opened, created, read, deleted or given
+/// its first line. It ends with the message of the file system's own exception.
 /// </para>
 /// <para>
 /// From <see cref="Runner.RunAsync"/> it is thrown at the call: no task has started, no event has been published and no reporter has
@@ -18,20 +23,8 @@ namespace Dagline;
 /// </remarks>
 public sealed class JournalAccessException : DaglineException
 {
-    /// <summary>A failure on the file or the lock file at <paramref name="path"/> of the journal at <paramref name="location"/>.</summary>
-    internal JournalAccessException(JournalLocation location, string path, Exception innerException)
-        : this(path, location.Id, location.Directory, innerException)
-    {
-    }
-
-    /// <summary>A failure on <paramref name="directory"/> itself, which concerns no one journal.</summary>
-    internal JournalAccessException(string directory, Exception innerException)
-        : this(directory, id: null, directory, innerException)
-    {
-    }
-
-    private JournalAccessException(string path, string? id, string directory, Exception innerException)
-        : base($"The journal file '{path}' cannot be opened: {innerException.Message}", innerException)
+    private JournalAccessException(string? id, string directory, string failure, Exception innerException)
+        : base($"{failure}: {innerException.Message}", innerException)
     {
         Id = id;
         Directory = directory;
@@ -48,4 +41,48 @@ public sealed class JournalAccessException : DaglineException
     /// <see cref="Journal.Continue"/>, <see cref="Journals.ListAsync"/> or <see cref="Journals.DeleteAsync"/>.
     /// </summary>
     public string Directory { get; }
+
+    internal static JournalAccessException DirectoryNotCreated(string directory, Exception innerException)
+        => OnDirectory(directory, "created", innerException);
+
+    internal static JournalAccessException DirectoryNotListed(string directory, Exception innerException)
+        => OnDirectory(directory, "listed", innerException);
+
+    internal static JournalAccessException LockNotOpened(JournalLocation location, Exception innerException)
+        => OnLock(location, "opened", innerException);
+
+    internal static JournalAccessException LockNotOpenedOrCreated(JournalLocation location, Exception innerException)
+        => OnLock(location, "opened or created", innerException);
+
+    internal static JournalAccessException FileNotOpened(JournalLocation location, Exception innerException)
+        => OnFile(location, "opened", innerException);
+
+    internal static JournalAccessException FileNotCreated(JournalLocation location, Exception innerException)
+        => OnFile(location, "created", innerException);
+
+    internal static JournalAccessException FileNotRead(JournalLocation location, Exception innerException)
+        => OnFile(location, "read", innerException);
+
+    internal static JournalAccessException FileNotDeleted(JournalLocation location, Exception innerException)
+        => OnFile(location, "deleted", innerException);
+
+    internal static JournalAccessException HeaderNotWritten(JournalLocation location, Exception innerException)
+        => new(
+            location.Id,
+            location.Directory,
+            $"The first line of the new journal file '{location.FilePath}' cannot be written",
+            innerException);
+
+    private static JournalAccessException OnDirectory(string directory, string action, Exception innerException)
+        => new(id: null, directory, $"The journal directory '{directory}' cannot be {action}", innerException);
+
+    private static JournalAccessException OnLock(JournalLocation location, string action, Exception innerException)
+        => new(
+            location.Id,
+            location.Directory,
+            $"The lock file '{location.LockPath}' of the journal '{location.Id}' cannot be {action}",
+            innerException);
+
+    private static JournalAccessException OnFile(JournalLocation location, string action, Exception innerException)
+        => new(location.Id, location.Directory, $"The journal file '{location.FilePath}' cannot be {action}", innerException);
 }

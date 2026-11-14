@@ -73,7 +73,7 @@ public static class Journals
 
         return new JournalListing(
             [.. summaries.OrderBy(summary => summary.Created).ThenBy(summary => summary.Id, StringComparer.Ordinal)],
-            [.. unreadable.OrderBy(journal => journal.Path, StringComparer.Ordinal)]);
+            [.. unreadable.OrderBy(journal => journal.FilePath, StringComparer.Ordinal)]);
     }
 
     /// <summary>
@@ -152,7 +152,7 @@ public static class Journals
         }
         catch (Exception cannotDelete) when (FileSystemFailure.Is(cannotDelete))
         {
-            throw new JournalAccessException(location, location.FilePath, cannotDelete);
+            throw JournalAccessException.FileNotDeleted(location, cannotDelete);
         }
     }
 
@@ -174,7 +174,7 @@ public static class Journals
         }
         catch (Exception cannotList) when (FileSystemFailure.Is(cannotList))
         {
-            throw new JournalAccessException(directory, cannotList);
+            throw JournalAccessException.DirectoryNotListed(directory, cannotList);
         }
     }
 }

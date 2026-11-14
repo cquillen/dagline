@@ -109,7 +109,7 @@ internal sealed class JournalFile : IDisposable
         }
         catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen) && cannotOpen is not FileNotFoundException)
         {
-            throw new JournalAccessException(location, path, cannotOpen);
+            throw JournalAccessException.FileNotRead(location, cannotOpen);
         }
 
         using var lines = new StringReader(WholeLines(text));
@@ -162,7 +162,7 @@ internal sealed class JournalFile : IDisposable
         }
         catch (Exception cannotCreate) when (FileSystemFailure.Is(cannotCreate))
         {
-            throw new JournalAccessException(directory, cannotCreate);
+            throw JournalAccessException.DirectoryNotCreated(directory, cannotCreate);
         }
     }
 
@@ -197,7 +197,7 @@ internal sealed class JournalFile : IDisposable
         catch (Exception cannotCreate) when (FileSystemFailure.Is(cannotCreate))
         {
             claim.Dispose();
-            throw new JournalAccessException(location, location.FilePath, cannotCreate);
+            throw JournalAccessException.FileNotCreated(location, cannotCreate);
         }
     }
 
@@ -216,7 +216,7 @@ internal sealed class JournalFile : IDisposable
         }
         catch (Exception cannotWrite) when (FileSystemFailure.Is(cannotWrite))
         {
-            throw new JournalAccessException(location, location.FilePath, cannotWrite);
+            throw JournalAccessException.HeaderNotWritten(location, cannotWrite);
         }
 
         return file;
@@ -243,7 +243,7 @@ internal sealed class JournalFile : IDisposable
         catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen))
         {
             claim.Dispose();
-            throw new JournalAccessException(location, location.FilePath, cannotOpen);
+            throw JournalAccessException.FileNotOpened(location, cannotOpen);
         }
     }
 
@@ -272,7 +272,7 @@ internal sealed class JournalFile : IDisposable
         }
         catch (Exception cannotRead) when (FileSystemFailure.Is(cannotRead))
         {
-            throw new JournalAccessException(location, path, cannotRead);
+            throw JournalAccessException.FileNotRead(location, cannotRead);
         }
     }
 

@@ -125,7 +125,7 @@ catch (JournalAccessException exception)
 
 foreach (var unreadable in listing.Unreadable)
 {
-    await Console.Error.WriteLineAsync($"Passing over {unreadable.Path}: {unreadable.Exception.Message}");
+    await Console.Error.WriteLineAsync($"Passing over {unreadable.FilePath}: {unreadable.Exception.Message}");
 }
 
 var unfinished = startNew ? null : listing.Journals.LastOrDefault(summary => !summary.IsFinished && summary.Description == description);

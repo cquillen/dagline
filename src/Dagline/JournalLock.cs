@@ -75,7 +75,9 @@ internal sealed class JournalLock : IDisposable
         }
         catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen))
         {
-            throw new JournalAccessException(location, location.LockPath, cannotOpen);
+            throw mode is FileMode.Open
+                ? JournalAccessException.LockNotOpened(location, cannotOpen)
+                : JournalAccessException.LockNotOpenedOrCreated(location, cannotOpen);
         }
     }
 
