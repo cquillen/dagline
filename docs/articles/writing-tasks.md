@@ -149,6 +149,15 @@ if (bad.Count > 0)
 }
 ```
 
+Its signature is `Fail(string message, params string[] detail)`: the message, then any number of detail lines. Pass a line at a time, or an array as above. With no detail it is `throw context.Fail("message")`:
+
+```csharp
+throw context.Fail(
+    "the export was rejected",
+    "row 12: the region is missing",
+    "row 40: the owner is not known");
+```
+
 `Fail` replaces the task's message, adds its detail lines after those already there, and returns a <xref:Dagline.ReportedFailureException> for the body to throw. The task ends failed with <xref:Dagline.FailureKind.Reported>.
 
 It is the call that records the failure, and not the exception. **Once `Fail` has been called the task ends as a reported failure however the body ends:**

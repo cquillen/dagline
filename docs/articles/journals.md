@@ -72,7 +72,7 @@ var journal = open is null
 The result is a <xref:Dagline.JournalListing> with two lists: `Journals`, a summary of each journal that could be read, oldest first, and `Unreadable`, each journal file that could not be read (see [Journals that cannot be read](#journals-that-cannot-be-read)). A directory that does not exist gives two empty lists. Each <xref:Dagline.JournalSummary> carries enough to show an operator who must choose:
 
 - `Id`, `Created` and `Description`: which journal it is.
-- `Runs`: how many runs it has had, and `LatestRun`: when the latest started and ended, and the user and machine that ran it. `LatestRun` is null only when the journal's first run was never recorded.
+- `Runs`: how many runs it has had, and `LatestRun`, a <xref:Dagline.JournalRunSummary>: when the latest started and ended, and the user and machine that ran it. `LatestRun` is null only when the journal's first run was never recorded.
 - `Ending`: how the latest run ended (see [Endings](#endings)), and `IsFinished`: true only when the latest run was complete.
 - `Counts`: how many tasks the journal records in each status, by the last status recorded for each path, as a <xref:Dagline.TaskCounts> read just as a snapshot's counts are, as in `summary.Counts[NodeStatus.Failed]` or `summary.Counts.Total`. A task whose success was [set aside](#an-after-task-runs-again-when-what-it-is-after-runs-again) since counts as pending, and one that started and never settled, as when its process was killed, counts as running. Paths that are no longer in your graph count too, since the listing has no graph. A journal records no waiting and no run is under way, so `Waiting` and `EarlierSuccesses` are always zero: every recorded success counts among the succeeded.
 

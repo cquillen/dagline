@@ -55,6 +55,9 @@ public sealed class BatchTasksTests
             var stopped = await harness.RunUntilWaitingThenStopAsync();
 
             stopped.Status.ShouldBe(NodeStatus.Cancelled);
+            stopped.Checkpoint.ShouldNotBeEmpty();
+            stopped.StatusText.ShouldBe($"job {stopped.Checkpoint}");
+            stopped.WaitingText.ShouldBe($"job {stopped.Checkpoint} to finish");
             scheduler.Triggers.ShouldBe(1);
 
             // A job takes at most 40 seconds. Waiting a minute on the scheduler's instant clock moves it past the end
@@ -64,6 +67,33 @@ public sealed class BatchTasksTests
             var continued = await harness.RunAsync();
 
             continued.Status.ShouldBe(NodeStatus.Succeeded);
+            scheduler.Triggers.ShouldBe(1);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task The_job_task_handed_a_job_in_its_checkpoint_waits_for_that_job_without_triggering_another()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var clock = new InstantClock();
+            var scheduler = new FakeScheduler(directory.FullName, clock);
+            var job = await scheduler.TriggerAsync("shard-1", CancellationToken.None);
+            await using var harness = TaskHarness.For(
+                context => BatchTasks.Job("shard-1", scheduler, _interval, context),
+                clock,
+                checkpoint: job);
+
+            var outcome = await harness.RunAsync();
+
+            outcome.Status.ShouldBe(NodeStatus.Succeeded);
+            outcome.WaitingText.ShouldBe($"job {job} to finish");
+            outcome.Checkpoint.ShouldBe("");
             scheduler.Triggers.ShouldBe(1);
         }
         finally

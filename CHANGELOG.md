@@ -125,6 +125,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JournalNotFoundException`, `JournalInUseException` and `JournalAccessException` carry `Id` and `Directory`, so an app's message can name the journal without parsing text. A `JournalAccessException` for the directory itself, which could not be created or listed, has a null `Id`.
 - `RunConfigurationException.Problems` lists the message of each problem in the options, in the order the exception's message lists them, without the heading or the dashes.
 - Docs: unreadable journals and `IsValidId` in the Journals article, the exception members in Journals and in Running and stopping, and `Problems` in Running and stopping.
+- `Snapshot.EarlierSuccesses`, beside `Failed`, `Cancelled` and `SetAside`: every task that is an earlier success, in declaration order, the same in every snapshot of the run. Its length is `Counts.EarlierSuccesses`.
+- Docs: a "Which tasks did not run, and why" recipe in the Reporters article, telling `Blocked`, `NeverReached` and `EarlierSuccesses` apart and saying when each applies; filtering `Snapshot.Nodes` with `IsGroup` and `IsEarlierSuccess`; `Fail` with literal detail lines in the Writing tasks article; and `TaskNode`, `Dependency`, `DependencyKind`, `JournalInfo`, `JournalRunSummary` and `GraceEndReason` each named in an article.
+- A test of one task asserts what the operator saw and what was saved: `TaskOutcome.StatusText` is the status text the task last set, `TaskOutcome.WaitingText` the text of the last wait it began in the run (kept after the wait ends, null when it began none), and `TaskOutcome.Checkpoint` the checkpoint as the run left it, which a later run hands the task: empty when it has none, cleared it or succeeded. An earlier success comes back with no status text and no waiting text.
+- `TaskHarness.For(body, timeProvider, checkpoint)` plants a checkpoint that the task reads back in the first run, so a re-attach test needs no first run to save one. The harness saves it through `TaskContext.SaveCheckpointAsync` just before it calls the body, on Dagline's public API alone.
+- Docs: the new outcome members, the seed and reading a checkpoint back in the Testing your tasks article.
 
 ### Changed
 
