@@ -121,6 +121,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: `TaskCounts` and the group roll-up in the Reporters article, and empty status text in the Writing tasks article.
 - The compatibility policy: the exit codes 0, 1 and 2 of `RunOutcome.ToExitCode()` are stable; the plain-text output and the display are for people and may change in any release; a later Dagline reads every journal format version an earlier release wrote, and an older Dagline refuses a newer format with `JournalFormatException`. A version 1 journal, checked in as the first alpha writes it, is listed and continued by the tests of every release.
 - Docs: the Compatibility article, linked from the Exit codes section of Running and stopping, the file section of Journals, the plain-text reporter section of Reporters and the Batch sample's README; and the XML comments of `ToExitCode`, `PlainTextReporter` and `SpectreReporter.Create` state the same.
+- A test of one task asserts what the operator saw and what was saved: `TaskOutcome.StatusText` is the status text the task last set, `TaskOutcome.WaitingText` the text of the last wait it began in the run (kept after the wait ends, null when it began none), and `TaskOutcome.Checkpoint` the checkpoint as the run left it, which a later run hands the task: empty when it has none, cleared it or succeeded. An earlier success comes back with no status text and no waiting text.
+- `TaskHarness.For(body, timeProvider, checkpoint)` plants a checkpoint that the task reads back in the first run, so a re-attach test needs no first run to save one. The harness saves it through `TaskContext.SaveCheckpointAsync` just before it calls the body, on Dagline's public API alone.
+- Docs: the new outcome members, the seed and reading a checkpoint back in the Testing your tasks article.
 
 ### Changed
 
