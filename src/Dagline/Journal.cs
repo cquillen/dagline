@@ -105,6 +105,14 @@ public abstract class Journal
     /// <summary>Opens the journal the choice names, before the run exists: <see langword="null"/> for no journal.</summary>
     internal abstract JournalFile? Open(TimeProvider clock);
 
+    /// <summary>
+    /// The one internal test hook: the same choice, but once the journal is opened, the first write of the run whose text
+    /// <paramref name="picksWrite"/> picks throws an <see cref="IOException"/>, and every other write reaches the real file. It
+    /// applies to this journal alone. Only the shared test support calls it, which is what <c>InternalsVisibleTo</c> opens to.
+    /// </summary>
+    /// <param name="picksWrite">Given the text of each write: one or more whole lines of the journal.</param>
+    internal Journal WithFailingWrite(Func<string, bool> picksWrite) => new FailingWriteJournal(this, picksWrite);
+
     private sealed class NoJournal : Journal
     {
         internal override JournalFile? Open(TimeProvider clock) => null;
@@ -118,5 +126,10 @@ public abstract class Journal
     private sealed class ContinuedJournal(JournalLocation location) : Journal
     {
         internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(location);
+    }
+
+    private sealed class FailingWriteJournal(Journal journal, Func<string, bool> picksWrite) : Journal
+    {
+        internal override JournalFile? Open(TimeProvider clock) => journal.Open(clock)?.WithFailingWrite(picksWrite);
     }
 }

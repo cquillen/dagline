@@ -30,13 +30,20 @@ internal sealed class JournalFile : IDisposable
 
     private static readonly UTF8Encoding _encoding = new(encoderShouldEmitUTF8Identifier: false);
 
-    private readonly FileStream _stream;
+    private readonly FileStream _file;
+    private readonly Stream _writes;
     private readonly JournalLock _claim;
 
     private JournalFile(ClaimedFile claimed, JournalFold fold)
+        : this(claimed.Stream, claimed.Stream, claimed.Claim, fold)
     {
-        _stream = claimed.Stream;
-        _claim = claimed.Claim;
+    }
+
+    private JournalFile(FileStream file, Stream writes, JournalLock claim, JournalFold fold)
+    {
+        _file = file;
+        _writes = writes;
+        _claim = claim;
         Fold = fold;
     }
 
@@ -129,17 +136,26 @@ internal sealed class JournalFile : IDisposable
             lines.WriteByte(_lineFeed);
         }
 
-        _stream.Write(lines.GetBuffer().AsSpan(0, (int)lines.Length));
+        _writes.Write(lines.GetBuffer().AsSpan(0, (int)lines.Length));
         if (flush is JournalFlush.ToDisk)
         {
-            _stream.Flush(flushToDisk: true);
+            // The file itself, not what writes to it: only a file stream's flush reaches the disk.
+            _file.Flush(flushToDisk: true);
         }
     }
+
+    /// <summary>
+    /// This journal, held, opened and read as it is, but writing through a <see cref="FailingWriteStream"/> that fails the first
+    /// append whose text <paramref name="picksWrite"/> picks. The returned file owns the file and the claim from here on, and this
+    /// one is not used again. Only <see cref="Journal.WithFailingWrite"/> calls it.
+    /// </summary>
+    public JournalFile WithFailingWrite(Func<string, bool> picksWrite)
+        => new(_file, new FailingWriteStream(_writes, picksWrite), _claim, Fold);
 
     /// <summary>Closes the file and lets go of the journal, so that a later run can continue it at once.</summary>
     public void Dispose()
     {
-        _stream.Dispose();
+        _file.Dispose();
         _claim.Dispose();
     }
 
