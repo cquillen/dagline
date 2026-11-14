@@ -1,1 +1,26 @@
 #nullable enable
+Dagline.Spectre.DisplayMode
+Dagline.Spectre.DisplayMode.Auto = 0 -> Dagline.Spectre.DisplayMode
+Dagline.Spectre.DisplayMode.Force = 1 -> Dagline.Spectre.DisplayMode
+Dagline.Spectre.DisplayMode.Never = 2 -> Dagline.Spectre.DisplayMode
+Dagline.Spectre.SpectreOptions
+Dagline.Spectre.SpectreOptions.<Clone>$() -> Dagline.Spectre.SpectreOptions!
+Dagline.Spectre.SpectreOptions.Ascii.get -> bool
+Dagline.Spectre.SpectreOptions.Ascii.init -> void
+Dagline.Spectre.SpectreOptions.Console.get -> Spectre.Console.IAnsiConsole?
+Dagline.Spectre.SpectreOptions.Console.init -> void
+Dagline.Spectre.SpectreOptions.Display.get -> Dagline.Spectre.DisplayMode
+Dagline.Spectre.SpectreOptions.Display.init -> void
+Dagline.Spectre.SpectreOptions.Equals(Dagline.Spectre.SpectreOptions? other) -> bool
+Dagline.Spectre.SpectreOptions.PlainText.get -> System.IO.TextWriter?
+Dagline.Spectre.SpectreOptions.PlainText.init -> void
+Dagline.Spectre.SpectreOptions.SpectreOptions() -> void
+Dagline.Spectre.SpectreOptions.TimeProvider.get -> System.TimeProvider?
+Dagline.Spectre.SpectreOptions.TimeProvider.init -> void
+Dagline.Spectre.SpectreReporter
+override Dagline.Spectre.SpectreOptions.Equals(object? obj) -> bool
+override Dagline.Spectre.SpectreOptions.GetHashCode() -> int
+override Dagline.Spectre.SpectreOptions.ToString() -> string!
+static Dagline.Spectre.SpectreOptions.operator !=(Dagline.Spectre.SpectreOptions? left, Dagline.Spectre.SpectreOptions? right) -> bool
+static Dagline.Spectre.SpectreOptions.operator ==(Dagline.Spectre.SpectreOptions? left, Dagline.Spectre.SpectreOptions? right) -> bool
+static Dagline.Spectre.SpectreReporter.Create(Dagline.Spectre.SpectreOptions? options = null) -> Dagline.IReporter!

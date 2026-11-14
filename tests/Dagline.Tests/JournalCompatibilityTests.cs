@@ -4,7 +4,7 @@ namespace Dagline.Tests;
 
 /// <summary>
 /// The anchor of the journal format promise: a later Dagline reads every journal format an earlier release wrote. The journal in
-/// <c>CompatibilityJournals</c> is in format version 1, exactly as the first alpha wrote it for the graph below, save that its user
+/// <c>CompatibilityJournals</c> is in format version 1, exactly as 0.1.0 wrote it for the graph below, save that its user
 /// and machine are generic. It is never regenerated: a change that breaks these tests breaks journals that operators hold.
 /// </summary>
 public class JournalCompatibilityTests
