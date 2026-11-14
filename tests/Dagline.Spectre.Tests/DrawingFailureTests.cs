@@ -21,7 +21,7 @@ public class DrawingFailureTests
         using var console = new ScriptedConsole(new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences());
         using var writer = new StringWriter();
         var reporter = new WatchedReporter(
-            SpectreReporter.Auto(writer, new SpectreOptions { Display = DisplayMode.Force, Console = console, TimeProvider = clock }));
+            SpectreReporter.Create(new SpectreOptions { PlainText = writer, Display = DisplayMode.Force, Console = console, TimeProvider = clock }));
 
         var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         await work.Started;
@@ -58,7 +58,7 @@ public class DrawingFailureTests
         using var console = new ScriptedConsole(new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences());
         using var writer = new StringWriter();
         console.FailNextWrite();
-        var reporter = SpectreReporter.Auto(writer, new SpectreOptions { Display = DisplayMode.Force, Console = console });
+        var reporter = SpectreReporter.Create(new SpectreOptions { PlainText = writer, Display = DisplayMode.Force, Console = console });
 
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var printed = Lines(writer);
@@ -80,7 +80,7 @@ public class DrawingFailureTests
         using var console = new ScriptedConsole(new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences());
         using var writer = new ThrowingWriter();
         console.FailNextWrite();
-        var reporter = SpectreReporter.Auto(writer, new SpectreOptions { Display = DisplayMode.Force, Console = console });
+        var reporter = SpectreReporter.Create(new SpectreOptions { PlainText = writer, Display = DisplayMode.Force, Console = console });
 
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
 
@@ -98,9 +98,13 @@ public class DrawingFailureTests
             var builder = new GraphBuilder();
             builder.Task("work", _ => Task.CompletedTask);
             using var console = new ScriptedConsole(new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences());
-            var display = SpectreReporter.Auto(
-                TextWriter.Null,
-                new SpectreOptions { Display = DisplayMode.Force, Console = console, TimeProvider = new FakeTimeProvider(DisplayRun.RunStart) });
+            var display = SpectreReporter.Create(new SpectreOptions
+            {
+                PlainText = TextWriter.Null,
+                Display = DisplayMode.Force,
+                Console = console,
+                TimeProvider = new FakeTimeProvider(DisplayRun.RunStart),
+            });
             var stuck = new WatchedReporter(new StuckBefore("run ended: complete", display));
             var watching = new RecordingReporter();
             var stop = new StopSignal();

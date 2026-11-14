@@ -92,8 +92,7 @@ public class SummaryTests
         var final = (await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [recording] })).Snapshot;
         var source = await recording.Source;
         using var console = new TestConsole().Size(new Size(60, 20)).EmitAnsiSequences();
-        var display = SpectreReporter.Auto(
-            options: new SpectreOptions { Display = DisplayMode.Force, Console = console, TimeProvider = clock });
+        var display = SpectreReporter.Create(new SpectreOptions { Display = DisplayMode.Force, Console = console, TimeProvider = clock });
 
         await display.OnEventAsync(new RunStarted(DisplayRun.RunStart, source), final, CancellationToken.None);
         await display.OnEventAsync(

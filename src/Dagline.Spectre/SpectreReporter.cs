@@ -7,9 +7,6 @@ public static class SpectreReporter
     /// Gives a reporter that draws the run with the display on a terminal, or prints it as plain text elsewhere.
     /// Give it to the run in <see cref="RunOptions.Reporters"/>.
     /// </summary>
-    /// <param name="plainText">
-    /// Where the plain-text reporter writes, or <see langword="null"/> for standard output. The reporter never closes it.
-    /// </param>
     /// <param name="options">What the app chooses, or <see langword="null"/> for the defaults of <see cref="SpectreOptions"/>.</param>
     /// <returns>A reporter for one run at a time.</returns>
     /// <remarks>
@@ -20,8 +17,8 @@ public static class SpectreReporter
     /// Standard input, whether the process looks like it is in CI, and the size of the console are not looked at.
     /// <see cref="DisplayMode.Force"/> always chooses the display, also on a console that is not a terminal, and
     /// <see cref="DisplayMode.Never"/> always chooses plain text, which then draws nothing on the console.
-    /// The plain-text reporter is a <see cref="PlainTextReporter"/> on <paramref name="plainText"/>, or on standard output as it is
-    /// when the run starts, with the options' clock.
+    /// The plain-text reporter is a <see cref="PlainTextReporter"/> on <see cref="SpectreOptions.PlainText"/>, or on standard
+    /// output as it is when the run starts, with the options' clock.
     /// </para>
     /// <para>
     /// The display takes the terminal's alternate screen when it handles <see cref="RunStarted"/>: it hides the cursor and draws a
@@ -67,6 +64,5 @@ public static class SpectreReporter
     /// reporters while it was still busy. A process that is killed leaves the terminal as it was.
     /// </para>
     /// </remarks>
-    public static IReporter Auto(TextWriter? plainText = null, SpectreOptions? options = null)
-        => new AutoReporter(plainText, options ?? new SpectreOptions());
+    public static IReporter Create(SpectreOptions? options = null) => new AutoReporter(options ?? new SpectreOptions());
 }
