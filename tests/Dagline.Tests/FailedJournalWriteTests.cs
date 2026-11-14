@@ -47,23 +47,16 @@ public class FailedJournalWriteTests
                 "later: pending -> ready",
                 "run ended: JournalWriteException",
             ]);
-            var requested = reporter.Events.OfType<StopRequested>().Single();
-            (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart, StopRequester.Dagline, TimeSpan.FromSeconds(30)));
-            var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
-            (graceEnded.At, graceEnded.Reason).ShouldBe((_runStart.AddSeconds(30), GraceEndReason.GracePeriodOver));
-            var ended = reporter.Events.OfType<RunEnded>().Single();
-            (ended.Outcome, ended.Error).ShouldBe((null, error));
+            ShouldHaveStoppedAndWaitedOutTheGracePeriod(reporter, error);
             (await slow.Started).CancellationToken.IsCancellationRequested.ShouldBeTrue();
             error.Snapshot[failsTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
             error.Snapshot[later.Path].Status.ShouldBe(NodeStatus.Ready);
             error.Snapshot.Outcome.ShouldBeNull();
 
-            // The header, the run's start and the two tasks' starts, which were written before the settle: nothing after them.
-            File.ReadAllLines(Directory.GetFiles(temporary.Path, "*.journal").Single()).Length.ShouldBe(4);
+            JournalEntries.Read(TheJournalIn(temporary)).ShouldBe(["header", "run started", "started fails", "started slow"]);
             var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
             listed.Ending.ShouldBe(JournalEnding.Died);
             (listed.Runs, listed.LatestRun!.Started, listed.LatestRun.Ended).ShouldBe((1, _runStart, null));
-            listed.Counts.Settled.ShouldBe(0);
             slow.Release();
         }
     }
@@ -108,21 +101,23 @@ public class FailedJournalWriteTests
 
             thrownToTheTask.InnerException.ShouldBeOfType<IOException>();
             error.InnerException.ShouldBe(thrownToTheTask.InnerException);
-            var requested = reporter.Events.OfType<StopRequested>().Single();
-            (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart, StopRequester.Dagline, TimeSpan.FromSeconds(30)));
-            var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
-            (graceEnded.At, graceEnded.Reason).ShouldBe((_runStart.AddSeconds(30), GraceEndReason.GracePeriodOver));
-            var ended = reporter.Events.OfType<RunEnded>().Single();
-            (ended.Outcome, ended.Error).ShouldBe((null, error));
+            reporter.Lines.Skip(5).ShouldBe(
+            [
+                "stop requested",
+                "saves: running -> failed",
+                "stopped waiting: grace period over",
+                "slow: running -> cancelled",
+                "later: pending -> ready",
+                "run ended: JournalWriteException",
+            ]);
+            ShouldHaveStoppedAndWaitedOutTheGracePeriod(reporter, error);
             (await slow.Started).CancellationToken.IsCancellationRequested.ShouldBeTrue();
-            reporter.Lines.ShouldNotContain("later: ready -> running");
             error.Snapshot[saves.Path].Status.ShouldBe(NodeStatus.Failed);
             error.Snapshot[slowTask.Path].Status.ShouldBe(NodeStatus.Cancelled);
             error.Snapshot[later.Path].Status.ShouldBe(NodeStatus.Ready);
             error.Snapshot.Outcome.ShouldBeNull();
 
-            // The header, the run's start and the two tasks' starts, which were written before the save: nothing after them.
-            File.ReadAllLines(Directory.GetFiles(temporary.Path, "*.journal").Single()).Length.ShouldBe(4);
+            JournalEntries.Read(TheJournalIn(temporary)).ShouldBe(["header", "run started", "started saves", "started slow"]);
             var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
             listed.Ending.ShouldBe(JournalEnding.Died);
             (listed.Runs, listed.LatestRun!.Started, listed.LatestRun.Ended).ShouldBe((1, _runStart, null));
@@ -150,5 +145,23 @@ public class FailedJournalWriteTests
         listed.Ending.ShouldBe(JournalEnding.Died);
         (listed.Runs, listed.LatestRun!.Ended).ShouldBe((1, null));
         (listed.Counts.Settled, listed.Counts[NodeStatus.Succeeded]).ShouldBe((2, 2));
+        JournalEntries.Read(TheJournalIn(temporary)).ShouldBe(
+            ["header", "run started", "started first", "settled first", "started second", "settled second"]);
     }
+
+    /// <summary>
+    /// The stop a failed journal write asks for: Dagline asks at the start of the run with the default grace period, waits it out,
+    /// and the run ends with <paramref name="error"/> in place of a run outcome.
+    /// </summary>
+    private static void ShouldHaveStoppedAndWaitedOutTheGracePeriod(RecordingReporter reporter, JournalWriteException error)
+    {
+        var requested = reporter.Events.OfType<StopRequested>().Single();
+        (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart, StopRequester.Dagline, TimeSpan.FromSeconds(30)));
+        var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
+        (graceEnded.At, graceEnded.Reason).ShouldBe((_runStart.AddSeconds(30), GraceEndReason.GracePeriodOver));
+        var ended = reporter.Events.OfType<RunEnded>().Single();
+        (ended.Outcome, ended.Error).ShouldBe((null, error));
+    }
+
+    private static string TheJournalIn(TemporaryDirectory temporary) => Directory.GetFiles(temporary.Path, "*.journal").Single();
 }

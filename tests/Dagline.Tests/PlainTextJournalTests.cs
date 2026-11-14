@@ -329,7 +329,7 @@ public class PlainTextJournalTests
             builder.Task("fails", fails.Body);
             builder.Task("running", running.Body);
             var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
-            var journal = JournalWriteFailure.SettleOf("fails").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.SettleOf("fails").WithMessage("disk full").In(Journal.New(temporary.Path));
             var options = new RunOptions { Journal = journal, GracePeriod = Timeout.InfiniteTimeSpan, TimeProvider = clock, Reporters = [reporter] };
 
             var run = Runner.RunAsync(builder.Build(), options);
@@ -339,10 +339,21 @@ public class PlainTextJournalTests
             fails.Release();
             await reporter.Handled("stop requested");
             running.Release();
-            await Should.ThrowAsync<JournalWriteException>(run);
+            var id = (await Should.ThrowAsync<JournalWriteException>(run)).Snapshot.Journal!.Id;
 
-            Lines(writer).ShouldContain(
-                "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting for 1 running task");
+            Lines(writer).ShouldBe(
+            [
+                "2026-11-11T04:12:00Z run started: 2 tasks",
+                $"2026-11-11T04:12:00Z journal {id} run 1",
+                "2026-11-11T04:12:00Z started fails",
+                "2026-11-11T04:12:00Z started running",
+                "2026-11-11T04:12:05Z succeeded fails in 5.0s",
+                "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting for 1 running task",
+                "2026-11-11T04:12:05Z succeeded running in 5.0s",
+                "2026-11-11T04:12:05Z run ended: journal write failed after 5.0s: disk full",
+                $"journal: {id} run 1",
+                "tasks: 2 succeeded",
+            ]);
         }
     }
 
