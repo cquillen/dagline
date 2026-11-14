@@ -10,6 +10,7 @@ public static class RunOutcomeExtensions
     /// <returns>The exit code.</returns>
     /// <remarks>
     /// This is a default the app is free not to use: Dagline never sets the exit code of the process itself.
+    /// The mapping is stable: the three codes keep their meaning in every release, so a script that calls the app can rely on them.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="outcome"/> is not a defined run outcome.</exception>
     public static int ToExitCode(this RunOutcome outcome) => outcome switch

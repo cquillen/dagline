@@ -120,6 +120,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A group answers for the tasks beneath it: `NodeSnapshot.WarningCount` is the sum of their warnings, a warning beyond the 100 kept included; `NodeSnapshot.IsWaiting` is true when it has running tasks and every one of them is waiting; `NodeSnapshot.IsWorking` is true when its status is running and it is not waiting. A group's snapshot is recorded again whenever a task beneath it begins or ends waiting or is given a warning. Progress never touches a group.
 - Both reporters take every total, settled count, count of tasks that have not succeeded, earlier-success count and waiting or working count from `TaskCounts`, and the display takes a group's waiting and warnings from the group's own snapshot. What they print is unchanged.
 - Docs: `TaskCounts` and the group roll-up in the Reporters article, and empty status text in the Writing tasks article.
+- The compatibility policy: the exit codes 0, 1 and 2 of `RunOutcome.ToExitCode()` are stable; the plain-text output and the display are for people and may change in any release; a later Dagline reads every journal format version an earlier release wrote, and an older Dagline refuses a newer format with `JournalFormatException`. A version 1 journal, checked in as the first alpha writes it, is listed and continued by the tests of every release.
+- Docs: the Compatibility article, linked from the Exit codes section of Running and stopping, the file section of Journals, the plain-text reporter section of Reporters and the Batch sample's README; and the XML comments of `ToExitCode`, `PlainTextReporter` and `SpectreReporter.Create` state the same.
 
 ### Changed
 
@@ -134,7 +136,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConsoleStop.Hook()` also hooks SIGTERM, counted together with Ctrl+C: the first of either requests a stop, the second ends the grace period, both are swallowed, and from the third on the process ends as it would with no hook. There is no option to leave SIGTERM out. Where .NET cannot hook SIGTERM, the signal hooks Ctrl+C alone.
 - Docs: Getting started shows `new StopSignal()` for an app with a stop trigger of its own, and says that it is not disposable.
 
+- The README and the docs index carry an alpha notice saying what may still change, in place of "not yet usable".
+
 ### Removed
+
+- The commented-out package icon placeholder in `Directory.Build.props`: the packages have no icon.
 
 - `Snapshot.EarlierSuccesses`, `NodeSnapshot.EarlierSuccesses` and `GroupSettled.EarlierSuccesses`: read `Counts.EarlierSuccesses` instead.
 
