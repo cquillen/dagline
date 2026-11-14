@@ -121,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Both reporters take every total, settled count, count of tasks that have not succeeded, earlier-success count and waiting or working count from `TaskCounts`, and the display takes a group's waiting and warnings from the group's own snapshot. What they print is unchanged.
 - Docs: `TaskCounts` and the group roll-up in the Reporters article, and empty status text in the Writing tasks article.
 - The compatibility policy: the exit codes 0, 1 and 2 of `RunOutcome.ToExitCode()` are stable; the plain-text output and the display are for people and may change in any release; a later Dagline reads every journal format version an earlier release wrote, and an older Dagline refuses a newer format with `JournalFormatException`. A version 1 journal, checked in as the first alpha writes it, is listed and continued by the tests of every release.
-- Docs: the Compatibility article, linked from the Exit codes section of Running and stopping, the file section of Journals, the plain-text reporter section of Reporters and the Batch sample's README; and the XML comments of `ToExitCode`, `PlainTextReporter` and `SpectreReporter.Auto` state the same.
+- Docs: the Compatibility article, linked from the Exit codes section of Running and stopping, the file section of Journals, the plain-text reporter section of Reporters and the Batch sample's README; and the XML comments of `ToExitCode`, `PlainTextReporter` and `SpectreReporter.Create` state the same.
 
 ### Changed
 
