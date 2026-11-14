@@ -85,7 +85,8 @@ public static class Runner
     /// the journal, reading it.
     /// </para>
     /// <para>
-    /// Dagline never writes to the console and never hooks a console or process signal: the app decides what requests a stop.
+    /// Dagline never writes to the console, and hooks no console or process signal unless the app calls <see cref="ConsoleStop.Hook"/>:
+    /// the app decides what requests a stop.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>

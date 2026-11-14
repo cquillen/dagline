@@ -181,20 +181,20 @@ foreach (var blocked in result.Snapshot.Blocked)
 
 ## Stopping a run
 
-An app can ask a run to stop. It passes a <xref:Dagline.StopSignal> to `RunAsync`, and a request on the signal stops the run. The usual one is Ctrl+C, which the `Dagline.Spectre` package hooks in one call:
+An app can ask a run to stop. It passes a <xref:Dagline.StopSignal> to `RunAsync`, and a request on the signal stops the run. The usual ones are Ctrl+C and SIGTERM, which the core package hooks in one call:
 
 ```csharp
-using Dagline.Spectre;
-
 using var stop = ConsoleStop.Hook();
 
 var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, stop);
 return result.Outcome.ToExitCode();
 ```
 
-<xref:Dagline.Spectre.ConsoleStop.Hook*> gives a signal hooked to the console's cancel key. The first Ctrl+C requests a stop and the second requests again, which ends the [grace period](#the-grace-period); both are swallowed so that the process lives on and the run winds down. From the third on nothing is swallowed, so the operating system ends the process. Disposing it unhooks the key. See [The terminal display](terminal-ui.md#stopping).
+<xref:Dagline.ConsoleStop.Hook*> gives a signal hooked to the console's cancel key and to SIGTERM, which a service manager or a container runtime sends to ask a process to end. The hook counts Ctrl+C and SIGTERM together. The first requests a stop and the second requests again, which ends the [grace period](#the-grace-period); both are swallowed so that the process lives on and the run winds down. From the third on nothing is swallowed, so the operating system ends the process. There is no option to leave SIGTERM out. Disposing it unhooks both. See [The terminal display](terminal-ui.md#stopping).
 
-Dagline itself never hooks Ctrl+C or a process signal: a library should not take over your process, so what asks for a stop is up to your app. To wire a stop yourself, create a `new StopSignal()` and call <xref:Dagline.StopSignal.Request*> from wherever you decide: a file appearing, a timer, a message from another process.
+On Windows, .NET raises SIGTERM when the machine shuts down or the user logs off, and Windows ends the process a few seconds later whatever the hook does. On a platform where .NET cannot hook SIGTERM, the signal hooks Ctrl+C alone.
+
+Dagline hooks no Ctrl+C and no process signal unless your app calls `ConsoleStop.Hook`: a library should not take over your process, so what asks for a stop is up to your app. To wire a stop yourself, create a `new StopSignal()` and call <xref:Dagline.StopSignal.Request*> from wherever you decide: a file appearing, a timer, a message from another process. A plain `StopSignal` holds nothing to release and is not disposable.
 
 `Request` is safe to call from any thread, a console's cancel handler included. It never blocks and never throws. `IsRequested` says whether a stop has been asked for, and `Requests` counts every call. A run given no signal cannot be stopped.
 
