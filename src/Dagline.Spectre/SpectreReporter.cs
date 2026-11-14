@@ -47,6 +47,10 @@ public static class SpectreReporter
     /// what a later run that continues the journal has left. No exit code is printed: the app chooses its own.
     /// </para>
     /// <para>
+    /// What the display draws and prints, like the plain-text output, is for people and may change in any release: a program must
+    /// not parse it.
+    /// </para>
+    /// <para>
     /// The display's drawing is serialised: a frame from the timer is never drawn while an event is being handled.
     /// While the display is up, the app's own logging must not go to the console.
     /// </para>

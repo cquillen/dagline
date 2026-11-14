@@ -1,0 +1,9 @@
+{"entry":"header","version":1,"id":"20261111T041200Z-fa4fa4","created":"2026-11-11T04:12:00+00:00","description":"all shards"}
+{"entry":"runStarted","time":"2026-11-11T04:12:00+00:00","user":"operator","machine":"build-host","cap":16,"limits":{},"pathsNotInGraph":0,"pathsNotInGraphUnsucceeded":0}
+{"entry":"taskStarted","path":"shard-1/load","time":"2026-11-11T04:12:00+00:00"}
+{"entry":"taskSettled","path":"shard-1/load","time":"2026-11-11T04:12:03+00:00","status":"Succeeded","detail":["file-1","file-2","file-3"],"detailOmitted":0,"warnings":["file-2 was empty"],"warningsOmitted":0,"message":"loaded 3 files"}
+{"entry":"taskStarted","path":"shard-1/export","time":"2026-11-11T04:12:03+00:00"}
+{"entry":"checkpointSaved","path":"shard-1/export","time":"2026-11-11T04:12:03+00:00","text":"job-17"}
+{"entry":"taskSettled","path":"shard-1/export","time":"2026-11-11T04:12:05+00:00","status":"Failed","detail":["job-17 ended in error"],"detailOmitted":0,"warnings":[],"warningsOmitted":0,"message":"the export job failed","failure":"Reported"}
+{"entry":"taskSettled","path":"report","time":"2026-11-11T04:12:05+00:00","status":"Blocked","detail":[],"detailOmitted":0,"warnings":[],"warningsOmitted":0,"blockedBy":"shard-1/export"}
+{"entry":"runEnded","time":"2026-11-11T04:12:05+00:00","outcome":"Incomplete"}

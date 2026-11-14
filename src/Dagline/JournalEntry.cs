@@ -9,7 +9,11 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// The kinds are the format of the file, and <see cref="JournalFile"/> is the one type that reads and writes them.
-/// The format is readable and is not a stable contract: property names are whole words, and a test never asserts on them.
+/// The format is readable, with property names in whole words, and its layout is not an interface for consumers' code.
+/// What is promised is compatibility: a later Dagline reads every format version an earlier release wrote, and the version 1
+/// journal checked in beside the tests holds that promise. So an entry an earlier release wrote is never renamed, removed or
+/// read differently, and a change an earlier release could not read raises <see cref="JournalFile"/>'s format version while the
+/// reading of each earlier version stays. A test asserts on what a run does with a journal, never on the lines of one it wrote.
 /// A member that may be <see langword="null"/> is left out of the line when it is, so its parameter has a default and comes last.
 /// A new kind of entry is a record here with its own <see cref="JsonDerivedTypeAttribute"/>, and a case in <see cref="JournalFold"/>
 /// when it changes what a later run reads.

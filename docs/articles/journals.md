@@ -172,7 +172,7 @@ A journal is one UTF-8 text file with one JSON object per line, appended to and 
 
 Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write. A new journal's first line and its first run's start reach the disk before any task starts, and on Unix systems so does the journal's entry in its directory, and the entry of each directory Dagline created for it, so the file itself survives a crash.
 
-The file is readable text, so you can look into it with any tool when something went wrong. Its format is not a stable contract, and may change between early releases. Anyone who can read the directory can read the file, so a task's outcome and its checkpoint must never hold secrets.
+The file is readable text, so you can look into it with any tool when something went wrong. Its first line names its format version. A later Dagline reads every format version an earlier release wrote, and an older one refuses a newer version with `JournalFormatException`: see [Compatibility](compatibility.md#journals). The layout of the lines is not an interface for your code: read a journal through `ListAsync` and continue it through `Journal.Continue`. Anyone who can read the directory can read the file, so a task's outcome and its checkpoint must never hold secrets.
 
 ## After a crash
 

@@ -28,9 +28,6 @@
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>dag;workflow;pipeline;task-runner;cli;tui</PackageTags>
-    <!-- TODO: add an icon at docs/images/icon.png and uncomment.
-    <PackageIcon>icon.png</PackageIcon>
-    -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>

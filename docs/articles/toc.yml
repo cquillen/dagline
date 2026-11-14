@@ -20,6 +20,8 @@
   href: reporters.md
 - name: Testing your tasks
   href: testing-your-tasks.md
+- name: Compatibility
+  href: compatibility.md
 - name: Contributing
   href: contributing.md
 - name: Glossary

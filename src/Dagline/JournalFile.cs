@@ -10,7 +10,8 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// The file is UTF-8 text with one JSON object per line, each line ending in a line feed, appended only. The first line is a
-/// <see cref="HeaderEntry"/> with the format version, which is <see cref="_version"/>.
+/// <see cref="HeaderEntry"/> with the format version, which is <see cref="_version"/>. A file in a version this Dagline does not
+/// know is refused before anything else in it is read, never half read.
 /// </para>
 /// <para>
 /// A flush here reaches the disk: <see cref="FileStream.Flush(bool)"/> with <see langword="true"/>, which the asynchronous flush of a
