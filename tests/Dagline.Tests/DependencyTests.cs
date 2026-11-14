@@ -35,7 +35,7 @@ public class DependencyTests
             "report: running -> succeeded",
             "run ended: complete",
         ]);
-        result.Snapshot[report.Path].Dependencies.ShouldBe([new Dependency(loadTask.Path, DependencyKind.After)]);
+        result.Snapshot[report.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe([(loadTask.Path, DependencyKind.After)]);
     }
 
     [Test]
@@ -67,23 +67,23 @@ public class DependencyTests
             "report: pending -> ready",
             "archive/store: pending -> ready",
         ]);
-        result.Snapshot[publish.Path].Dependencies.ShouldBe(
+        result.Snapshot[publish.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(NodePath.Parse("shard-1"), DependencyKind.Requires),
-            new Dependency(NodePath.Parse("shard-2"), DependencyKind.Requires),
-            new Dependency(NodePath.Parse("shard-3"), DependencyKind.Requires),
+            (NodePath.Parse("shard-1"), DependencyKind.Requires),
+            (NodePath.Parse("shard-2"), DependencyKind.Requires),
+            (NodePath.Parse("shard-3"), DependencyKind.Requires),
         ]);
-        result.Snapshot[report.Path].Dependencies.ShouldBe(
+        result.Snapshot[report.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(NodePath.Parse("shard-1"), DependencyKind.After),
-            new Dependency(NodePath.Parse("shard-2"), DependencyKind.After),
-            new Dependency(NodePath.Parse("shard-3"), DependencyKind.After),
+            (NodePath.Parse("shard-1"), DependencyKind.After),
+            (NodePath.Parse("shard-2"), DependencyKind.After),
+            (NodePath.Parse("shard-3"), DependencyKind.After),
         ]);
-        result.Snapshot[archive.Path].Dependencies.ShouldBe(
+        result.Snapshot[archive.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(NodePath.Parse("shard-1"), DependencyKind.Requires),
-            new Dependency(NodePath.Parse("shard-2"), DependencyKind.Requires),
-            new Dependency(NodePath.Parse("shard-3"), DependencyKind.After),
+            (NodePath.Parse("shard-1"), DependencyKind.Requires),
+            (NodePath.Parse("shard-2"), DependencyKind.Requires),
+            (NodePath.Parse("shard-3"), DependencyKind.After),
         ]);
     }
 
@@ -132,10 +132,10 @@ public class DependencyTests
             "publish: ready -> running",
             "report: ready -> running",
         ]);
-        result.Snapshot[publish.Path].Dependencies.ShouldBe(
+        result.Snapshot[publish.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(empty.Path, DependencyKind.Requires),
-            new Dependency(holdsOnlyAnEmptyGroup.Path, DependencyKind.Requires),
+            (empty.Path, DependencyKind.Requires),
+            (holdsOnlyAnEmptyGroup.Path, DependencyKind.Requires),
         ]);
     }
 
@@ -158,20 +158,20 @@ public class DependencyTests
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
-        result.Snapshot[publish.Path].Dependencies.ShouldBe(
+        result.Snapshot[publish.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(prepare.Path, DependencyKind.Requires),
-            new Dependency(load.Path, DependencyKind.After),
+            (prepare.Path, DependencyKind.Requires),
+            (load.Path, DependencyKind.After),
         ]);
-        result.Snapshot[shard.Path].Dependencies.ShouldBe(
+        result.Snapshot[shard.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(prepare.Path, DependencyKind.After),
-            new Dependency(load.Path, DependencyKind.After),
+            (prepare.Path, DependencyKind.After),
+            (load.Path, DependencyKind.After),
         ]);
-        result.Snapshot[member.Path].Dependencies.ShouldBe(
+        result.Snapshot[member.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe(
         [
-            new Dependency(prepare.Path, DependencyKind.Requires),
-            new Dependency(load.Path, DependencyKind.Requires),
+            (prepare.Path, DependencyKind.Requires),
+            (load.Path, DependencyKind.Requires),
         ]);
         reporter.Lines.Count(line => line.StartsWith("publish:", StringComparison.Ordinal)).ShouldBe(3);
         reporter.Lines.Count(line => line.StartsWith("shard-1/load:", StringComparison.Ordinal)).ShouldBe(3);
@@ -209,8 +209,8 @@ public class DependencyTests
             "shard-1/tenant-a/load: pending -> ready",
             "reports/report: pending -> ready",
         ]);
-        result.Snapshot[shard.Path].Dependencies.ShouldBe([new Dependency(prepareTask.Path, DependencyKind.Requires)]);
-        result.Snapshot[reports.Path].Dependencies.ShouldBe([new Dependency(prepareTask.Path, DependencyKind.After)]);
+        result.Snapshot[shard.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe([(prepareTask.Path, DependencyKind.Requires)]);
+        result.Snapshot[reports.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe([(prepareTask.Path, DependencyKind.After)]);
         result.Snapshot[load.Path].Dependencies.ShouldBeEmpty();
     }
 
@@ -246,7 +246,7 @@ public class DependencyTests
         var lastTaskBeneath = lines.IndexOf("shard-1/tenant-a/batch-1/load: running -> succeeded");
         lines.IndexOf("publish: pending -> ready").ShouldBe(lastTaskBeneath + 1);
         lines.IndexOf("report: pending -> ready").ShouldBe(lastTaskBeneath + 2);
-        result.Snapshot[publish.Path].Dependencies.ShouldBe([new Dependency(shard.Path, DependencyKind.Requires)]);
-        result.Snapshot[report.Path].Dependencies.ShouldBe([new Dependency(shard.Path, DependencyKind.After)]);
+        result.Snapshot[publish.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe([(shard.Path, DependencyKind.Requires)]);
+        result.Snapshot[report.Path].Dependencies.Select(dependency => (dependency.Upstream, dependency.Kind)).ShouldBe([(shard.Path, DependencyKind.After)]);
     }
 }

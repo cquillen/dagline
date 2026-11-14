@@ -38,8 +38,8 @@ public class WaitUntilAsyncTests
             "job: running -> succeeded",
             "run ended: complete",
         ]);
-        reporter.Events.OfType<WaitingChanged>().Last()
-            .ShouldBe(new WaitingChanged(_runStart, jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
+        WaitFacts(reporter.Events.OfType<WaitingChanged>().Last())
+            .ShouldBe((_runStart, jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
     }
 
     [Test]
@@ -75,8 +75,8 @@ public class WaitUntilAsyncTests
         result.Outcome.ShouldBe(RunOutcome.Complete);
         starts.ShouldBe([_runStart, _runStart.AddSeconds(34), _runStart.AddSeconds(68)]);
         ends.ShouldBe([_runStart.AddSeconds(4), _runStart.AddSeconds(38), _runStart.AddSeconds(72)]);
-        reporter.Events.OfType<WaitingChanged>().Last()
-            .ShouldBe(new WaitingChanged(_runStart.AddSeconds(72), NodePath.Parse("job"), Waiting: false, null, Since: _runStart));
+        WaitFacts(reporter.Events.OfType<WaitingChanged>().Last())
+            .ShouldBe((_runStart.AddSeconds(72), NodePath.Parse("job"), Waiting: false, null, Since: _runStart));
     }
 
     [Test]
@@ -155,8 +155,8 @@ public class WaitUntilAsyncTests
             "job: running -> succeeded",
             "run ended: complete",
         ]);
-        reporter.Events.OfType<WaitingChanged>().Last()
-            .ShouldBe(new WaitingChanged(_runStart.AddSeconds(30), jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
+        WaitFacts(reporter.Events.OfType<WaitingChanged>().Last())
+            .ShouldBe((_runStart.AddSeconds(30), jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
     }
 
     [Test]
@@ -462,4 +462,7 @@ public class WaitUntilAsyncTests
             return (reporter.Lines, [.. reporter.Events.OfType<WaitingChanged>()], $"{job.Status} {job.WaitingSince} {job.WaitingText} {job.Started:O} {job.Settled:O}");
         }
     }
+
+    private static (DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) WaitFacts(WaitingChanged wait)
+        => (wait.At, wait.Path, wait.Waiting, wait.Text, wait.Since);
 }

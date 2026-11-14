@@ -13,9 +13,9 @@ namespace Dagline;
 /// There is no default directory, so that continuing never depends on where the command was launched. An app with more than one
 /// kind of graph gives each kind a directory of its own.
 /// </para>
-/// <para>The set of choices is closed: a type outside Dagline cannot derive from this record.</para>
+/// <para>The set of choices is closed: a type outside Dagline cannot derive from this class.</para>
 /// </remarks>
-public abstract record Journal
+public abstract class Journal
 {
     private protected Journal()
     {
@@ -105,18 +105,18 @@ public abstract record Journal
     /// <summary>Opens the journal the choice names, before the run exists: <see langword="null"/> for no journal.</summary>
     internal abstract JournalFile? Open(TimeProvider clock);
 
-    private sealed record NoJournal : Journal
+    private sealed class NoJournal : Journal
     {
         internal override JournalFile? Open(TimeProvider clock) => null;
     }
 
-    private sealed record NewJournal(string Directory, string? Description) : Journal
+    private sealed class NewJournal(string directory, string? description) : Journal
     {
-        internal override JournalFile Open(TimeProvider clock) => JournalFile.Create(Directory, Description, clock);
+        internal override JournalFile Open(TimeProvider clock) => JournalFile.Create(directory, description, clock);
     }
 
-    private sealed record ContinuedJournal(JournalLocation Location) : Journal
+    private sealed class ContinuedJournal(JournalLocation location) : Journal
     {
-        internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(Location);
+        internal override JournalFile Open(TimeProvider clock) => JournalFile.Open(location);
     }
 }

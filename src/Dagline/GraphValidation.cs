@@ -32,7 +32,7 @@ internal static class GraphValidation
     private static GraphProblem InvalidSegment(Node node)
     {
         var scope = node.Parent is null ? "at the root" : $"in '{node.Parent.Path}'";
-        return new(Path: null, $"'{node.Segment}' is not a valid segment for a node {scope}: {NodePath.SegmentRule}");
+        return new(path: null, $"'{node.Segment}' is not a valid segment for a node {scope}: {NodePath.SegmentRule}");
     }
 
     private static IEnumerable<GraphProblem> DuplicatePaths(ChildNodes scope)

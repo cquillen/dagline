@@ -31,7 +31,9 @@ public class JournalListingTests
         summary.Created.ShouldBe(_created);
         summary.Description.ShouldBe("all shards");
         summary.Runs.ShouldBe(1);
-        summary.LatestRun.ShouldBe(new JournalRunSummary(_created, _created.AddSeconds(5), Environment.UserName, Environment.MachineName));
+        var latestRun = summary.LatestRun.ShouldNotBeNull();
+        (latestRun.Started, latestRun.Ended, latestRun.User, latestRun.Machine)
+            .ShouldBe((_created, _created.AddSeconds(5), Environment.UserName, Environment.MachineName));
         summary.Ending.ShouldBe(JournalEnding.Complete);
         summary.IsFinished.ShouldBeTrue();
         summary.Counts[NodeStatus.Succeeded].ShouldBe(2);

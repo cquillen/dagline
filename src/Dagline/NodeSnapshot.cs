@@ -1,7 +1,7 @@
 namespace Dagline;
 
 /// <summary>One node of a run at one instant. Immutable.</summary>
-public sealed record NodeSnapshot
+public sealed class NodeSnapshot
 {
     internal NodeSnapshot(BuiltNode node, NodeStatus status, TaskCounts counts)
     {

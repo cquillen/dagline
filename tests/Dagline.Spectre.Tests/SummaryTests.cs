@@ -90,15 +90,13 @@ public class SummaryTests
         builder.Task("load", _ => Task.CompletedTask);
         var recording = new RecordingReporter();
         var final = (await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [recording] })).Snapshot;
-        var source = await recording.Source;
         using var console = new TestConsole().Size(new Size(60, 20)).EmitAnsiSequences();
         var display = SpectreReporter.Create(new SpectreOptions { Display = DisplayMode.Force, Console = console, TimeProvider = clock });
 
-        await display.OnEventAsync(new RunStarted(DisplayRun.RunStart, source), final, CancellationToken.None);
+        await display.OnEventAsync(recording.Events.OfType<RunStarted>().Single(), final, CancellationToken.None);
         await display.OnEventAsync(
-            new RunEnded(
+            FailedJournalWrite.RunEnded(
                 DisplayRun.RunStart.AddSeconds(5),
-                null,
                 new InvalidOperationException("The run's journal can no longer be written: disk full")),
             final,
             CancellationToken.None);
