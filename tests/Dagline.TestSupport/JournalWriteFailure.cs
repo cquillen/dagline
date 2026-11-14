@@ -19,14 +19,34 @@ namespace Dagline.TestSupport;
 /// </remarks>
 public sealed class JournalWriteFailure
 {
-    private readonly Func<string, bool> _picksLine;
+    private const string _defaultMessage = "The test made this journal write fail.";
 
-    private JournalWriteFailure(Func<string, bool> picksLine) => _picksLine = picksLine;
+    private readonly Func<string, bool> _picksLine;
+    private readonly string _message;
+
+    private JournalWriteFailure(Func<string, bool> picksLine, string message = _defaultMessage)
+    {
+        _picksLine = picksLine;
+        _message = message;
+    }
 
     /// <summary>Fails the write that holds the settle of the task at <paramref name="taskPath"/>, whatever it settled with.</summary>
     /// <param name="taskPath">The task's path as text, such as <c>shard-1/load</c>.</param>
     /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>
     public static JournalWriteFailure SettleOf(string taskPath) => EntryOf("taskSettled", taskPath);
+
+    /// <summary>
+    /// The same write, failing with an <see cref="IOException"/> whose message is <paramref name="message"/>, as a file system's own
+    /// failure would word it, for a test of how a reporter shows the error the run ends with.
+    /// </summary>
+    /// <param name="message">The message, such as <c>disk full</c>.</param>
+    /// <exception cref="ArgumentException"><paramref name="message"/> is <see langword="null"/>, empty or only white space.</exception>
+    public JournalWriteFailure WithMessage(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+
+        return new JournalWriteFailure(_picksLine, message);
+    }
 
     /// <summary>The same journal choice, but with this write failing once the run opens the journal.</summary>
     /// <param name="journal">A new journal or one to continue, as <see cref="Journal.New"/> or <see cref="Journal.Continue"/> made it.</param>
@@ -35,7 +55,7 @@ public sealed class JournalWriteFailure
     {
         ArgumentNullException.ThrowIfNull(journal);
 
-        return journal.WithFailingWrite(write => write.Split('\n').Any(_picksLine));
+        return journal.WithFailingWrite(write => write.Split('\n').Any(_picksLine), _message);
     }
 
     // Every line is one JSON object that opens with the kind of its entry, then the path for an entry about one task.

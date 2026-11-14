@@ -146,11 +146,11 @@ internal sealed class JournalFile : IDisposable
 
     /// <summary>
     /// This journal, held, opened and read as it is, but writing through a <see cref="FailingWriteStream"/> that fails the first
-    /// append whose text <paramref name="picksWrite"/> picks. The returned file owns the file and the claim from here on, and this
-    /// one is not used again. Only <see cref="Journal.WithFailingWrite"/> calls it.
+    /// append whose text <paramref name="picksWrite"/> picks, with <paramref name="message"/>. The returned file owns the file and
+    /// the claim from here on, and this one is not used again. Only <see cref="Journal.WithFailingWrite"/> calls it.
     /// </summary>
-    public JournalFile WithFailingWrite(Func<string, bool> picksWrite)
-        => new(_file, new FailingWriteStream(_writes, picksWrite), _claim, Fold);
+    public JournalFile WithFailingWrite(Func<string, bool> picksWrite, string message)
+        => new(_file, new FailingWriteStream(_writes, picksWrite, message), _claim, Fold);
 
     /// <summary>Closes the file and lets go of the journal, so that a later run can continue it at once.</summary>
     public void Dispose()

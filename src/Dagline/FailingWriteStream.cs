@@ -4,7 +4,7 @@ namespace Dagline;
 
 /// <summary>
 /// The one internal test hook: a journal's stream that passes every write and flush through to the real file, except the first
-/// write whose text <c>picksWrite</c> picks, which throws an <see cref="IOException"/> and writes nothing.
+/// write whose text <c>picksWrite</c> picks, which throws an <see cref="IOException"/> with <c>message</c> and writes nothing.
 /// <see cref="Journal.WithFailingWrite"/> puts it under one journal, for the shared test support alone, and nothing else uses it.
 /// </summary>
 /// <remarks>
@@ -12,7 +12,7 @@ namespace Dagline;
 /// together. Writes after the failed one pass through again, so that a test reading the file back sees any write the journal's
 /// guard on writing nothing after a failure let through.
 /// </remarks>
-internal sealed class FailingWriteStream(Stream inner, Func<string, bool> picksWrite) : Stream
+internal sealed class FailingWriteStream(Stream inner, Func<string, bool> picksWrite, string message) : Stream
 {
     private bool _failed;
 
@@ -35,7 +35,7 @@ internal sealed class FailingWriteStream(Stream inner, Func<string, bool> picksW
         if (!_failed && picksWrite(Encoding.UTF8.GetString(buffer)))
         {
             _failed = true;
-            throw new IOException("The test made this journal write fail.");
+            throw new IOException(message);
         }
 
         inner.Write(buffer);

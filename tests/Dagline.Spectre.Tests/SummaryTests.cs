@@ -83,28 +83,18 @@ public class SummaryTests
     [Test]
     public async Task A_run_that_ended_with_an_error_says_so_and_why_in_place_of_a_run_outcome()
     {
-        // No real file can be made to fail, so the end of a run whose journal could not be written is handed to the display
-        // here, with the final snapshot of a real run.
-        var clock = new FakeTimeProvider(DisplayRun.RunStart);
+        using var temporary = new TemporaryDirectory();
         var builder = new GraphBuilder();
         builder.Task("load", _ => Task.CompletedTask);
-        var recording = new RecordingReporter();
-        var final = (await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [recording] })).Snapshot;
-        using var console = new TestConsole().Size(new Size(60, 20)).EmitAnsiSequences();
-        var display = SpectreReporter.Create(new SpectreOptions { Display = DisplayMode.Force, Console = console, TimeProvider = clock });
+        var journal = JournalWriteFailure.SettleOf("load").WithMessage("disk full").In(Journal.New(temporary.Path));
 
-        await display.OnEventAsync(recording.Events.OfType<RunStarted>().Single(), final, CancellationToken.None);
-        await display.OnEventAsync(
-            FailedJournalWrite.RunEnded(
-                DisplayRun.RunStart.AddSeconds(5),
-                new InvalidOperationException("The run's journal can no longer be written: disk full")),
-            final,
-            CancellationToken.None);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20, new RunOptions { Journal = journal });
+        var error = await Should.ThrowAsync<JournalWriteException>(display.Run);
 
-        Screen.Read(console.Output, new Size(60, 20), []).Ordinary.ShouldBe(
+        display.Summary.ShouldBe(
         [
             new string('─', 60),
-            "Run ended with an error  0s",
+            $"Run ended with an error  0s · journal {error.Snapshot.Journal!.Id} · run 1",
             "    The run's journal can no longer be written: disk full",
             "✓ 1 succeeded",
         ]);
