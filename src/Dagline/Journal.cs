@@ -31,8 +31,8 @@ public abstract class Journal
     /// The directory the journal goes in. <see cref="Runner.RunAsync"/> creates it, and any directory above it, if it does not exist.
     /// </param>
     /// <param name="description">
-    /// Free text that tells this journal apart from others in the same directory. It is fixed at creation and never changes.
-    /// <see langword="null"/> or empty means none.
+    /// Free text that tells this journal apart from others in the same directory. It is fixed at creation and never changes, and
+    /// is kept on one line: each line break in it becomes a space. <see langword="null"/> or empty means none.
     /// </param>
     /// <returns>The choice, to set as <see cref="RunOptions.Journal"/>.</returns>
     /// <remarks>
@@ -54,7 +54,7 @@ public abstract class Journal
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
 
-        return new NewJournal(directory, string.IsNullOrEmpty(description) ? null : description);
+        return new NewJournal(directory, LineBreaks.OneLineOrNone(description));
     }
 
     /// <summary>

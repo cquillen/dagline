@@ -1,1 +1,4 @@
 #nullable enable
+Dagline.LimitUse.IsFull.get -> bool
+Dagline.Snapshot.EarlierSuccessesWithWarnings.get -> System.Collections.Generic.IReadOnlyList<Dagline.NodeSnapshot!>!
+Dagline.Snapshot.WithWarningsInThisRun.get -> System.Collections.Generic.IReadOnlyList<Dagline.NodeSnapshot!>!

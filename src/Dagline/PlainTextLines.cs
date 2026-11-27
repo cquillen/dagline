@@ -100,8 +100,7 @@ internal static class PlainTextLines
     /// <summary>The journal as the line after <c>run started</c> and the summary name it: its id, the run, and its description if it has one.</summary>
     private static string Named(JournalInfo journal)
         => journal.Description is { Length: > 0 } description
-            // A description is any text, and here it has one line to fit on.
-            ? Invariant($"{journal.Id} run {journal.Run}: {LineBreaks.OneLine(description)}")
+            ? Invariant($"{journal.Id} run {journal.Run}: {description}")
             : Invariant($"{journal.Id} run {journal.Run}");
 
     private static string Ended(RunEnded ended, TimeSpan duration)
@@ -246,12 +245,12 @@ internal static class PlainTextLines
             return [];
         }
 
-        var earlier = snapshot.WithWarnings.Where(task => task.IsEarlierSuccess).ToList();
+        var earlier = snapshot.EarlierSuccessesWithWarnings;
 
         return
         [
             Invariant($"warnings: {snapshot.WarningCount}"),
-            .. snapshot.WithWarnings.Where(task => !task.IsEarlierSuccess).SelectMany(task => (IEnumerable<string>)
+            .. snapshot.WithWarningsInThisRun.SelectMany(task => (IEnumerable<string>)
             [
                 $"  {task.Path}",
                 .. Kept(task.Warnings, task.WarningsOmitted, _summaryWarningIndent),

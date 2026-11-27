@@ -115,7 +115,7 @@ There are no priorities and no fairness. A task that needs two busy limits can b
 
 ### How full they are
 
-A snapshot shows how busy the run is. <xref:Dagline.Snapshot.RunningTasks> is the max running tasks, and <xref:Dagline.Snapshot.Limits> has every limit the graph names. Each is a <xref:Dagline.LimitUse>: its size and how many of its slots are in use.
+A snapshot shows how busy the run is. <xref:Dagline.Snapshot.RunningTasks> is the max running tasks, and <xref:Dagline.Snapshot.Limits> has every limit the graph names. Each is a <xref:Dagline.LimitUse>: its size, how many of its slots are in use, and <xref:Dagline.LimitUse.IsFull>, which says whether a ready task that holds it must wait.
 
 ```csharp
 var database = snapshot.Limits["database"];

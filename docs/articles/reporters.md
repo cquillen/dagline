@@ -177,7 +177,7 @@ A run that continues a [journal](journals.md) begins with its earlier successes 
 - <xref:Dagline.Snapshot.SetAside> lists the tasks whose earlier success this run set aside, in declaration order. They start pending and run again.
 - <xref:Dagline.Snapshot.JournalPathsNotInGraph> counts the paths the journal holds that this graph does not have as a task, and <xref:Dagline.Snapshot.JournalPathsNotInGraphUnsucceeded> how many of those have not succeeded.
 
-An earlier success keeps its whole outcome, warnings included, so `WarningCount` and `WithWarnings` cover every task in the graph. A reporter that lists warnings in its summary can tell those of earlier runs apart by `IsEarlierSuccess`.
+An earlier success keeps its whole outcome, warnings included, so `WarningCount` and `WithWarnings` cover every task in the graph. A reporter that lists warnings in its summary lists <xref:Dagline.Snapshot.WithWarningsInThisRun>, and can count those of earlier runs, which an earlier summary listed, from <xref:Dagline.Snapshot.EarlierSuccessesWithWarnings>.
 
 A run whose journal can no longer be written is stopped by Dagline: `StopRequested` has `By` set to `StopRequester.Dagline`, unless the app had already asked for a stop, whose `StopRequested` stays the only one, with `By` set to `StopRequester.App`. Either way `RunEnded` carries the `JournalWriteException` in `Error` with no run outcome. The final snapshot has an end time and no `Outcome`.
 

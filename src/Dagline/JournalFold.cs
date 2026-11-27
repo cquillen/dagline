@@ -30,7 +30,8 @@ internal sealed class JournalFold
     {
         Id = header.Id;
         Created = header.Created;
-        Description = header.Description;
+        // A journal written before descriptions were kept as one line may hold line breaks in its own.
+        Description = LineBreaks.OneLineOrNone(header.Description);
     }
 
     /// <summary>The journal's id.</summary>

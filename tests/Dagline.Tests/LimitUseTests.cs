@@ -45,12 +45,12 @@ public class LimitUseTests
         var result = await run;
 
         bodiesPaused[held.Path].Status.ShouldBe(NodeStatus.Ready);
-        (bodiesPaused.RunningTasks.Size, bodiesPaused.RunningTasks.InUse).ShouldBe((3, 3));
-        bodiesPaused.Limits.Select(limit => (limit.Key, limit.Value.Size, limit.Value.InUse)).ShouldBe(
+        (bodiesPaused.RunningTasks.Size, bodiesPaused.RunningTasks.InUse, bodiesPaused.RunningTasks.IsFull).ShouldBe((3, 3, true));
+        bodiesPaused.Limits.Select(limit => (limit.Key, limit.Value.Size, limit.Value.InUse, limit.Value.IsFull)).ShouldBe(
         [
-            ("database", 1, 1),
-            ("files", 2, 1),
-            ("network", 5, 0),
+            ("database", 1, 1, true),
+            ("files", 2, 1, false),
+            ("network", 5, 0, false),
         ]);
         (result.Snapshot.RunningTasks.Size, result.Snapshot.RunningTasks.InUse).ShouldBe((3, 0));
         result.Snapshot.Limits.Values.ShouldAllBe(limit => limit.InUse == 0);

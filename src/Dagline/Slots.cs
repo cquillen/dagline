@@ -20,7 +20,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     /// <summary>How many numbers a tally of the slots in use takes: one for the max running tasks, then one for each limit.</summary>
     public int TallyLength => 1 + _inUse.Length;
 
-    private bool IsAtMaxRunningTasks => _running == sizes.MaxRunningTasks;
+    private bool IsAtMaxRunningTasks => LimitUse.AreAllHeld(sizes.MaxRunningTasks, _running);
 
     /// <summary>
     /// Writes the slots in use now to the start of <paramref name="tally"/>: the max running tasks', then each limit's,
@@ -82,7 +82,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     {
         foreach (var limit in limits)
         {
-            if (_inUse[limit] == sizes.Limits[limit])
+            if (LimitUse.AreAllHeld(sizes.Limits[limit], _inUse[limit]))
             {
                 return true;
             }

@@ -52,7 +52,7 @@ internal static class Header
         var slots = StyledLine.Of(
             $"cap {DisplayText.Number(snapshot.RunningTasks.InUse)}/{DisplayText.Number(snapshot.RunningTasks.Size)}",
             Palette.Dim);
-        var full = snapshot.Limits.Values.Count(limit => limit.InUse >= limit.Size);
+        var full = snapshot.Limits.Values.Count(limit => limit.IsFull);
         if (full > 0)
         {
             slots = slots.Add($" {glyphs.Separator} {DisplayText.Number(full)} of {DisplayText.Number(snapshot.Limits.Count)} limits full", Palette.Dim);

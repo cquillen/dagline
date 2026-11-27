@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `LimitUse.IsFull` says whether every slot of a limit, or of the max running tasks, is held, so that a ready task that holds it waits.
+- `Snapshot.WithWarningsInThisRun` and `Snapshot.EarlierSuccessesWithWarnings` split `WithWarnings` into the tasks that added their warnings in this run and the earlier successes, whose warnings an earlier run's summary listed.
+
+### Changed
+
+- A journal's description is kept on one line: each line break in it becomes a space, in `JournalInfo.Description` and `JournalSummary.Description`, also for a journal written by 0.1.0. The Spectre header now shows it on one line, as the plain-text reporter already did.
+
 ### Fixed
 
 - `Journals.ListAsync` leaves out a journal whose directory is deleted while the listing runs, as it already left out a journal deleted then, instead of listing it in `Unreadable` with a `JournalAccessException`.
