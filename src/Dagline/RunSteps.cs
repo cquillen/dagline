@@ -93,6 +93,9 @@ internal sealed class RunSteps
     /// <param name="drained">Whether the run's drain signal is already requested.</param>
     /// <param name="stopped">Whether the run's token is already cancelled.</param>
     /// <param name="source">The run as reporters read it, which <see cref="RunStarted"/> carries.</param>
+    // The two bools are facts the run read before it started, not modes: each applies the same drain or stop the heard input does.
+    // Split into inputs the run composes, the run would have to know that they go between the tasks becoming ready and the starts,
+    // and that no end input may come between them, or a run of earlier successes alone would end before its drain was published.
     public IReadOnlyList<Step> Start(DateTimeOffset now, bool drained, bool stopped, ISnapshotSource source)
     {
         _milestones = _milestones with { Started = now };
@@ -108,8 +111,7 @@ internal sealed class RunSteps
 
         if (stopped)
         {
-            Begin();
-            ApplyStop(StopRequester.App, now);
+            StopUnlessStopped(StopRequester.App, now);
         }
 
         StartWhatFitsUnlessEndingEarly(now);
