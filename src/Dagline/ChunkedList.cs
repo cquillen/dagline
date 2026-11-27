@@ -4,7 +4,7 @@ namespace Dagline;
 
 /// <summary>
 /// An immutable list that is cheap to change in one place: its elements are held in chunks of one size,
-/// and a list made from another with <see cref="With"/> shares every chunk but the one that holds the change.
+/// and a list made from another with <see cref="With"/> shares every chunk but those that hold the changes.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,7 +13,8 @@ namespace Dagline;
 /// </para>
 /// <para>
 /// A chunk holds about as many elements as there are chunks, the square root of the count, so one change copies
-/// about twice that many references: the chunk it is in, and the list of chunks.
+/// about twice that many references: the chunk it is in, and the list of chunks. Changes made together copy the list of chunks
+/// once, and each chunk they touch once, so a task and the groups above it, which often share a chunk, cost little more than one.
 /// </para>
 /// <para>
 /// Nothing in a list changes once it is made, so it is safe to read from any thread.
@@ -58,20 +59,31 @@ internal sealed class ChunkedList<T> : IReadOnlyList<T>
     }
 
     /// <summary>
-    /// A list that differs from this one in the element at one position. This list is not changed,
-    /// and the two share every chunk but the one that holds the position.
+    /// A list that differs from this one in the elements at the positions given, each set in turn, so a later change to a position
+    /// wins. This list is not changed, and the two share every chunk but those that hold the positions. No change gives this list.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="index"/> is negative, or is not less than <see cref="Count"/>.
+    /// An index is negative, or is not less than <see cref="Count"/>.
     /// </exception>
-    public ChunkedList<T> With(int index, T element)
+    public ChunkedList<T> With(ReadOnlySpan<(int Index, T Element)> changes)
     {
-        ThrowIfOutOfRange(index);
+        if (changes.IsEmpty)
+        {
+            return this;
+        }
 
-        var changed = index / _chunkSize;
         T[][] chunks = [.. _chunks];
-        chunks[changed] = [.. _chunks[changed]];
-        chunks[changed][index % _chunkSize] = element;
+        foreach (var (index, element) in changes)
+        {
+            ThrowIfOutOfRange(index);
+            var changed = index / _chunkSize;
+            if (ReferenceEquals(chunks[changed], _chunks[changed]))
+            {
+                chunks[changed] = [.. _chunks[changed]];
+            }
+
+            chunks[changed][index % _chunkSize] = element;
+        }
 
         return new(chunks, _chunkSize, Count);
     }

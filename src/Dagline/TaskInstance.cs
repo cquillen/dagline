@@ -74,6 +74,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     private bool IsRunning => Status is NodeStatus.Running;
 
     /// <summary>The task as a snapshot shows it now. Each call makes a new one.</summary>
+    /// <summary>How many warnings the task has added: those kept and those only counted.</summary>
+    public int WarningCount => _warnings.Count + _warningsOmitted;
+
     public NodeSnapshot ToNodeSnapshot() => new(task, Status, TaskCounts.OfOneTask(Status, waiting: _waitingSince is not null, _isEarlierSuccess))
     {
         Failure = _failure,
@@ -198,7 +201,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         var kept = LineBreaks.OneLine(warning);
         _warnings = [.. _warnings, kept];
 
-        return new TaskChange(ToNodeSnapshot(), new WarningAdded(now, task.Path, kept));
+        return new TaskChange(Task: null, new WarningAdded(now, task.Path, kept));
     }
 
     /// <summary>Sets the message, as one line, or clears it when the message is empty. It is never an event.</summary>
@@ -265,7 +268,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         _waitingSince = now;
         _waitingText = LineBreaks.OneLineOrNone(text);
 
-        return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, waiting: true, _waitingText, since: now));
+        return new TaskChange(Task: null, new WaitingChanged(now, task.Path, waiting: true, _waitingText, since: now));
     }
 
     /// <summary>
@@ -318,11 +321,12 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         _waitingSince = null;
         _waitingText = null;
 
+        // Built now, not when the change is closed: settling ends the wait and then moves the task, both before either is applied.
         return new TaskChange(ToNodeSnapshot(), new WaitingChanged(now, task.Path, waiting: false, text, since));
     }
 
     /// <summary>The task as it is after a report that is never an event.</summary>
-    private TaskChange Changed() => new(ToNodeSnapshot(), Event: null);
+    private static TaskChange Changed() => new(Task: null, Event: null);
 
     /// <summary>
     /// Settles the task with an outcome. What it reported while it ran stays, except that an outcome

@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Runtime.InteropServices;
 
 namespace Dagline;
 
@@ -30,10 +31,19 @@ internal sealed class SnapshotTaker(
 {
     private readonly Queue<NodeChange> _untaken = new();
 
+    // Reused by each take, so taking a snapshot allocates no list of its own for the changes it applies.
+    private readonly List<(int Index, NodeSnapshot Element)> _taking = [];
+
     // Reports that publish no event, such as progress, close no change until the next event or a read of the current snapshot.
     // Keeping only the latest node at each position bounds what they hold to one entry per node, however often a task reports.
-    private readonly Dictionary<int, NodeSnapshot> _sinceLastChange = [];
+    // A task changed by a report is kept as its instance, whose node is built only when the change is closed.
+    private readonly Dictionary<int, object> _sinceLastChange = [];
     private ChunkedList<NodeSnapshot> _nodes = ChunkedList<NodeSnapshot>.From(atTheStart);
+
+    // Most events take or give back no slot, so their changes share the last tally, and their snapshots what was built from it.
+    private int[]? _tally;
+    private int _tallyVersion;
+    private (int[] Tally, LimitUse RunningTasks, IReadOnlyDictionary<string, LimitUse> Limits)? _slotsTaken;
 
     /// <summary>
     /// Records a node as it is after a change, for the next change to close. A later record at the same position before
@@ -42,18 +52,32 @@ internal sealed class SnapshotTaker(
     public void Record(int position, NodeSnapshot node) => _sinceLastChange[position] = node;
 
     /// <summary>
+    /// Records that a task's instance has changed, for the next change to close, which takes the task's node from the instance as
+    /// it is then. A later record at the same position before that close replaces this one.
+    /// </summary>
+    public void Record(int position, TaskInstance instance) => _sinceLastChange[position] = instance;
+
+    /// <summary>
     /// Closes the node changes recorded since the last change into a new one, with everything else the snapshot holds.
-    /// The slots in use are copied, so the change keeps them as they are now.
+    /// The slots in use are copied, so the change keeps them as they are now, unless no slot has been taken or given back since
+    /// the last change, which it then shares a copy with.
     /// </summary>
     /// <param name="milestones">When the run started, the stop it has applied, and when and how it ended.</param>
     /// <param name="runCounts">The run's counts as they are now.</param>
     public SnapshotChange Close(RunMilestones milestones, TaskCounts runCounts)
     {
-        var slotsInUse = new int[slots.TallyLength];
-        slots.CopyTo(slotsInUse);
-
-        foreach (var (position, node) in _sinceLastChange)
+        if (_tally is null || _tallyVersion != slots.Version)
         {
+            _tally = new int[slots.TallyLength];
+            slots.CopyTo(_tally);
+            _tallyVersion = slots.Version;
+        }
+
+        var slotsInUse = _tally;
+
+        foreach (var (position, recorded) in _sinceLastChange)
+        {
+            var node = recorded as NodeSnapshot ?? ((TaskInstance)recorded).ToNodeSnapshot();
             _untaken.Enqueue(new NodeChange(position, node));
         }
 
@@ -68,7 +92,16 @@ internal sealed class SnapshotTaker(
         for (var taken = 0; taken < change.NodeChanges; taken++)
         {
             var (position, node) = _untaken.Dequeue();
-            _nodes = _nodes.With(position, node);
+            _taking.Add((position, node));
+        }
+
+        _nodes = _nodes.With(CollectionsMarshal.AsSpan(_taking));
+        _taking.Clear();
+
+        if (_slotsTaken is not { } slotsTaken || !ReferenceEquals(slotsTaken.Tally, change.SlotsInUse))
+        {
+            slotsTaken = (change.SlotsInUse, slots.RunningTasksIn(change.SlotsInUse), slots.LimitsIn(change.SlotsInUse));
+            _slotsTaken = slotsTaken;
         }
 
         var (started, stop, ended, outcome) = change.Milestones;
@@ -80,8 +113,8 @@ internal sealed class SnapshotTaker(
             _nodes,
             positions,
             change.RunCounts,
-            slots.RunningTasksIn(change.SlotsInUse),
-            slots.LimitsIn(change.SlotsInUse),
+            slotsTaken.RunningTasks,
+            slotsTaken.Limits,
             journal);
     }
 }

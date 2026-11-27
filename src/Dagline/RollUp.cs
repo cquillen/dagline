@@ -127,15 +127,15 @@ internal sealed class RollUp
         };
 
     /// <summary>
-    /// A task has changed: <paramref name="change"/> holds the task as it is now and the event the change produced, if any.
-    /// The kind of change is decided once, from its event: a change of status, or the begin or end of a wait, is counted in the run
+    /// A task has changed: <paramref name="produced"/> is the event the change produced, if any, and
+    /// <paramref name="warningCount"/> the task's warning count as it is now. The kind of change is decided once, from its event: a change of status, or the begin or end of a wait, is counted in the run
     /// and in every group above the task. A warning, whether kept or beyond the number kept, is then counted in every group above
     /// the task, from the task's warning count. Each group so changed is recorded, once, for <see cref="HandOverChanged"/>, and each
     /// one a change of status settled for <see cref="TakeSettled"/>.
     /// </summary>
-    public void TaskChanged(BuiltTask task, TaskChange change)
+    public void TaskChanged(BuiltTask task, RunEvent? produced, int warningCount)
     {
-        switch (change.Event)
+        switch (produced)
         {
             case TaskStatusChanged moved:
                 CountMove(task, moved);
@@ -145,7 +145,7 @@ internal sealed class RollUp
                 break;
         }
 
-        CountWarnings(task, change.Task.WarningCount);
+        CountWarnings(task, warningCount);
     }
 
     private void CountMove(BuiltTask task, TaskStatusChanged moved)
