@@ -97,7 +97,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     {
         foreach (var limit in limits)
         {
-            if (LimitUse.AreAllHeld(sizes.Limits[limit], _inUse[limit]))
+            if (IsFull(limit))
             {
                 return true;
             }
@@ -106,13 +106,16 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
         return false;
     }
 
+    /// <summary>Whether every slot of a limit is in use, given its index in <see cref="Graph.LimitNames"/>.</summary>
+    public bool IsFull(int limit) => LimitUse.AreAllHeld(sizes.Limits[limit], _inUse[limit]);
+
     /// <summary>The first limit the task holds that is full, which <see cref="Take"/> answered <see cref="SlotsAnswer.LimitFull"/> for.</summary>
     /// <exception cref="InvalidOperationException">None of the limits the task holds is full.</exception>
     public int FullLimitOf(BuiltTask task)
     {
         foreach (var limit in task.HeldLimits)
         {
-            if (LimitUse.AreAllHeld(sizes.Limits[limit], _inUse[limit]))
+            if (IsFull(limit))
             {
                 return limit;
             }
