@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Journals.ListAsync` leaves out a journal whose directory is deleted while the listing runs, as it already left out a journal deleted then, instead of listing it in `Unreadable` with a `JournalAccessException`.
+
 ## [0.1.0] - 2026-11-13
 
 ### Added

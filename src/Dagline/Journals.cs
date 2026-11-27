@@ -36,7 +36,7 @@ public static class Journals
     /// A run may hold a journal while it is listed: its summary shows what the run had written by then, and its ending is
     /// <see cref="JournalEnding.InUse"/>. To tell whether a run holds it, the listing takes the journal's lock for a moment, so a run
     /// that starts on that journal at the same instant may throw <see cref="JournalInUseException"/>. A journal deleted while the
-    /// listing runs is left out.
+    /// listing runs is left out, and so is one whose directory is deleted then.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="directory"/> is <see langword="null"/>.</exception>
@@ -61,9 +61,9 @@ public static class Journals
                 var fold = await JournalFile.ReadAsync(location, cancellationToken).ConfigureAwait(false);
                 summaries.Add(new JournalSummary(fold, JournalLock.IsInUse(location)));
             }
-            catch (FileNotFoundException)
+            catch (Exception missing) when (FileSystemFailure.IsMissing(missing))
             {
-                // Deleted since the directory was listed.
+                // Deleted since the directory was listed, alone or with its directory.
             }
             catch (DaglineException cannotRead) when (cannotRead is JournalFormatException or JournalAccessException)
             {

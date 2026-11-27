@@ -15,7 +15,6 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
 
     // A frame from the timer, an event and the token's callback are never handled at once.
     private readonly Lock _gate = new();
-    private ISnapshotSource? _source;
     private ITimer? _timer;
     private bool _onAlternateScreen;
     private (RunStarted Event, Snapshot Snapshot, CancellationToken Token)? _started;
@@ -72,7 +71,6 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
         _onAlternateScreen = true;
         terminal.EnterAlternateScreen();
         DrawFrame(snapshot);
-        _source = started.Source;
         _timer = clock.CreateTimer(_ => DrawTimedFrame(), null, _redrawInterval, _redrawInterval);
     }
 
@@ -90,7 +88,7 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
     {
         lock (_gate)
         {
-            if (_source is null)
+            if (_timer is null || _started is not var (started, _, _))
             {
                 return;
             }
@@ -99,7 +97,7 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
             {
                 try
                 {
-                    DrawFrame(_source.Current);
+                    DrawFrame(started.Source.Current);
                 }
                 catch (Exception failure)
                 {
@@ -174,6 +172,5 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
     {
         _timer?.Dispose();
         _timer = null;
-        _source = null;
     }
 }

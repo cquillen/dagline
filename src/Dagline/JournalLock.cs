@@ -54,7 +54,7 @@ internal sealed class JournalLock : IDisposable
         {
             return true;
         }
-        catch (JournalAccessException cannotOpen) when (cannotOpen.InnerException is FileNotFoundException or DirectoryNotFoundException)
+        catch (JournalAccessException cannotOpen) when (cannotOpen.InnerException is { } cause && FileSystemFailure.IsMissing(cause))
         {
             return false;
         }

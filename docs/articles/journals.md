@@ -89,7 +89,7 @@ foreach (var unreadable in listing.Unreadable)
 }
 ```
 
-Only a failure to read the directory itself makes `ListAsync` throw, with `JournalAccessException`.
+A journal deleted while the listing runs, alone or with its directory, is left out: it no longer exists, so it is not unreadable. Only a failure to read the directory itself makes `ListAsync` throw, with `JournalAccessException`.
 
 The `Batch` sample's policy also matches the description, so each subset continues its own journal, and it does not skip a journal that another run holds, so that run is refused. [Its README](https://github.com/cquillen/dagline/blob/main/samples/Dagline.Samples.Batch/README.md#2-a-failed-validation-then-the-fix) shows a failed run and the run that continues it.
 

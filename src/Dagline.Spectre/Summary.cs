@@ -64,8 +64,7 @@ internal static class Summary
             :
             [
                 Heading("Cancelled", snapshot.Cancelled.Count),
-                .. snapshot.Cancelled.Select(task => StatusMark.For(NodeStatus.Cancelled, glyphs).Line(" ")
-                    .Add(task.Path.ToString())
+                .. snapshot.Cancelled.Select(task => StatusMark.For(NodeStatus.Cancelled, glyphs).Before(task.Path)
                     .Add(task.Message is { } message ? DisplayText.Between + glyphs.Text(message) : "", Palette.Dim)),
             ];
 
@@ -88,8 +87,7 @@ internal static class Summary
             StyledLine.Of(title, Palette.Bold),
             .. snapshot.WithWarnings.Where(task => !task.IsEarlierSuccess).SelectMany(task => (IEnumerable<StyledLine>)
             [
-                StatusMark.Warning(glyphs).Line(" ")
-                    .Add(task.Path.ToString())
+                StatusMark.Warning(glyphs).Before(task.Path)
                     .Add(DisplayText.Between + DisplayText.Number(task.WarningCount), Palette.Warning),
                 .. Kept(task.Warnings, task.WarningsOmitted, "warning", "warnings", glyphs),
             ]),
@@ -170,8 +168,7 @@ internal static class Summary
             .. Progress(task, glyphs) is { } progress ? [$"got to {progress}"] : Array.Empty<string>(),
         ];
 
-        yield return StatusMark.For(NodeStatus.Failed, glyphs).Line(" ")
-            .Add(task.Path.ToString())
+        yield return StatusMark.For(NodeStatus.Failed, glyphs).Before(task.Path)
             .Add(DisplayText.Between + string.Join($" {glyphs.Separator} ", facts), Palette.Dim);
 
         if (task.Message is { } message)

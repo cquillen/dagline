@@ -7,6 +7,9 @@ internal readonly record struct Mark(string Glyph, Style Style)
 {
     /// <summary>The glyph in its style, then <paramref name="after"/> in the same style.</summary>
     public StyledLine Line(string after = "") => StyledLine.Of(Glyph + after, Style);
+
+    /// <summary>The glyph in its style, then a space and <paramref name="path"/> unstyled: the mark styles only its glyph.</summary>
+    public StyledLine Before(NodePath path) => Line().Add($" {path}");
 }
 
 /// <summary>
