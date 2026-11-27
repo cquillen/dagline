@@ -154,7 +154,7 @@ internal sealed class Run : ISnapshotSource
     /// since settling ended the marker.
     /// </summary>
     public void CloseWaitingScope(BuiltTask task)
-        => Report(task, static (instance, now) => instance.CloseWaitingScope(now));
+        => Report(task, (object?)null, static (instance, _, now) => instance.CloseWaitingScope(now));
 
     /// <summary>
     /// Gives the steps a report that is never an event, such as progress, and carries out the step it caused, if any.
@@ -185,13 +185,6 @@ internal sealed class Run : ISnapshotSource
             return steps.Count > 0;
         }
     }
-
-    /// <summary>
-    /// Gives the steps a report that may be an event and takes nothing but the time, such as the close of a waiting scope.
-    /// <paramref name="report"/> is passed on as the argument of the report that takes one, so a static lambda costs no closure.
-    /// </summary>
-    private void Report(BuiltTask task, Func<TaskInstance, DateTimeOffset, TaskChange?> report)
-        => Report(task, report, static (instance, report, now) => report(instance, now));
 
     /// <summary>The checkpoint of a task as it is now: empty when there is none.</summary>
     public string CheckpointOf(BuiltTask task)
@@ -321,17 +314,16 @@ internal sealed class Run : ISnapshotSource
                 Timeout.InfiniteTimeSpan);
         }
 
-        switch (step.Ends)
+        if (step.Ends is { Outcome: { } outcome } reached)
         {
-            case RunEnd.WithOutcome reached:
-                CompleteDelivery(reached);
-                _ended.SetResult(reached.Outcome);
-                break;
-            case RunEnd.ByFailedWrite byFailedWrite:
-                var endedWith = PublishEndedByFailedWrite();
-                CompleteDelivery(byFailedWrite);
-                _ended.SetException(endedWith);
-                break;
+            CompleteDelivery(reached);
+            _ended.SetResult(outcome);
+        }
+        else if (step.Ends is { } byFailedWrite)
+        {
+            var endedWith = PublishEndedByFailedWrite();
+            CompleteDelivery(byFailedWrite);
+            _ended.SetException(endedWith);
         }
     }
 

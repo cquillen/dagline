@@ -33,19 +33,10 @@ internal readonly record struct StepEvent(RunEvent Event, SnapshotChange Change)
 /// How a run ends: with a run outcome, or stopped by a failed journal write; and how many stop requests it applied, so that the
 /// wait for reporters hears only later ones.
 /// </summary>
+/// <param name="Outcome">
+/// The run outcome, which the step's <see cref="RunEnded"/> carries; <see langword="null"/> when a journal write failed. Then the
+/// step has no event: the run publishes the <see cref="RunEnded"/> itself, with the <see cref="JournalWriteException"/> it ends
+/// with, since that exception carries the final snapshot, which the run takes only then.
+/// </param>
 /// <param name="RequestsApplied">How many stop requests the run applied.</param>
-internal abstract record RunEnd(int RequestsApplied)
-{
-    /// <summary>The run ends with a run outcome, which the step's <see cref="RunEnded"/> carries.</summary>
-    /// <param name="Outcome">The run outcome.</param>
-    /// <param name="RequestsApplied">How many stop requests the run applied.</param>
-    public sealed record WithOutcome(RunOutcome Outcome, int RequestsApplied) : RunEnd(RequestsApplied);
-
-    /// <summary>
-    /// The run ends with no run outcome, because a journal write failed. The step has no event: the run publishes the
-    /// <see cref="RunEnded"/> itself, with the <see cref="JournalWriteException"/> it ends with, since that exception carries the
-    /// final snapshot, which the run takes only then.
-    /// </summary>
-    /// <param name="RequestsApplied">How many stop requests the run applied.</param>
-    public sealed record ByFailedWrite(int RequestsApplied) : RunEnd(RequestsApplied);
-}
+internal sealed record RunEnd(RunOutcome? Outcome, int RequestsApplied);

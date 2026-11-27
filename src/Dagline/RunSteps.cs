@@ -185,16 +185,11 @@ internal sealed class RunSteps
         }
 
         var heardNew = requests > _requestsApplied;
+        var stoppedByDagline = _milestones.Stop?.By is StopRequester.Dagline;
         _requestsApplied = requests;
-        if (heardNew && _milestones.Stop?.By is StopRequester.Dagline)
-        {
-            LetGo(GraceEndReason.SecondStop, now);
-            return Decided();
-        }
-
         StopUnlessStopped(StopRequester.App, now);
 
-        if (requests >= 2)
+        if (requests >= 2 || (heardNew && stoppedByDagline))
         {
             LetGo(GraceEndReason.SecondStop, now);
         }
@@ -518,7 +513,7 @@ internal sealed class RunSteps
         if (_journalWriteFailed)
         {
             _milestones = _milestones with { Ended = now };
-            _step!.Ends = new RunEnd.ByFailedWrite(_requestsApplied);
+            _step!.Ends = new RunEnd(null, _requestsApplied);
             return;
         }
 
@@ -526,7 +521,7 @@ internal sealed class RunSteps
             : HasStopped ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
         _milestones = _milestones with { Ended = now, Outcome = outcome };
-        _step!.Ends = new RunEnd.WithOutcome(outcome, _requestsApplied);
+        _step!.Ends = new RunEnd(outcome, _requestsApplied);
         Publish(new RunEnded(now, outcome));
     }
 
@@ -609,9 +604,14 @@ internal sealed class RunSteps
     }
 
     /// <summary>The steps the current input caused, in order.</summary>
-    private List<Step> Decided()
+    private IReadOnlyList<Step> Decided()
     {
         Finish();
+        if (_decided.Count == 0)
+        {
+            return [];
+        }
+
         List<Step> decided = [.. _decided];
         _decided.Clear();
         return decided;

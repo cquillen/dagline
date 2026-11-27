@@ -97,27 +97,25 @@ internal sealed class JournalFile : IDisposable
     public static async Task<JournalFold> ReadAsync(JournalLocation location, CancellationToken cancellationToken)
     {
         var path = location.FilePath;
-        string text;
+        using var bytes = new MemoryStream();
         try
         {
             // Shared for delete as well, so that a listing never stands in the way of deleting a journal.
-            var stream = new FileStream(
+            using var stream = new FileStream(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 4096,
                 useAsync: true);
-            using var reader = new StreamReader(stream, _encoding);
-            text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            await stream.CopyToAsync(bytes, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen) && !FileSystemFailure.IsMissing(cannotOpen))
         {
             throw JournalAccessException.FileNotRead(location, cannotOpen);
         }
 
-        using var lines = new StringReader(WholeLines(text));
-        return Read(lines, path);
+        return ReadWholeLines(bytes.GetBuffer(), (int)bytes.Length, path).Fold;
     }
 
     /// <summary>
@@ -267,11 +265,7 @@ internal sealed class JournalFile : IDisposable
         {
             var bytes = new byte[stream.Length];
             stream.ReadExactly(bytes);
-
-            // Measured in the file's own bytes, so that a byte order mark, which the reader skips, is not cut from the last line.
-            var wholeLength = bytes.AsSpan().LastIndexOf(_lineFeed) + 1;
-            using var reader = new StreamReader(new MemoryStream(bytes, 0, wholeLength), _encoding);
-            var fold = Read(reader, path);
+            var (fold, wholeLength) = ReadWholeLines(bytes, bytes.Length, path);
             stream.SetLength(wholeLength);
             stream.Seek(0, SeekOrigin.End);
             return new JournalFile(claimed, writesThrough, fold);
@@ -306,10 +300,19 @@ internal sealed class JournalFile : IDisposable
     }
 
     /// <summary>
-    /// The text of a journal up to the end of its last whole line. A line is whole once its line feed is written, so text after the
-    /// last line feed is a final line that a killed process cut short, and is dropped.
+    /// Folds the whole lines in the first <paramref name="length"/> bytes of a journal, and says how many bytes they take. A line is whole once its line feed is written, so
+    /// what follows the last line feed is a final line that a killed process cut short, and is dropped.
     /// </summary>
-    private static string WholeLines(string text) => text[..(text.LastIndexOf((char)_lineFeed) + 1)];
+    /// <remarks>
+    /// Measured in the file's own bytes, so that a byte order mark, which the reader skips, is not cut from the last line, and so
+    /// that the length can cut the file itself.
+    /// </remarks>
+    private static (JournalFold Fold, int WholeLength) ReadWholeLines(byte[] bytes, int length, string path)
+    {
+        var wholeLength = bytes.AsSpan(0, length).LastIndexOf(_lineFeed) + 1;
+        using var reader = new StreamReader(new MemoryStream(bytes, 0, wholeLength), _encoding);
+        return (Read(reader, path), wholeLength);
+    }
 
     private static JournalFold Read(TextReader reader, string path)
     {
