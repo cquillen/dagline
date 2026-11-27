@@ -38,6 +38,9 @@ internal sealed class RunSteps
     private static readonly IReadOnlyList<Step> _changedOnlyTheSnapshot =
         [new Step(Events: [], Starts: [], SignalsTheTasks: false, GracePeriodTimer: null, Ends: null)];
 
+    // Most inputs decide nothing, so they share one empty answer.
+    private static readonly IReadOnlyList<Step> _noSteps = [];
+
     private readonly List<Step> _decided = [];
     private readonly SnapshotTaker _snapshots;
 
@@ -609,7 +612,7 @@ internal sealed class RunSteps
         Finish();
         if (_decided.Count == 0)
         {
-            return [];
+            return _noSteps;
         }
 
         List<Step> decided = [.. _decided];
