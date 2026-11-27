@@ -87,7 +87,7 @@ using var console = ConsoleStop.Hook();
 - A second Ctrl+C, or a SIGTERM at any time, **stops** it: the running tasks see their cancellation token signalled, and the run waits for them to end for at most 30 seconds.
 - After that, a Ctrl+C or SIGTERM is not swallowed, and ends the process: the way out of an app that hangs.
 
-The drain and the stop are swallowed, so the run winds down and your app still gets its result. `using` unhooks both when the app ends. Dagline hooks nothing unless your app calls `Hook`.
+The drain and the stop are swallowed, so the process lives on and your app still gets the run's result. `using` unhooks both when the app ends. Dagline hooks nothing unless your app calls `Hook`.
 
 An app with a trigger of its own, such as a file appearing or a timer, needs no hook. It makes a plain drain signal and requests it from that trigger, or passes a token it already has, such as its host's shutdown token:
 

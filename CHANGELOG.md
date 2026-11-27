@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `ConsoleStop` is no longer a signal itself: pass its `Drain` and its `Token` to the run. `Dispose` now also disposes the token's source.
 - At the end of a run, cancelling the token drops the reporters still busy only when it comes after every task has ended. A token cancelled earlier is applied as a stop and drops no reporter, and after a stop nothing drops a reporter that hangs. A drain never drops one.
 - The Spectre `STOPPING` banner no longer offers a Ctrl+C, since no key ends the grace period.
+- The plain-text reporter's line for a grace end reads `grace period over: letting go of <n> tasks still running`, in place of `stopped waiting: grace period over, <n> tasks still running`.
 - A journal's description is kept on one line: each line break in it becomes a space, in `JournalInfo.Description` and `JournalSummary.Description`, also for a journal written by 0.1.0. The Spectre header now shows it on one line, as the plain-text reporter already did.
 
 ### Fixed

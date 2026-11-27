@@ -42,7 +42,7 @@ internal static class PlainTextLines
         StopRequested requested => [At(runEvent.At, Requested(requested, Running(snapshot)))],
         GraceEnded =>
         [
-            At(runEvent.At, $"stopped waiting: grace period over, {CountsText.Tasks(Running(snapshot))} still running"),
+            At(runEvent.At, $"grace period over: letting go of {CountsText.Tasks(Running(snapshot))} still running"),
         ],
         GroupSettled settled =>
         [
@@ -130,7 +130,6 @@ internal static class PlainTextLines
             ? $"{heading}: waiting for {CountsText.Tasks(running, "running")}"
             : $"{heading}: waiting up to {DurationText.Of(requested.GracePeriod)} for {CountsText.Tasks(running, "running")}";
     }
-
 
     private static string Settled(NodeSnapshot task)
     {

@@ -201,7 +201,7 @@ return result.Outcome.ToExitCode();
 - **The second Ctrl+C**, or **a SIGTERM** at any time, cancels the token, which stops the run. SIGTERM skips the drain because a process manager kills the process soon after sending it.
 - **After that** nothing more is requested and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Each Ctrl+C and SIGTERM that drains or stops is swallowed, so the process lives on and the run winds down and returns its result. There is no option to leave SIGTERM out. Disposing the hook unhooks both and disposes the token's source. See [The terminal display](terminal-ui.md#draining-and-stopping).
+Each Ctrl+C and SIGTERM that drains or stops is swallowed, so the process lives on and the run returns its result. There is no option to leave SIGTERM out. Disposing the hook unhooks both and disposes the token's source. See [The terminal display](terminal-ui.md#draining-and-stopping).
 
 On Windows, .NET raises SIGTERM when the machine shuts down or the user logs off, and Windows ends the process a few seconds later whatever the hook does. On a platform where .NET cannot hook SIGTERM, the hook listens to Ctrl+C alone.
 
@@ -232,7 +232,7 @@ A cancellation exception that escapes a task during a drain is a failure, as bef
 
 The run hears the token being cancelled on the thread pool, never on the thread that cancelled it, applies the stop like any other change, and publishes a <xref:Dagline.StopRequested> event, after `DrainRequested` when a drain came first. From that moment:
 
-- **Nothing starts**, *after* tasks included. A stop means the run winds down, never that cleanup work starts.
+- **Nothing starts**, *after* tasks included. A stop means the run starts nothing more, never that cleanup work starts.
 - **Every running task sees its token signalled**: <xref:Dagline.TaskContext.CancellationToken> on its context. That token is the run's own, signalled in the step that applies the stop, never your token itself, so a task never sees a stop before reporters do. [Writing tasks](writing-tasks.md#when-the-run-is-stopped) says how a task ends once a stop has been applied.
 - **The run waits for its running tasks to end**, for at most the [grace period](#the-grace-period), then returns.
 

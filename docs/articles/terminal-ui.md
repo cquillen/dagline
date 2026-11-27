@@ -136,7 +136,7 @@ Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a nar
 
 - **The first Ctrl+C** requests the drain: the run starts nothing more and lets its running tasks finish, however long they take.
 - **The second Ctrl+C**, or **a SIGTERM** at any time, cancels the token, which stops the run: its running tasks are told to end, and it waits for them for at most its [grace period](running-and-stopping.md#the-grace-period).
-- Both are swallowed, so your process lives on, the run winds down and `RunAsync` returns its result.
+- Both are swallowed, so your process lives on and `RunAsync` returns its result.
 - **After the stop** nothing more is requested and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
 Disposing unhooks both and disposes the token's source, and a Ctrl+C or SIGTERM after that is your app's own business again. The hook listens to nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. Ctrl+C presses are counted by the hook itself, so a `Request` your app makes on `Drain` does not make the next Ctrl+C a stop. The display does not depend on the hook: any drain signal and any token show the banner.

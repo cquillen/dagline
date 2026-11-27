@@ -116,7 +116,7 @@ Dagline never writes to the console. What is shown of a run is the work of **rep
 
 A reporter is given two things:
 
-- **Events.** An event is a record of one thing that happened, with the time it happened: the run started, a task changed status, a task added a warning, a task began or stopped waiting, a group settled, a stop was requested, the run stopped waiting, the run ended. Every reporter receives the same events in the same order, causes before effects.
+- **Events.** An event is a record of one thing that happened, with the time it happened: the run started, a task changed status, a task added a warning, a task began or stopped waiting, a group settled, a drain or a stop was requested, the grace period ran out, the run ended. Every reporter receives the same events in the same order, causes before effects.
 - **Snapshots.** A snapshot is everything Dagline knows about the run at one instant: every node with its status and what is attached to it, and the counts across the run. One comes with each event, and a reporter can ask for the run as it is now at any time.
 
 Events say what just happened and the snapshot says where things stand, so a reporter never has to piece that together from the events. Once a run has ended, a reporter shows a **summary** from the final snapshot, and your app gets that same snapshot back with the result of the run.

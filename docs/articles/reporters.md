@@ -389,7 +389,7 @@ A stopped run prints the stop, the wait for its running tasks and each task the 
 2026-11-11T04:13:40Z stop requested: waiting up to 30.0s for 2 running tasks
 2026-11-11T04:13:40Z waited job for 1m38s
 2026-11-11T04:13:40Z cancelled job in 1m39s
-2026-11-11T04:14:10Z stopped waiting: grace period over, 1 task still running
+2026-11-11T04:14:10Z grace period over: letting go of 1 task still running
 2026-11-11T04:14:10Z cancelled slow in 2m10s: still running when the run stopped waiting
 2026-11-11T04:14:10Z run ended: stopped in 2m10s
 tasks: 1 pending, 1 ready, 1 succeeded, 2 cancelled
@@ -441,7 +441,7 @@ Every line about an event begins with the time of the event, read from the run's
 | `waited <path> for <duration>` | A task stops waiting. The duration is the whole wait. |
 | `drain requested: letting <n> running tasks finish` | The run applies a drain. Nothing starts from then on, and the running tasks finish as they would. |
 | `stop requested: waiting up to <duration> for <n> running tasks` | The run applies a stop. With an unlimited grace period it reads `stop requested: waiting for <n> running tasks`. A stop that Dagline asked for, because the journal could no longer be written, begins `stop requested by Dagline, journal write failed:` and goes on the same way. |
-| `stopped waiting: grace period over, <n> tasks still running` | The grace period is over with tasks still running. A cancelled line for each follows. |
+| `grace period over: letting go of <n> tasks still running` | The grace period is over with tasks still running, and the run lets go of them. A cancelled line for each follows. |
 | `group <path> <status>: <counts>` | The last task beneath a group settles. |
 | `tasks: <counts>` | Nothing has been printed for a minute. |
 | `run ended: <run outcome> in <duration>` | The run ends. The summary follows. |

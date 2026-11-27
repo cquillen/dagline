@@ -42,7 +42,7 @@ public class FailedJournalWriteTests
             [
                 "fails: running -> succeeded",
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "slow: running -> cancelled",
                 "later: pending -> ready",
                 "run ended: JournalWriteException",
@@ -146,7 +146,7 @@ public class FailedJournalWriteTests
             [
                 "stop requested",
                 "saves: running -> failed",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "slow: running -> cancelled",
                 "later: pending -> ready",
                 "run ended: JournalWriteException",

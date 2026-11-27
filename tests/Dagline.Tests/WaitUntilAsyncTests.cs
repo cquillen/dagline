@@ -409,7 +409,7 @@ public class WaitUntilAsyncTests
             reporter.Lines.Skip(4).ShouldBe(
             [
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "waited job",
                 "job: running -> cancelled",
                 "run ended: stopped",

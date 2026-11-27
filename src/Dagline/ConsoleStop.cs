@@ -16,8 +16,7 @@ namespace Dagline;
 /// The first Ctrl+C requests <see cref="Drain"/>: the run starts nothing more and lets its running tasks finish. The second
 /// Ctrl+C cancels <see cref="Token"/>, which stops the run: its running tasks are signalled and it waits for them for at most
 /// its grace period. A SIGTERM cancels <see cref="Token"/> whether or not a drain came first, since a process manager kills the
-/// process soon after sending it. Each of these is swallowed, so the process lives on and the run winds down and returns its
-/// result as usual.
+/// process soon after sending it. Each of these is swallowed, so the process lives on and the run returns its result as usual.
 /// </para>
 /// <para>
 /// Once the token is cancelled, a further Ctrl+C or SIGTERM requests nothing more and is not swallowed, so the operating system

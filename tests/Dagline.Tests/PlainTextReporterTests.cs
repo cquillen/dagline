@@ -144,7 +144,7 @@ public class PlainTextReporterTests
                 "2026-11-11T04:13:40Z stop requested: waiting up to 30.0s for 2 running tasks",
                 "2026-11-11T04:13:40Z waited job for 1m38s",
                 "2026-11-11T04:13:40Z cancelled job in 1m39s",
-                "2026-11-11T04:14:10Z stopped waiting: grace period over, 1 task still running",
+                "2026-11-11T04:14:10Z grace period over: letting go of 1 task still running",
                 "2026-11-11T04:14:10Z cancelled slow in 2m10s: still running when the run stopped waiting",
                 "2026-11-11T04:14:10Z run ended: stopped in 2m10s",
                 "tasks: 1 pending, 1 ready, 1 succeeded, 2 cancelled",
@@ -270,7 +270,7 @@ public class PlainTextReporterTests
                 "2026-11-11T04:12:00Z run started: 1 task",
                 "2026-11-11T04:12:00Z started load",
                 "2026-11-11T04:12:00Z stop requested: waiting up to 0.0s for 1 running task",
-                "2026-11-11T04:12:00Z stopped waiting: grace period over, 1 task still running",
+                "2026-11-11T04:12:00Z grace period over: letting go of 1 task still running",
                 "2026-11-11T04:12:00Z cancelled load in 0.0s: still running when the run stopped waiting",
             ]);
         }

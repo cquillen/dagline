@@ -83,7 +83,7 @@ public class GracePeriodTests
             [
                 "stop requested",
                 "honour: running -> cancelled",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "slow: running -> cancelled",
                 "stuck: running -> cancelled",
                 "tidy: pending -> ready",
@@ -165,7 +165,7 @@ public class GracePeriodTests
                 "load: pending -> ready",
                 "load: ready -> running",
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "load: running -> cancelled",
                 "run ended: stopped",
             ]);
@@ -196,7 +196,7 @@ public class GracePeriodTests
             reporter.Lines.Skip(3).ShouldBe(
             [
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "load: running -> cancelled",
                 "run ended: stopped",
             ]);
@@ -425,7 +425,7 @@ public class GracePeriodTests
             reporter.Lines.Skip(4).ShouldBe(
             [
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "waited job",
                 "job: running -> cancelled",
                 "run ended: stopped",

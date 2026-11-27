@@ -25,7 +25,7 @@ namespace Dagline;
 /// <see cref="DrainRequested"/>. A stop prints <c>stop requested: waiting up to 30.0s for 2 running tasks</c>, read from the
 /// snapshot handed with <see cref="StopRequested"/>, or <c>stop requested: waiting for 2 running tasks</c> when the grace period
 /// is unlimited. When the grace period runs out with tasks still running it prints
-/// <c>stopped waiting: grace period over, 1 task still running</c>, and then a <c>cancelled</c> line for each task it let go of.
+/// <c>grace period over: letting go of 1 task still running</c>, and then a <c>cancelled</c> line for each task it let go of.
 /// A count of one is singular.
 /// </para>
 /// <para>
