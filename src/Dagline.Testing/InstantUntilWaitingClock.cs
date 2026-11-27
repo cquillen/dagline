@@ -24,14 +24,16 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
         ArgumentNullException.ThrowIfNull(callback);
+        InstantClock.ThrowIfOutOfRange(dueTime, period);
         var timer = new UntilWaitingTimer(time, isWaiting, callback, state);
-        timer.Change(dueTime, period);
+        timer.Arm(dueTime, period);
         return timer;
     }
 
     // Every firing of the instant timer underneath is one-shot: this timer schedules each repeat itself, so that it decides
     // again before each one. The waiting state is read outside the gate, since the live snapshot takes the run's lock, so each
-    // decision holds a ticket taken under the gate and applies only if no later change or disposal has taken a newer one.
+    // decision holds a ticket taken under the gate and applies only if no later change or disposal has taken a newer one, and a
+    // firing calls back only if the ticket that armed it is still the latest.
     private sealed class UntilWaitingTimer : ITimer
     {
         private readonly Lock _gate = new();
@@ -41,6 +43,7 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
         private readonly ITimer _instant;
         private TimeSpan _period;
         private long _ticket;
+        private long _armed;
         private bool _disposed;
 
         public UntilWaitingTimer(InstantClock time, Func<bool> isWaiting, TimerCallback callback, object? state)
@@ -54,6 +57,11 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
             InstantClock.ThrowIfOutOfRange(dueTime, period);
+            return Arm(dueTime, period);
+        }
+
+        public bool Arm(TimeSpan dueTime, TimeSpan period)
+        {
             long ticket;
             lock (_gate)
             {
@@ -94,6 +102,7 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
             {
                 if (ticket == _ticket)
                 {
+                    _armed = ticket;
                     _instant.Change(due, Timeout.InfiniteTimeSpan);
                 }
             }
@@ -105,7 +114,12 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
             TimeSpan period;
             lock (_gate)
             {
-                ticket = _ticket;
+                if (_armed != _ticket)
+                {
+                    return;
+                }
+
+                ticket = _armed;
                 period = _period;
             }
 

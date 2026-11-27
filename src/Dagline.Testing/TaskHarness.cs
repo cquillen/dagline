@@ -7,7 +7,7 @@ namespace Dagline.Testing;
 /// <para>
 /// A run of the harness is a real <see cref="Runner.RunAsync"/> through Dagline's public API, on a graph of one task at the
 /// root with default <see cref="RunOptions"/> except for the journal, the clock, an unlimited
-/// <see cref="RunOptions.GracePeriod"/> and a reporter of the harness's own that watches the run. The task body sees exactly
+/// <see cref="RunOptions.GracePeriod"/> and reporters of the harness's own that watch the run. The task body sees exactly
 /// what it would in a real run, so a test proves what a real run will do.
 /// </para>
 /// <para>
