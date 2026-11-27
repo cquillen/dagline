@@ -67,7 +67,7 @@ internal sealed class Run : ISnapshotSource
         _graph = graph;
         _timeProvider = settings.TimeProvider;
         _delivery = delivery;
-        var continuation = Continuation.Of(graph, journal?.Fold);
+        var continuation = new Continuation(graph, journal?.Fold);
         _recorder = JournalRecorder.For(journal, graph, settings, continuation);
         _steps = new RunSteps(graph, settings, journal?.Fold, continuation);
     }
@@ -352,12 +352,8 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     private void SignalTheTasks()
     {
-        _ = _stopping.CancelAsync().ContinueWith(
-            // A callback a task body registered on its token threw. That is the body's affair, and the stop goes on.
-            static signalled => _ = signalled.Exception,
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+        // A callback a task body registered on its token may throw. That is the body's affair, and the stop goes on.
+        _stopping.CancelLettingCallbackFaultsGo();
     }
 
     /// <summary>

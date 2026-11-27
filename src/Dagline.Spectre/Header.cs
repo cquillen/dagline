@@ -30,7 +30,7 @@ internal static class Header
             title = title.Add(DisplayText.Between + glyphs.Text(description));
         }
 
-        return title.Add($"{DisplayText.Between}journal {journal.Id} {glyphs.Separator} run {DisplayText.Number(journal.Run)}", Palette.Dim);
+        return title.Add(DisplayText.Between + DisplayText.Journal(journal, glyphs), Palette.Dim);
     }
 
     private static StyledLine Progress(Snapshot snapshot, DateTimeOffset now)

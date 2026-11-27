@@ -80,11 +80,7 @@ internal sealed class ReporterQueue
             // Signals the token before Stop completes Delivered, so a run that has returned has always cancelled it,
             // while the reporter's callbacks run on the thread pool and never under the gate. A callback that throws is the
             // reporter's affair, and it is dropped regardless, so the fault is observed and let go.
-            _ = _dropped.CancelAsync().ContinueWith(
-                static cancelled => _ = cancelled.Exception,
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
+            _dropped.CancelLettingCallbackFaultsGo();
             Stop(new ReporterError(_reporter, runEvent, new OperationCanceledException(_dropped.Token)));
         }
     }

@@ -212,7 +212,7 @@ public sealed class Snapshot
     /// Each entry is the same object as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> WithWarnings
-        => LazyInitializer.EnsureInitialized(ref _withWarnings, () => [.. Nodes.Where(node => node.Warnings.Count > 0)]);
+        => TasksWith(ref _withWarnings, task => task.Warnings.Count > 0);
 
     /// <summary>The node with the given path.</summary>
     /// <param name="path">The path of a node of the graph.</param>

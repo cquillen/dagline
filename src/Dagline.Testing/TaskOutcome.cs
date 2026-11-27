@@ -12,7 +12,7 @@ namespace Dagline.Testing;
 /// </remarks>
 public sealed record TaskOutcome
 {
-    private TaskOutcome(NodeSnapshot task, bool waited, string? waitingText, string checkpoint)
+    internal TaskOutcome(NodeSnapshot task, bool waited, string? waitingText, string checkpoint)
     {
         Status = task.Status;
         Failure = task.Failure;
@@ -81,7 +81,4 @@ public sealed record TaskOutcome
     /// success discards the checkpoint, so it is empty for an earlier success too.
     /// </summary>
     public string Checkpoint { get; }
-
-    internal static TaskOutcome From(NodeSnapshot task, bool waited, string? waitingText, string checkpoint)
-        => new(task, waited, waitingText, checkpoint);
 }

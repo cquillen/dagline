@@ -180,12 +180,13 @@ public sealed class TaskHarness : IAsyncDisposable
 
         (clock as InstantClock)?.ThrowIfPastGuard();
         var task = result.Snapshot[_task];
+        // A success discards the checkpoint (ADR 0006). The public API shows no checkpoint after the run, so the rule is restated here.
         if (task.Status is NodeStatus.Succeeded)
         {
             _checkpoint = "";
         }
 
-        return TaskOutcome.From(task, watcher.Waited, watcher.WaitingText, _checkpoint);
+        return new TaskOutcome(task, watcher.Waited, watcher.WaitingText, _checkpoint);
     }
 
     private async Task RunBodyAsync(TaskBody body, TaskContext context)

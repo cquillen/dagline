@@ -89,7 +89,7 @@ internal static class ProblemsPane
             if (snapshot.TryGetBlocked(task.Path, out var blocked))
             {
                 var mark = StatusMark.For(NodeStatus.Blocked, glyphs);
-                when = when.Add($"{mark.Glyph} blocks {DisplayText.Number(blocked.Tasks.Count)}", mark.Style).Add(DisplayText.Between);
+                when = when.Add(mark.Line($" blocks {DisplayText.Number(blocked.Tasks.Count)}")).Add(DisplayText.Between);
             }
 
             when = when.Add(SettledAt(task), Palette.Dim);

@@ -40,7 +40,7 @@ internal static class Summary
 
         line = line.Add(DisplayText.Between + DisplayText.Duration((snapshot.Ended ?? ended.At) - snapshot.Started), Palette.Bold);
         return snapshot.Journal is { } journal
-            ? line.Add($" {glyphs.Separator} journal {journal.Id} {glyphs.Separator} run {DisplayText.Number(journal.Run)}", Palette.Dim)
+            ? line.Add($" {glyphs.Separator} {DisplayText.Journal(journal, glyphs)}", Palette.Dim)
             : line;
     }
 
