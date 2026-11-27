@@ -17,6 +17,37 @@ public class GracePeriodTests
     }
 
     [Test]
+    public async Task A_reporter_that_hears_the_stop_finds_the_grace_period_already_running_on_the_runs_clock()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var fake = new FakeTimeProvider(_runStart);
+            var clock = new WatchedClock(fake);
+            var slow = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("slow", slow.Body);
+            var stop = new StopSignal();
+            var listener = new StopListener(clock);
+
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [listener] },
+                stop);
+            await slow.Started;
+            stop.Request();
+            var gracePeriod = await listener.PendingTimerWhenHeard;
+            fake.Advance(TimeSpan.FromSeconds(30));
+            var result = await run;
+
+            // Moving the clock on as soon as the stop is heard must move it from the stop: the grace period ends 30 seconds after it.
+            gracePeriod.ShouldBe(TimeSpan.FromSeconds(30));
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
+            result.Snapshot.Ended.ShouldBe(_runStart.AddSeconds(30));
+            slow.Release();
+        }
+    }
+
+    [Test]
     public async Task When_the_grace_period_runs_out_the_run_lets_go_of_its_running_tasks_in_declaration_order()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -629,5 +660,26 @@ public class GracePeriodTests
     {
         var stop = snapshot.Stop.ShouldNotBeNull();
         return (stop.RequestedAt, stop.GracePeriod, stop.Deadline, stop.By);
+    }
+
+    /// <summary>
+    /// A reporter that looks, as it hears <see cref="StopRequested"/>, for a timer already created on the run's clock, and says
+    /// the due time of the one it finds, or <see langword="null"/> when there is none yet.
+    /// </summary>
+    private sealed class StopListener(WatchedClock clock) : IReporter
+    {
+        private readonly TaskCompletionSource<TimeSpan?> _heard = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<TimeSpan?> PendingTimerWhenHeard => _heard.Task;
+
+        public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
+        {
+            if (runEvent is StopRequested)
+            {
+                _heard.TrySetResult(clock.TryTakeTimer(out var dueTime) ? dueTime : null);
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 }

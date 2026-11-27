@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A stop's grace period starts on the run's clock before `StopRequested` is published, not just after. A test that heard the stop and then advanced a fake clock could move the clock before the grace period began, so the grace period ended late.
+
 - `Journals.ListAsync` leaves out a journal whose directory is deleted while the listing runs, as it already left out a journal deleted then, instead of listing it in `Unreadable` with a `JournalAccessException`.
 
 ## [0.1.0] - 2026-11-13

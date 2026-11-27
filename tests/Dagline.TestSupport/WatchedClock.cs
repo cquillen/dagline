@@ -50,4 +50,12 @@ public sealed class WatchedClock : TimeProvider
     /// The timer is pending from then on, so advancing the fake clock by the due time fires it.
     /// </summary>
     public ValueTask<TimeSpan> NextTimerAsync() => _timers.Reader.ReadAsync();
+
+    /// <summary>
+    /// Takes the next timer created on this clock, in the order created, if one has been created that was not taken yet: what
+    /// <see cref="NextTimerAsync"/> would complete with at once. It does not wait.
+    /// </summary>
+    /// <param name="dueTime">The timer's due time, when there is one.</param>
+    /// <returns><see langword="true"/> when a timer had been created.</returns>
+    public bool TryTakeTimer(out TimeSpan dueTime) => _timers.Reader.TryRead(out dueTime);
 }
