@@ -32,11 +32,10 @@ public class ContinueTests
         var graph = builder.Build();
 
         var given = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path, "all\r\nshards") });
-        var written = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path, "line-breaks-here") });
+        var written = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
 
-        // As a journal from before descriptions were kept on one line may hold it: a line break, escaped in the header's JSON.
-        var file = Path.Combine(temporary.Path, $"{written.Snapshot.Journal!.Id}.journal");
-        await File.WriteAllTextAsync(file, (await File.ReadAllTextAsync(file)).Replace("line-breaks-here", "all\\nshards", StringComparison.Ordinal));
+        // As a journal written before descriptions were kept on one line may hold one.
+        JournalHeader.SetDescription(Path.Combine(temporary.Path, $"{written.Snapshot.Journal!.Id}.journal"), "all\nshards");
         var continued = await Runner.RunAsync(
             graph,
             new RunOptions { Journal = Journal.Continue(temporary.Path, written.Snapshot.Journal.Id) });
