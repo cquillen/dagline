@@ -8,4 +8,10 @@ internal static class FileSystemFailure
     /// file that is gone, or an <see cref="UnauthorizedAccessException"/>, a permission the process lacks or a read-only file.
     /// </summary>
     public static bool Is(Exception exception) => exception is IOException or UnauthorizedAccessException;
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> says the file is not there: the file itself is gone, or the directory that held it is.
+    /// On Linux and macOS it is also how a path through a file, not a directory, fails.
+    /// </summary>
+    public static bool IsMissing(Exception exception) => exception is FileNotFoundException or DirectoryNotFoundException;
 }

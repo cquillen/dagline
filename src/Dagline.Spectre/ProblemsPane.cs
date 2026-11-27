@@ -93,14 +93,14 @@ internal static class ProblemsPane
             }
 
             when = when.Add(SettledAt(task), Palette.Dim);
-            var named = StyledLine.PinRight(Named(task, StatusMark.For(NodeStatus.Failed, glyphs)), when, width, glyphs.Ellipsis);
+            var named = StyledLine.PinRight(StatusMark.For(NodeStatus.Failed, glyphs).Before(task.Path), when, width, glyphs.Ellipsis);
             yield return new Entry(_failure, task.Message is { } message ? [named, StyledLine.Of(DisplayText.Indent + glyphs.Text(message))] : [named]);
         }
     }
 
     private static StyledLine Cancelled(NodeSnapshot task, int width, Glyphs glyphs)
     {
-        var named = Named(task, StatusMark.For(NodeStatus.Cancelled, glyphs));
+        var named = StatusMark.For(NodeStatus.Cancelled, glyphs).Before(task.Path);
         if (task.Message is { } message)
         {
             named = named.Add(DisplayText.Between + glyphs.Text(message), Palette.Dim);
@@ -110,9 +110,7 @@ internal static class ProblemsPane
     }
 
     private static StyledLine Warning(WarningAdded warning, Glyphs glyphs)
-        => StatusMark.Warning(glyphs).Line().Add($" {warning.Path}").Add(DisplayText.Between + glyphs.Text(warning.Warning), Palette.Dim);
-
-    private static StyledLine Named(NodeSnapshot task, Mark mark) => mark.Line().Add($" {task.Path}");
+        => StatusMark.Warning(glyphs).Before(warning.Path).Add(DisplayText.Between + glyphs.Text(warning.Warning), Palette.Dim);
 
     private static string SettledAt(NodeSnapshot task) => task.Settled is { } settled ? DisplayText.Time(settled) : "";
 

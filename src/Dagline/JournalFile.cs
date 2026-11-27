@@ -111,7 +111,7 @@ internal sealed class JournalFile : IDisposable
             using var reader = new StreamReader(stream, _encoding);
             text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen) && cannotOpen is not FileNotFoundException)
+        catch (Exception cannotOpen) when (FileSystemFailure.Is(cannotOpen) && !FileSystemFailure.IsMissing(cannotOpen))
         {
             throw JournalAccessException.FileNotRead(location, cannotOpen);
         }
@@ -241,7 +241,7 @@ internal sealed class JournalFile : IDisposable
                 new FileStream(location.FilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read, bufferSize: 0),
                 claim);
         }
-        catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
+        catch (Exception missing) when (FileSystemFailure.IsMissing(missing))
         {
             claim.Dispose();
             throw new JournalNotFoundException(location, missing);
