@@ -14,7 +14,7 @@ public class AsciiTests
         var work = new PausedBody();
         var wait = new PausedBody();
         var cancel = new PausedBody();
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var builder = new GraphBuilder();
         builder.Task("ok", context =>
         {
@@ -41,14 +41,14 @@ public class AsciiTests
         builder.Task("later", _ => Task.CompletedTask).Requires(builder.Task("held", _ => Task.CompletedTask));
         var options = new RunOptions { Journal = Journal.New(temporary.Path, "all shards ✓"), MaxRunningTasks = 3 };
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 30, options, stop, ascii: true);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 80, 30, options, ascii: true, stop: stop.Token);
         await work.Started;
         await cancel.Started;
         await display.Handled("waiting wait: job → 17");
         await display.Handled("warning ok: odd café");
         await display.Handled("after: pending -> blocked");
         var running = display.NextFrame();
-        stop.Request();
+        await stop.CancelAsync();
         await display.Handled("stop requested");
         cancel.Throw(new OperationCanceledException());
         await display.Handled("cancel: running -> cancelled");
@@ -68,7 +68,7 @@ public class AsciiTests
         running.ShouldContain("    no input ?");
         running.ShouldContain(line => line.StartsWith("! ok  odd caf?", StringComparison.Ordinal));
         running.ShouldContain(line => line.Contains("...", StringComparison.Ordinal));
-        stopping.ShouldContain(" STOPPING  waiting for 2 running tasks to end ... | Ctrl+C again to stop waiting");
+        stopping.ShouldContain(line => line.StartsWith(" STOPPING  waiting for 2 running tasks to end | ", StringComparison.Ordinal));
         stopping.ShouldContain(line => line.StartsWith("# cancel  arr?t?", StringComparison.Ordinal));
         summary.ShouldContain(line => line.StartsWith("x bad ", StringComparison.Ordinal));
         summary.ShouldContain("    no input ?");

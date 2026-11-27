@@ -5,15 +5,15 @@ namespace Dagline.Tests;
 public class StopAndEndEventTests
 {
     [Test]
-    public async Task A_stop_requested_through_the_apps_signal_says_the_app_asked()
+    public async Task A_stop_made_by_cancelling_the_apps_token_says_the_app_asked()
     {
         var reporter = new RecordingReporter();
-        var stop = new StopSignal();
-        stop.Request();
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
         var builder = new GraphBuilder();
         builder.Task("load", _ => Task.CompletedTask);
 
-        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
 
         reporter.Events.OfType<StopRequested>().ShouldHaveSingleItem().By.ShouldBe(StopRequester.App);
     }

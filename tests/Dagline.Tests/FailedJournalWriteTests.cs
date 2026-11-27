@@ -42,7 +42,7 @@ public class FailedJournalWriteTests
             [
                 "fails: running -> succeeded",
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "slow: running -> cancelled",
                 "later: pending -> ready",
                 "run ended: JournalWriteException",
@@ -57,6 +57,47 @@ public class FailedJournalWriteTests
             var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
             listed.Ending.ShouldBe(JournalEnding.Died);
             (listed.Runs, listed.LatestRun!.Started, listed.LatestRun.Ended).ShouldBe((1, _runStart, null));
+            slow.Release();
+        }
+    }
+
+    [Test]
+    [NotInParallel(DiskHeavy.Key)]
+    public async Task Neither_a_drain_nor_the_apps_token_shortens_the_grace_period_of_a_stop_Dagline_asked_for()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            using var temporary = new TemporaryDirectory();
+            var clock = new FakeTimeProvider(_runStart);
+            var fails = new PausedBody();
+            var slow = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("fails", fails.Body);
+            builder.Task("slow", slow.Body);
+            var drain = new DrainSignal();
+            using var stop = new CancellationTokenSource();
+            var reporter = new RecordingReporter();
+            var watched = new WatchedReporter(reporter);
+            var journal = JournalWriteFailure.SettleOf("fails").In(Journal.New(temporary.Path));
+
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [watched] },
+                drain,
+                stop.Token);
+            await fails.Started;
+            await slow.Started;
+            fails.Release();
+            await watched.Handled("stop requested");
+            drain.Request();
+            await stop.CancelAsync();
+            await clock.AdvanceUntilAsync(run, _step);
+            var error = await Should.ThrowAsync<JournalWriteException>(run);
+
+            reporter.Lines.ShouldNotContain("drain requested");
+            reporter.Events.OfType<StopRequested>().ShouldHaveSingleItem().By.ShouldBe(StopRequester.Dagline);
+            ShouldHaveStoppedAndWaitedOutTheGracePeriod(reporter, error);
+            error.Snapshot.Drain.ShouldBeNull();
             slow.Release();
         }
     }
@@ -105,7 +146,7 @@ public class FailedJournalWriteTests
             [
                 "stop requested",
                 "saves: running -> failed",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "slow: running -> cancelled",
                 "later: pending -> ready",
                 "run ended: JournalWriteException",
@@ -158,7 +199,7 @@ public class FailedJournalWriteTests
         var requested = reporter.Events.OfType<StopRequested>().Single();
         (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart, StopRequester.Dagline, TimeSpan.FromSeconds(30)));
         var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
-        (graceEnded.At, graceEnded.Reason).ShouldBe((_runStart.AddSeconds(30), GraceEndReason.GracePeriodOver));
+        graceEnded.At.ShouldBe(_runStart.AddSeconds(30));
         var ended = reporter.Events.OfType<RunEnded>().Single();
         (ended.Outcome, ended.Error).ShouldBe((null, error));
     }

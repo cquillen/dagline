@@ -25,7 +25,7 @@ public sealed record StopState
     public DateTimeOffset? Deadline { get; }
 
     /// <summary>
-    /// Who asked for the stop: the app, through its <see cref="StopSignal"/>, or Dagline itself, because the run's journal could no
+    /// Who asked for the stop: the app, by cancelling the run's token, or Dagline itself, because the run's journal could no
     /// longer be written. It is the same as <see cref="StopRequested.By"/>, and is set in the same step that applies the stop, so a
     /// reporter can read it from a snapshot before it has handled that event.
     /// </summary>

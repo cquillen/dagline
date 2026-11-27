@@ -107,13 +107,13 @@ public class DrawingFailureTests
             });
             var stuck = new WatchedReporter(new StuckBefore("run ended: complete", display));
             var watching = new RecordingReporter();
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck, watching] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck, watching] }, cancellationToken: stop.Token);
             await watching.Ended;
             await stuck.Handled("work: running -> succeeded");
             var restored = console.NextWrite();
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
             await restored.WaitAsync(TimeSpan.FromSeconds(30));
             var screen = Screen.Read(console.Inner.Output, new Size(80, 24));

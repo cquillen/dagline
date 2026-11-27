@@ -65,12 +65,12 @@ public class JournalListingTests
     public async Task A_journal_whose_run_was_stopped_counts_only_the_paths_it_has_entries_for()
     {
         using var temporary = new TemporaryDirectory();
-        var stop = new StopSignal();
-        stop.Request();
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
         var builder = new GraphBuilder();
         builder.Task("load", _ => Task.CompletedTask);
 
-        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.New(temporary.Path) }, stop);
+        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.New(temporary.Path) }, cancellationToken: stop.Token);
         var summary = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Stopped);
@@ -86,7 +86,7 @@ public class JournalListingTests
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
             using var temporary = new TemporaryDirectory();
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var finish = new StoppedBody(onStop: _ => { });
             var hang = new PausedBody();
             var watched = new WatchedReporter(new RecordingReporter());
@@ -95,12 +95,16 @@ public class JournalListingTests
             builder.Task("hang", hang.Body);
             var graph = builder.Build();
 
-            var running = Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path), Reporters = [watched] }, stop);
+            var clock = new FakeTimeProvider();
+            var running = Runner.RunAsync(
+                graph,
+                new RunOptions { Journal = Journal.New(temporary.Path), TimeProvider = clock, Reporters = [watched] },
+                cancellationToken: stop.Token);
             await finish.Started;
             await hang.Started;
-            stop.Request();
+            await stop.CancelAsync();
             await watched.Handled("finish: running -> succeeded");
-            stop.Request();
+            await clock.AdvanceUntilAsync(running, TimeSpan.FromSeconds(1));
             var first = await running;
             hang.Release();
             var summary = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
@@ -257,10 +261,10 @@ public class JournalListingTests
         builder.Task("summary", _ => Task.CompletedTask).After(check);
         var graph = builder.Build();
         var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
-        var stop = new StopSignal();
-        stop.Request();
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
 
-        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) }, stop);
+        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) }, cancellationToken: stop.Token);
         var summary = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
 
         summary.Ending.ShouldBe(JournalEnding.Stopped);

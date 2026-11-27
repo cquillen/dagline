@@ -105,13 +105,13 @@ public class PlainTextReporterTests
             builder.Task("slow", slow.Body);
             builder.Task("tidy", _ => Task.CompletedTask).Requires(job);
             builder.Task("report", _ => Task.CompletedTask).After(job);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new WatchedReporter(new PlainTextReporter(writer, fake));
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] },
-                stop);
+                cancellationToken: stop.Token);
             await a.Started;
             await slow.Started;
             fake.Advance(TimeSpan.FromSeconds(1));
@@ -123,7 +123,7 @@ public class PlainTextReporterTests
             (await clock.NextTimerAsync()).ShouldBe(TimeSpan.FromMinutes(2));
             fake.Advance(TimeSpan.FromMinutes(1));
             fake.Advance(TimeSpan.FromSeconds(38));
-            stop.Request();
+            await stop.CancelAsync();
             await reporter.Handled("job: running -> cancelled");
             (await clock.NextTimerAsync()).ShouldBe(TimeSpan.FromSeconds(30));
             fake.Advance(TimeSpan.FromSeconds(30));
@@ -144,7 +144,7 @@ public class PlainTextReporterTests
                 "2026-11-11T04:13:40Z stop requested: waiting up to 30.0s for 2 running tasks",
                 "2026-11-11T04:13:40Z waited job for 1m38s",
                 "2026-11-11T04:13:40Z cancelled job in 1m39s",
-                "2026-11-11T04:14:10Z stopped waiting: grace period over, 1 task still running",
+                "2026-11-11T04:14:10Z grace period over: letting go of 1 task still running",
                 "2026-11-11T04:14:10Z cancelled slow in 2m10s: still running when the run stopped waiting",
                 "2026-11-11T04:14:10Z run ended: stopped in 2m10s",
                 "tasks: 1 pending, 1 ready, 1 succeeded, 2 cancelled",
@@ -187,7 +187,7 @@ public class PlainTextReporterTests
     }
 
     [Test]
-    public async Task An_unlimited_grace_period_prints_the_stop_line_without_a_duration_and_a_second_stop_gives_its_own_reason()
+    public async Task A_drain_prints_its_own_line_and_a_stop_after_it_with_an_unlimited_grace_period_prints_no_duration()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -198,7 +198,9 @@ public class PlainTextReporterTests
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
             builder.Task("store", store.Body);
-            var stop = new StopSignal();
+            builder.Task("queued", _ => Task.CompletedTask);
+            var drain = new DrainSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
 
             var run = Runner.RunAsync(
@@ -207,37 +209,36 @@ public class PlainTextReporterTests
                 {
                     Journal = Journal.None,
                     TimeProvider = clock,
+                    MaxRunningTasks = 2,
                     Reporters = [reporter],
                     GracePeriod = Timeout.InfiniteTimeSpan,
                 },
-                stop);
+                drain,
+                stop.Token);
             await load.Started;
             await store.Started;
             clock.Advance(TimeSpan.FromSeconds(5));
-            stop.Request();
-            await reporter.Handled("stop requested");
+            drain.Request();
+            await reporter.Handled("drain requested");
             clock.Advance(TimeSpan.FromSeconds(2));
-            stop.Request();
-            await run;
+            await stop.CancelAsync();
+            await reporter.Handled("stop requested");
             load.Release();
+            await reporter.Handled("load: running -> succeeded");
             store.Release();
+            await run;
 
             Lines(writer).ShouldBe(
             [
-                "2026-11-11T04:12:00Z run started: 2 tasks",
+                "2026-11-11T04:12:00Z run started: 3 tasks",
                 "2026-11-11T04:12:00Z started load",
                 "2026-11-11T04:12:00Z started store",
-                "2026-11-11T04:12:05Z stop requested: waiting for 2 running tasks",
-                "2026-11-11T04:12:07Z stopped waiting: second stop, 2 tasks still running",
-                "2026-11-11T04:12:07Z cancelled load in 7.0s: still running when the run stopped waiting",
-                "2026-11-11T04:12:07Z cancelled store in 7.0s: still running when the run stopped waiting",
+                "2026-11-11T04:12:05Z drain requested: letting 2 running tasks finish",
+                "2026-11-11T04:12:07Z stop requested: waiting for 2 running tasks",
+                "2026-11-11T04:12:07Z succeeded load in 7.0s",
+                "2026-11-11T04:12:07Z succeeded store in 7.0s",
                 "2026-11-11T04:12:07Z run ended: stopped in 7.0s",
-                "tasks: 2 cancelled",
-                "cancelled: 2",
-                "  load at 2026-11-11T04:12:07Z after 7.0s",
-                "    message: still running when the run stopped waiting",
-                "  store at 2026-11-11T04:12:07Z after 7.0s",
-                "    message: still running when the run stopped waiting",
+                "tasks: 1 ready, 2 succeeded",
             ]);
         }
     }
@@ -252,15 +253,15 @@ public class PlainTextReporterTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter], GracePeriod = TimeSpan.Zero },
-                stop);
+                cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             await run;
             load.Release();
 
@@ -269,7 +270,7 @@ public class PlainTextReporterTests
                 "2026-11-11T04:12:00Z run started: 1 task",
                 "2026-11-11T04:12:00Z started load",
                 "2026-11-11T04:12:00Z stop requested: waiting up to 0.0s for 1 running task",
-                "2026-11-11T04:12:00Z stopped waiting: grace period over, 1 task still running",
+                "2026-11-11T04:12:00Z grace period over: letting go of 1 task still running",
                 "2026-11-11T04:12:00Z cancelled load in 0.0s: still running when the run stopped waiting",
             ]);
         }
@@ -295,10 +296,10 @@ public class PlainTextReporterTests
                 throw context.Fail("entity 3 has a bad date");
             });
             builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
 
-            var run = Runner.RunAsync(builder.Build(), Options(clock, reporter), stop);
+            var run = Runner.RunAsync(builder.Build(), Options(clock, reporter), cancellationToken: stop.Token);
             await verify.Started;
             var loading = await load.Started;
             loading.AddWarning("entity 9 has no region");
@@ -309,7 +310,7 @@ public class PlainTextReporterTests
             verify.Release();
             await reporter.Handled("verify: running -> failed");
             clock.Advance(TimeSpan.FromSeconds(1));
-            stop.Request();
+            await stop.CancelAsync();
             await run;
 
             Lines(writer).ShouldBe(

@@ -8,8 +8,8 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// When a write fails, Dagline stops the run itself: it publishes <see cref="StopRequested"/> with <see cref="StopRequester.Dagline"/>,
-/// unless a stop was already in progress, starts nothing new, signals the running tasks and waits the grace period. Any request on the
-/// app's <see cref="StopSignal"/> ends that wait. No further write to the journal is attempted, though events still describe what
+/// unless a stop was already in progress, starts nothing new, signals the running tasks and waits the grace period. Neither a drain nor
+/// the app's token cancelled shortens that wait. No further write to the journal is attempted, though events still describe what
 /// happens. The run then ends with this exception: <see cref="RunEnded"/> carries it and no run outcome, and
 /// <see cref="Runner.RunAsync"/> throws it after reporters have handled every event. The journal has no run-ended entry, so
 /// <see cref="Journals.ListAsync"/> shows it as <see cref="JournalEnding.Died"/>, and it can be continued like any other.

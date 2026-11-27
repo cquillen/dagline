@@ -21,10 +21,11 @@ namespace Dagline;
 /// <para>
 /// A task that begins waiting prints <c>waiting job: job 17 to finish</c>, or <c>waiting job</c> when it gave no text, with
 /// each line break in the text printed as a space, and one that stops waiting prints <c>waited job for 1m38s</c>.
-/// A stop prints <c>stop requested: waiting up to 30.0s for 2 running tasks</c>, read from the snapshot handed with
-/// <see cref="StopRequested"/>, or <c>stop requested: waiting for 2 running tasks</c> when the grace period is unlimited.
-/// When the run stops waiting with tasks still running it prints <c>stopped waiting: grace period over, 1 task still running</c>
-/// or <c>stopped waiting: second stop, 1 task still running</c>, and then a <c>cancelled</c> line for each task it let go of.
+/// A drain prints <c>drain requested: letting 2 running tasks finish</c>, read from the snapshot handed with
+/// <see cref="DrainRequested"/>. A stop prints <c>stop requested: waiting up to 30.0s for 2 running tasks</c>, read from the
+/// snapshot handed with <see cref="StopRequested"/>, or <c>stop requested: waiting for 2 running tasks</c> when the grace period
+/// is unlimited. When the grace period runs out with tasks still running it prints
+/// <c>grace period over: letting go of 1 task still running</c>, and then a <c>cancelled</c> line for each task it let go of.
 /// A count of one is singular.
 /// </para>
 /// <para>

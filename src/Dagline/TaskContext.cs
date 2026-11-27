@@ -80,7 +80,9 @@ public sealed class TaskContext
     /// <remarks>
     /// <para>
     /// Every task of a run sees the same token. It is signalled once, when the run applies a stop, and stays signalled.
-    /// A run that is never stopped never signals it. The token reads as signalled from the step that applies the stop, and so before
+    /// A run that is never stopped never signals it, and a drain never does: a task cannot tell that the run is draining.
+    /// It is the run's own token, not the one the app passed to <see cref="Runner.RunAsync"/>: the app's token cancelled is heard
+    /// by the run, which applies it as a stop. The token reads as signalled from the step that applies the stop, and so before
     /// <see cref="Runner.RunAsync"/> returns. The callbacks registered on it run afterwards on the thread pool, never while the run
     /// holds its lock, so a callback may call this context, and the run does not wait for them: it may return while one is still running.
     /// </para>
@@ -89,7 +91,7 @@ public sealed class TaskContext
     /// as a reported failure. Otherwise a body that ends with any <see cref="OperationCanceledException"/>, whichever token caused it,
     /// is <see cref="NodeStatus.Cancelled"/>, and keeps its message, detail lines, warnings and frozen progress. Otherwise the task
     /// gets its real status: succeeded when the body returned, and failed as an unexpected failure when it threw anything else.
-    /// Before any stop a cancellation exception is an unexpected failure, like any other exception.
+    /// Before any stop, during a drain included, a cancellation exception is an unexpected failure, like any other exception.
     /// </para>
     /// <para>
     /// A cancelled task never blocks: a task that requires it stays pending, and a task that runs after it becomes ready.

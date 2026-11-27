@@ -139,7 +139,9 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
     private static string FailureLine(Exception failure)
         => $"display failed, output continues as plain text: {failure.GetType().Name}: {DisplayText.OneLine(failure.Message)}";
 
-    /// <summary>Called when a stop ends the wait for reporters while this one is still busy: the terminal is the operator's again.</summary>
+    /// <summary>
+    /// Called when the run's token ends the wait for reporters while this one is still busy: the terminal is the operator's again.
+    /// </summary>
     private void Abandon()
     {
         lock (_gate)

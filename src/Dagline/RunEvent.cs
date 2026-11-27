@@ -13,16 +13,17 @@ namespace Dagline;
 /// all with the same <see cref="At"/>:
 /// </para>
 /// <list type="number">
-/// <item><description>The change itself: the run starting, a task settling, or a stop being applied.</description></item>
+/// <item><description>The change itself: the run starting, a task settling, or a drain or a stop being applied.</description></item>
 /// <item><description>Every task that this blocks, pending to blocked, in declaration order.</description></item>
 /// <item><description>Every task whose dependencies are now all met, pending to ready, in declaration order.</description></item>
 /// <item><description>Every group that is now settled, the deepest first, then in declaration order.</description></item>
 /// <item><description>Every task that now starts, ready to running, in declaration order.</description></item>
 /// </list>
 /// <para>
-/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own, and so is
-/// a <see cref="StopRequested"/>, and so is a <see cref="WaitingChanged"/>, except the end of a wait that a task settling forces,
-/// which comes just before that task's change. Once a stop has been applied, no step starts a task.
+/// The events of one step are never mixed with those of another. A <see cref="WarningAdded"/> is a step of its own, and so are
+/// a <see cref="DrainRequested"/> and a <see cref="StopRequested"/>, and so is a <see cref="WaitingChanged"/>, except the end of a
+/// wait that a task settling forces, which comes just before that task's change. Once a drain or a stop has been applied, no step
+/// starts a task.
 /// </para>
 /// </remarks>
 public abstract record RunEvent
@@ -223,20 +224,55 @@ public sealed record GroupSettled : RunEvent
 }
 
 /// <summary>
+/// A drain was applied to the run: from this event on the run starts nothing, <em>after</em> tasks included, and lets its running
+/// tasks finish as they would.
+/// </summary>
+/// <remarks>
+/// <para>
+/// It is published once at most, when the run applies the request on the <see cref="DrainSignal"/> it was given, and only while no
+/// stop has been applied: a drain requested during a stop changes nothing. It is a step of its own. The running tasks are not told:
+/// their <see cref="TaskContext.CancellationToken"/> is not signalled, and no grace period runs. A drain only comes from the app,
+/// so it has no requester.
+/// </para>
+/// <para>
+/// A signal already requested when the run starts gives <see cref="RunStarted"/>, the tasks that become ready, this event, then
+/// <see cref="RunEnded"/>, with no task started. When the run's token is also cancelled by then, <see cref="StopRequested"/> follows
+/// this event. A stop that follows a drain later is published after it in the same way.
+/// </para>
+/// <para>
+/// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Drain"/> set.
+/// While the run waits for its running tasks to finish, a task that succeeds still makes its dependents ready, where they stay,
+/// and a task that fails still blocks its dependents.
+/// </para>
+/// </remarks>
+public sealed record DrainRequested : RunEvent
+{
+    internal DrainRequested(DateTimeOffset at)
+        : base(at)
+    {
+    }
+
+    private protected override void ClosedToOutsideDerivation()
+    {
+    }
+}
+
+/// <summary>
 /// A stop was applied to the run: from this event on the run starts nothing, <em>after</em> tasks included,
 /// and every running task sees <see cref="TaskContext.CancellationToken"/> signalled.
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is published once at most: when the run applies the first request on the <see cref="StopSignal"/> it was given, with
-/// <see cref="By"/> set to <see cref="StopRequester.App"/>, or when the run's journal can no longer be written, with
-/// <see cref="StopRequester.Dagline"/>, unless a stop was already in progress.
-/// It is a step of its own. A signal already requested when the run starts gives <see cref="RunStarted"/>, the tasks that become ready,
-/// this event, then <see cref="RunEnded"/>, with no task started.
+/// It is published once at most: when the run hears that the <see cref="CancellationToken"/> passed to
+/// <see cref="Runner.RunAsync"/> is cancelled, with <see cref="By"/> set to <see cref="StopRequester.App"/>, or when the run's
+/// journal can no longer be written, with <see cref="StopRequester.Dagline"/>, unless a stop was already in progress.
+/// It is a step of its own, and comes after <see cref="DrainRequested"/> when a drain was applied first.
+/// A token already cancelled when the run starts gives <see cref="RunStarted"/>, the tasks that become ready, this event,
+/// then <see cref="RunEnded"/>, with no task started.
 /// </para>
 /// <para>
-/// After a stop that Dagline asked for, any request on the app's <see cref="StopSignal"/>, the first included, ends the wait for the
-/// running tasks, as a second request does after a stop the app asked for.
+/// Only the grace period running out ends the wait for the running tasks. A drain requested after this event, or the app's token
+/// cancelled after a stop that Dagline asked for, changes nothing.
 /// </para>
 /// <para>
 /// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Stop"/> set.
@@ -253,7 +289,7 @@ public sealed record StopRequested : RunEvent
         GracePeriod = gracePeriod;
     }
 
-    /// <summary>Who asked for the stop: the app, through its <see cref="StopSignal"/>, or Dagline, when a journal write failed.</summary>
+    /// <summary>Who asked for the stop: the app, by cancelling the run's token, or Dagline, when a journal write failed.</summary>
     public StopRequester By { get; }
 
     /// <summary>
@@ -267,11 +303,12 @@ public sealed record StopRequested : RunEvent
 }
 
 /// <summary>
-/// The grace ended: the run stopped waiting for its running tasks after a stop, with tasks still running, and lets go of them.
+/// The grace ended: the grace period, <see cref="RunOptions.GracePeriod"/>, ran out after a stop with tasks still running, and the
+/// run lets go of them.
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is published at most once, and only when tasks are still running as the wait ends. A wait that ends because the last
+/// It is published at most once, and only when tasks are still running as the grace period runs out: nothing else ends the wait. A wait that ends because the last
 /// running task ended has no such event. In the same step, each task left behind follows in declaration order: the end of its wait
 /// if it was waiting, then its <see cref="TaskStatusChanged"/> to <see cref="NodeStatus.Cancelled"/>, with the message
 /// <c>still running when the run stopped waiting</c>. The tasks that this makes ready and the groups it settles come after them,
@@ -283,14 +320,10 @@ public sealed record StopRequested : RunEvent
 /// </remarks>
 public sealed record GraceEnded : RunEvent
 {
-    internal GraceEnded(DateTimeOffset at, GraceEndReason reason)
+    internal GraceEnded(DateTimeOffset at)
         : base(at)
     {
-        Reason = reason;
     }
-
-    /// <summary>Why the grace ended: a second stop, or the grace period ran out.</summary>
-    public GraceEndReason Reason { get; }
 
     private protected override void ClosedToOutsideDerivation()
     {

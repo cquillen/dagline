@@ -154,7 +154,7 @@ The second count matters when a journal is continued with a smaller graph. The r
 | --- | --- |
 | `Complete` | Every task succeeded. The journal is finished. |
 | `Incomplete` | A task failed or was blocked. |
-| `Stopped` | The run was asked to stop before every task succeeded. |
+| `Stopped` | The run was drained or stopped before every task succeeded. |
 | `InUse` | A run holds the journal right now. Continuing or deleting it throws `JournalInUseException`. |
 | `Died` | The latest run recorded no end and nothing holds the journal: its process was killed, its machine went down, a journal write failed, or the journal's first run was never recorded. |
 

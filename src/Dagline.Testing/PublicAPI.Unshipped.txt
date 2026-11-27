@@ -1,1 +1,5 @@
 #nullable enable
+*REMOVED*Dagline.Testing.TaskHarness.RunAsync() -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
+*REMOVED*Dagline.Testing.TaskHarness.RunUntilWaitingThenStopAsync() -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
+Dagline.Testing.TaskHarness.RunAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
+Dagline.Testing.TaskHarness.RunUntilWaitingThenStopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!

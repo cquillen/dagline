@@ -303,12 +303,12 @@ public class WaitUntilAsyncTests
                     return Task.FromResult(false);
                 },
                 "job 17 to finish"));
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] }, cancellationToken: stop.Token);
             await clock.NextTimerAsync();
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             checks.ShouldBe(1);
@@ -349,12 +349,12 @@ public class WaitUntilAsyncTests
                     },
                     "job 17 to finish");
             });
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             checks.ShouldBe(0);
@@ -391,15 +391,15 @@ public class WaitUntilAsyncTests
                     ended.TrySetResult();
                 }
             });
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero, Reporters = [reporter] },
-                stop);
+                cancellationToken: stop.Token);
             await checking.Task;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
             var source = await reporter.Source;
             var events = reporter.Events.Count;
@@ -409,7 +409,7 @@ public class WaitUntilAsyncTests
             reporter.Lines.Skip(4).ShouldBe(
             [
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "waited job",
                 "job: running -> cancelled",
                 "run ended: stopped",

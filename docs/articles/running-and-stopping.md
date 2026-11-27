@@ -27,7 +27,7 @@ Every task starts pending, except a task that a [journal](journals.md) the run c
 
 Each task body is started on the thread pool, so work a body does before its first `await` does not hold up other tasks. The body receives a <xref:Dagline.TaskContext> with the task's path and the run's clock, through which it also reports progress, warnings and its outcome: see [Writing tasks](writing-tasks.md).
 
-The call returns when the run has ended: no task is running, none is ready (or the run was [stopped](#stopping-a-run)), and every reporter that was not dropped has handled every event.
+The call returns when the run has ended: no task is running, none is ready (or the run was [drained or stopped](#ending-a-run-early)), and every reporter that was not dropped has handled every event.
 
 The graph is not changed by a run. You can run the same built graph again, and every run starts with every task pending.
 
@@ -130,9 +130,9 @@ Console.WriteLine($"{snapshot.RunningTasks.InUse} of {snapshot.RunningTasks.Size
 
 - **Complete**: every task succeeded. A graph with no tasks is complete.
 - **Incomplete**: the run went as far as it could and at least one task did not succeed.
-- **Stopped**: the run was [asked to stop](#stopping-a-run) and at least one task did not succeed.
+- **Stopped**: the run was [drained or stopped](#ending-a-run-early) and at least one task did not succeed.
 
-`Snapshot` is the final snapshot of the run: every node in declaration order with its status, its start and settle times and the dependencies and limits declared on it, plus the count of tasks per status, the max running tasks and each limit, the start and end of the run, and the stop if there was one.
+`Snapshot` is the final snapshot of the run: every node in declaration order with its status, its start and settle times and the dependencies and limits declared on it, plus the count of tasks per status, the max running tasks and each limit, the start and end of the run, and the drain and the stop if there were any.
 
 ```csharp
 foreach (var node in result.Snapshot.Nodes)
@@ -149,7 +149,7 @@ Console.WriteLine($"{result.Snapshot.Counts[NodeStatus.Succeeded]} tasks succeed
 
 A failure costs only the work that requires it. An exception that escapes a task body fails that task and nothing else: it is never thrown from `RunAsync`, and the run carries on.
 
-- The task ends **failed**, as an *unexpected failure*. Its message is the exception's message, and the exception's type and stack trace are added to its detail lines. A cancellation exception is treated the same way unless the run has been [stopped](#stopping-a-run).
+- The task ends **failed**, as an *unexpected failure*. Its message is the exception's message, and the exception's type and stack trace are added to its detail lines. A cancellation exception is treated the same way unless the run has been [stopped](#what-a-stop-does).
 - A task that declares a failure itself, with `throw context.Fail(...)`, ends **failed** as a *reported failure*, and everything below applies to it too: see [Failures](writing-tasks.md#failures).
 - Every task that *requires* the failed task becomes **blocked** at once, even while its other upstreams are still running. So does every task that requires a blocked task, to the end of the chain. A task that requires a group is blocked as soon as one task beneath the group fails or is blocked: it does not wait for the group to settle.
 - A task that runs *after* the failed task, or after a blocked one, still runs.
@@ -179,50 +179,83 @@ foreach (var blocked in result.Snapshot.Blocked)
 
 <xref:Dagline.Snapshot.Failed> lists the failed tasks in declaration order. <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: every task it blocked, and the *roots*, which are the highest nodes whose every task it blocked. When a failure blocks every task beneath a group, the group is the root, so a failure that blocked a thousand tasks beneath one group is named by that one group.
 
-## Stopping a run
+## Ending a run early
 
-An app can ask a run to stop. It passes a <xref:Dagline.StopSignal> to `RunAsync`, and a request on the signal stops the run. The usual ones are Ctrl+C and SIGTERM, which the core package hooks in one call:
+An app can end a run early in two ways, and each has its own mechanism:
+
+- A **drain** starts nothing new and lets the running tasks finish as they would. Your app passes a <xref:Dagline.DrainSignal> to `RunAsync` and requests it.
+- A **stop** starts nothing new and tells the running tasks to end now. Your app passes a `CancellationToken` to `RunAsync`, the last parameter as in any .NET async method, and cancels it.
+
+A stop can follow a drain: an operator who started a drain and cannot wait for the running tasks to finish stops the run. The usual triggers are Ctrl+C and SIGTERM, which the core package hooks in one call:
 
 ```csharp
-using var stop = ConsoleStop.Hook();
+using var console = ConsoleStop.Hook();
 
-var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, stop);
+var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, console.Drain, console.Token);
 return result.Outcome.ToExitCode();
 ```
 
-<xref:Dagline.ConsoleStop.Hook*> gives a signal hooked to the console's cancel key and to SIGTERM, which a service manager or a container runtime sends to ask a process to end. The hook counts Ctrl+C and SIGTERM together. The first requests a stop and the second requests again, which ends the [grace period](#the-grace-period); both are swallowed so that the process lives on and the run winds down. From the third on nothing is swallowed, so the operating system ends the process. There is no option to leave SIGTERM out. Disposing it unhooks both. See [The terminal display](terminal-ui.md#stopping).
+<xref:Dagline.ConsoleStop.Hook*> hooks the console's cancel key and SIGTERM, which a service manager or a container runtime sends to ask a process to end. It exposes a drain signal, <xref:Dagline.ConsoleStop.Drain>, and a token, <xref:Dagline.ConsoleStop.Token>:
 
-On Windows, .NET raises SIGTERM when the machine shuts down or the user logs off, and Windows ends the process a few seconds later whatever the hook does. On a platform where .NET cannot hook SIGTERM, the signal hooks Ctrl+C alone.
+- **The first Ctrl+C** requests the drain.
+- **The second Ctrl+C**, or **a SIGTERM** at any time, cancels the token, which stops the run. SIGTERM skips the drain because a process manager kills the process soon after sending it.
+- **After that** nothing more is requested and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Dagline hooks no Ctrl+C and no process signal unless your app calls `ConsoleStop.Hook`: a library should not take over your process, so what asks for a stop is up to your app. To wire a stop yourself, create a `new StopSignal()` and call <xref:Dagline.StopSignal.Request*> from wherever you decide: a file appearing, a timer, a message from another process. A plain `StopSignal` holds nothing to release and is not disposable.
+Each Ctrl+C and SIGTERM that drains or stops is swallowed, so the process lives on and the run returns its result. There is no option to leave SIGTERM out. Disposing the hook unhooks both and disposes the token's source. See [The terminal display](terminal-ui.md#draining-and-stopping).
 
-`Request` is safe to call from any thread, a console's cancel handler included. It never blocks and never throws. `IsRequested` says whether a stop has been asked for, and `Requests` counts every call. A run given no signal cannot be stopped.
+On Windows, .NET raises SIGTERM when the machine shuts down or the user logs off, and Windows ends the process a few seconds later whatever the hook does. On a platform where .NET cannot hook SIGTERM, the hook listens to Ctrl+C alone.
+
+Dagline hooks no Ctrl+C and no process signal unless your app calls `ConsoleStop.Hook`: a library should not take over your process, so what drains or stops a run is up to your app. To wire them yourself, create a `new DrainSignal()` and call <xref:Dagline.DrainSignal.Request*> from wherever you decide, such as a file appearing or a message from another process, and pass any token you already have, such as your host's shutdown token or a `CancellationTokenSource` with a timeout:
+
+```csharp
+var drain = new DrainSignal();
+using var deadline = new CancellationTokenSource(TimeSpan.FromHours(6));
+
+var result = await Runner.RunAsync(graph, options, drain, deadline.Token);
+```
+
+`Request` is safe to call from any thread, a console's cancel handler included. It never blocks and never throws, and requesting a signal already requested does nothing. `IsRequested` says whether the drain has been asked for. A plain `DrainSignal` holds nothing to release and is not disposable. A run given no signal cannot be drained, and one given no token, or `CancellationToken.None`, cannot be stopped by your app.
+
+Cancelling the token never makes `RunAsync` throw. The run ends and returns its result as usual, with its final snapshot and its reporter errors.
+
+### What a drain does
+
+The run applies a drain like any other change, one at a time, and publishes a <xref:Dagline.DrainRequested> event. From that moment:
+
+- **Nothing starts**, *after* tasks included.
+- **The running tasks are not told.** Their token is not signalled, no member of their context says the run is draining, and they finish however they would: succeeded, failed or cancelled by their own doing.
+- **The run waits for its running tasks** however long they take, then returns. A drain has no grace period. A task waiting hours on an external system holds the run open for hours: the way out is a stop.
+
+A cancellation exception that escapes a task during a drain is a failure, as before any stop, since the run did not ask the task to end. Requesting the drain again, or once a stop has been applied, changes nothing. <xref:Dagline.Snapshot.Drain> holds when the drain was applied, from the `DrainRequested` snapshot on.
 
 ### What a stop does
 
-The first request is a stop. The run applies it like any other change, one at a time, and publishes a <xref:Dagline.StopRequested> event. From that moment:
+The run hears the token being cancelled on the thread pool, never on the thread that cancelled it, applies the stop like any other change, and publishes a <xref:Dagline.StopRequested> event, after `DrainRequested` when a drain came first. From that moment:
 
-- **Nothing starts**, *after* tasks included. A stop means the run winds down, never that cleanup work starts.
-- **Every running task sees its token signalled**: <xref:Dagline.TaskContext.CancellationToken> on its context. [Writing tasks](writing-tasks.md#when-the-run-is-stopped) says how a task ends once a stop has been requested.
+- **Nothing starts**, *after* tasks included. A stop means the run starts nothing more, never that cleanup work starts.
+- **Every running task sees its token signalled**: <xref:Dagline.TaskContext.CancellationToken> on its context. That token is the run's own, signalled in the step that applies the stop, never your token itself, so a task never sees a stop before reporters do. [Writing tasks](writing-tasks.md#when-the-run-is-stopped) says how a task ends once a stop has been applied.
 - **The run waits for its running tasks to end**, for at most the [grace period](#the-grace-period), then returns.
-
-Only starting is suspended. While the run waits, a task that succeeds still moves its dependents from pending to ready, where they stay, and a task that fails still blocks its dependents at once.
 
 A stop does not undo anything, does not cancel work in other systems, and does not run *after* tasks. A task that ignores its token keeps the run waiting until the grace period runs out.
 
-A signal requested before the run starts stops the run from its start: every task with no dependency becomes ready, the stop is applied, and the run ends with nothing started. A signal is not tied to one run: a run reads the requests made up to its end and ignores later ones, and a signal passed to a second run after the first has ended stops that run from its start.
+### What a drain and a stop share
+
+Only starting is suspended. While the run waits, a task that succeeds still moves its dependents from pending to ready, where they stay, and a task that fails still blocks its dependents at once.
+
+A drain already requested, or a token already cancelled, when `RunAsync` is called ends the run from its start: every task with no dependency becomes ready, the drain or the stop is applied, `DrainRequested` first when both are, and the run ends with nothing started. These are read after the options and the journal have been checked, so a bad option or a journal that cannot be opened still throws first. A signal and a token are not tied to one run: a run reads them up to its end and ignores them after, and passing either to a second run after the first has ended ends that run from its start.
 
 ### The grace period
 
-<xref:Dagline.RunOptions.GracePeriod> bounds the wait for the running tasks. It is 30 seconds by default, and is measured on the run's `TimeProvider` from the moment the stop is applied. <xref:Dagline.Snapshot.Stop> carries the grace period and the deadline, so a display can show the time left.
+<xref:Dagline.RunOptions.GracePeriod> bounds the wait for the running tasks after a stop. It is 30 seconds by default, and is measured on the run's `TimeProvider` from the moment the stop is applied. <xref:Dagline.Snapshot.Stop> carries the grace period and the deadline, so a display can show the time left.
 
-The wait ends in one of three ways:
+The wait ends in one of two ways:
 
 - **The last running task ends.** The run ends at once, before the grace period is over.
 - **The grace period runs out** with tasks still running.
-- **A second stop:** a second `Request` on the same signal ends the wait at once, so an operator who presses Ctrl+C twice is not held for the whole grace period. A third request changes nothing.
 
-In the last two cases the run publishes a <xref:Dagline.GraceEnded> event whose `Reason` is a <xref:Dagline.GraceEndReason>, `GracePeriodOver` or `SecondStop`. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
+Nothing else ends it: cancelling the token again and requesting a drain change nothing. An operator who cannot wait kills the process, which the journal survives.
+
+When the grace period runs out, the run publishes a <xref:Dagline.GraceEnded> event. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: `RunAsync` returns while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
 
 Both extremes are a setting:
 
@@ -230,22 +263,20 @@ Both extremes are a setting:
 // Let go of running tasks the moment a stop is applied.
 new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero };
 
-// Wait for the running tasks however long they take. A second stop still ends the wait.
+// Wait for the running tasks however long they take.
 new RunOptions { Journal = Journal.None, GracePeriod = Timeout.InfiniteTimeSpan };
 ```
 
 A limited grace period is at most `uint.MaxValue - 1` milliseconds, about 49.7 days: the longest timer a `TimeProvider` can create. A longer one is refused before the run starts; use `Timeout.InfiniteTimeSpan` to wait with no limit.
 
-A signal requested twice before the run starts gives the same result as one requested once: nothing starts, so there is nothing to wait for.
-
 ### Cancelled and never reached
 
-A stopped run leaves two kinds of unfinished work, and the snapshot tells them apart:
+A drained or stopped run leaves two kinds of unfinished work, and the snapshot tells them apart:
 
-- **Cancelled** tasks were running and ended because of the stop: their body ended with a cancellation exception, or was still running when the run stopped waiting. Cancelled is a settled status. <xref:Dagline.Snapshot.Cancelled> lists them in declaration order. A cancelled task never blocks: a task that requires it stays pending.
+- **Cancelled** tasks were running and ended because of the stop: their body ended with a cancellation exception, or was still running when the grace period ran out. Cancelled is a settled status. <xref:Dagline.Snapshot.Cancelled> lists them in declaration order. A cancelled task never blocks: a task that requires it stays pending.
 - **Never reached** tasks had not started: they keep their status, pending or ready, and are not settled. <xref:Dagline.Snapshot.NeverReached> lists them in declaration order once the run has ended, and is empty before then. A group with such a task beneath it does not settle. Tasks a failure blocked are not among them: see [Which tasks did not run, and why](reporters.md#which-tasks-did-not-run-and-why).
 
-A task that finished in spite of the stop keeps its real status, succeeded or failed. <xref:Dagline.Snapshot.Stop> holds when the stop was applied, from the `StopRequested` snapshot on.
+A task that finished in spite of the drain or the stop keeps its real status, succeeded or failed.
 
 ```csharp
 foreach (var cancelled in result.Snapshot.Cancelled)
@@ -258,14 +289,14 @@ Console.WriteLine($"{result.Snapshot.NeverReached.Count} tasks were never reache
 
 ### The stopped run outcome
 
-The run outcome is **stopped** when a stop was requested and at least one task has not succeeded. It takes precedence over incomplete, and maps to exit code 2, so a script can tell a run that was cut short from one that failed. A run in which every task succeeded despite the stop, such as one whose last task succeeded as the stop arrived, is **complete**, and so is a graph with no tasks.
+The run outcome is **stopped** when a drain or a stop was applied and at least one task has not succeeded. It takes precedence over incomplete, and maps to exit code 2, so a script can tell a run that was cut short from one that failed. A run in which every task succeeded despite the drain or the stop, such as one whose last task succeeded as the stop arrived, is **complete**, and so is a graph with no tasks.
 
 ## When a journal write fails
 
 A run on a [journal](journals.md) writes to it all through the run. If a write fails, because the disk is full or the file is gone, the run can no longer record what it does, so Dagline stops it rather than let hours of unrecorded work pile up:
 
-- Dagline requests the stop itself. A <xref:Dagline.StopRequested> event is published with `By` set to <xref:Dagline.StopRequester.Dagline>, unless a stop was already in progress, and from then on the stop is like any other: nothing new starts, running tasks see their token signalled, and the run waits the grace period.
-- Any request on your app's `StopSignal`, the first included, ends that wait at once, as a second request does after a stop your app asked for.
+- Dagline stops the run itself. A <xref:Dagline.StopRequested> event is published with `By` set to <xref:Dagline.StopRequester.Dagline>, unless a stop was already in progress, and from then on the stop is like any other: nothing new starts, running tasks see their token signalled, and the run waits the grace period.
+- Neither a drain nor your token cancelled shortens that wait.
 - A task that the step whose write failed had already started still starts, and the stop signals it at once.
 - Nothing more is written to the journal. Events still describe what happens, so reporters show the run to its end, but none of it is recorded.
 - The run ends with an error and no run outcome: <xref:Dagline.RunEnded> carries a <xref:Dagline.JournalWriteException> in `Error`, with `Outcome` null, and `RunAsync` throws that exception once reporters have handled every event. Its `Snapshot` is the final snapshot, which has an end time and no run outcome, and its inner exception is the file system's own: an `IOException`, or an `UnauthorizedAccessException` when the process may no longer write the file. `ReporterErrors` is not available.
@@ -275,7 +306,7 @@ A run on a [journal](journals.md) writes to it all through the run. If a write f
 ```csharp
 try
 {
-    var result = await Runner.RunAsync(graph, options, stop);
+    var result = await Runner.RunAsync(graph, options, drain, cancellationToken);
     return result.Outcome.ToExitCode();
 }
 catch (JournalWriteException failed)

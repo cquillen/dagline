@@ -29,6 +29,7 @@ public sealed class Snapshot
         DateTimeOffset started,
         DateTimeOffset? ended,
         RunOutcome? outcome,
+        DrainState? drain,
         StopState? stop,
         ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
@@ -40,6 +41,7 @@ public sealed class Snapshot
         Started = started;
         Ended = ended;
         Outcome = outcome;
+        Drain = drain;
         Stop = stop;
         Nodes = nodes;
         _positions = positions;
@@ -60,6 +62,13 @@ public sealed class Snapshot
 
     /// <summary>How the run ended, or <see langword="null"/> while it has not.</summary>
     public RunOutcome? Outcome { get; }
+
+    /// <summary>
+    /// The drain the run has applied, or <see langword="null"/> while none has been. It is set in the snapshot handed with
+    /// <see cref="DrainRequested"/> and in every later one, and carries the time of that event. A drain requested once a stop
+    /// has been applied is not applied, and leaves this <see langword="null"/>.
+    /// </summary>
+    public DrainState? Drain { get; }
 
     /// <summary>
     /// The stop the run has applied, or <see langword="null"/> while none has been. It is set in the snapshot handed with
@@ -141,7 +150,7 @@ public sealed class Snapshot
 
     /// <summary>Every cancelled task, in declaration order. Empty when no task has been cancelled.</summary>
     /// <remarks>
-    /// A task is cancelled when its body ended with a cancellation exception after a stop. Each entry is the same object
+    /// A task is cancelled when its body ended with a cancellation exception after a stop, never after a drain alone. Each entry is the same object
     /// as the one in <see cref="Nodes"/>. The list is worked out on the first read and kept.
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> Cancelled => TasksWith(ref _cancelled, task => task.Status is NodeStatus.Cancelled);
@@ -183,7 +192,7 @@ public sealed class Snapshot
     /// Empty while the run has not ended.
     /// </summary>
     /// <remarks>
-    /// Only a stopped run leaves tasks unreached: after a stop nothing starts, so a task that was ready stays ready,
+    /// Only a drained or stopped run leaves tasks unreached: after a drain or a stop nothing starts, so a task that was ready stays ready,
     /// and one whose dependencies were not met stays pending. These tasks are not settled, and a group with one beneath it
     /// does not settle. A later run has them left to do. Each entry is the same object as the one in <see cref="Nodes"/>.
     /// The list is worked out on the first read and kept.

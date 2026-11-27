@@ -140,7 +140,7 @@ Scopes may overlap. The task waits from the moment its first scope opens until i
 
 ## When the run is stopped
 
-A stop ends the wait at once. A delay between checks ends as soon as the run signals the task's cancellation token, and the helper throws an `OperationCanceledException`. Let it escape the body and the task is **cancelled**, which never blocks its dependents. Reporters see the wait end immediately before the task is cancelled. If the run was already stopped when the task called the helper, it throws at once, without calling the check or marking the task as waiting.
+A stop ends the wait at once, and a drain does not: during a drain the helper goes on checking until the external work is done. A delay between checks ends as soon as the run signals the task's cancellation token, and the helper throws an `OperationCanceledException`. Let it escape the body and the task is **cancelled**, which never blocks its dependents. Reporters see the wait end immediately before the task is cancelled. If the run was already stopped when the task called the helper, it throws at once, without calling the check or marking the task as waiting.
 
 A check that is running when the stop arrives is not interrupted: it sees the token, which it passes to what it awaits, and ends as that call ends. If the run's grace period runs out first, the run lets go of the task, which stops waiting immediately before it is recorded as cancelled. Whatever the task does after that, including closing its waiting scope, changes nothing. [Running and stopping](running-and-stopping.md) covers the grace period.
 

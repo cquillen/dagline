@@ -9,11 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A drain: `DrainSignal`, passed to `Runner.RunAsync` and requested with `Request`, has the run start nothing new, *after* tasks included, and let its running tasks finish as they would, without signalling their token and with no time limit. Requesting it again, or once a stop has been applied, does nothing, and a signal can be passed to a later run. The new `DrainRequested` event is published once when the run applies it, before any `StopRequested`, and `Snapshot.Drain` is a `DrainState` with the time it was applied. A cancellation exception that escapes a task during a drain is a failure. A drain is invisible to tasks.
+- A stop is the cancellation of the `CancellationToken` that `Runner.RunAsync` now takes as its last parameter: the run starts nothing new, signals every running task's token and waits the grace period, then lets go of the tasks still running. A stop can follow a drain. Cancelling the token never makes `RunAsync` throw: the run returns its result as usual, with the outcome `Stopped` when a task did not succeed. The token a task sees is still the run's own, signalled in the step that applies the stop.
+- `ConsoleStop.Drain` and `ConsoleStop.Token`: the first Ctrl+C requests the drain, and the second Ctrl+C, or a SIGTERM at any time, cancels the token. A Ctrl+C or SIGTERM after that is not swallowed, so the operating system ends the process.
+- `TaskHarness.RunAsync` and `TaskHarness.RunUntilWaitingThenStopAsync` take a `CancellationToken`, passed straight through as the run's token. `RunUntilWaitingThenStopAsync` stops at the first wait by cancelling a token source of its own, linked to the caller's token. The grace period stays unlimited.
+- The plain-text reporter prints `drain requested: letting <n> running tasks finish`, and the Spectre display shows a `DRAINING` banner, with what a second Ctrl+C does, until a stop replaces it with the `STOPPING` banner.
 - `LimitUse.IsFull` says whether every slot of a limit, or of the max running tasks, is held, so that a ready task that holds it waits.
 - `Snapshot.WithWarningsInThisRun` and `Snapshot.EarlierSuccessesWithWarnings` split `WithWarnings` into the tasks that added their warnings in this run and the earlier successes, whose warnings an earlier run's summary listed.
 
 ### Changed
 
+- **Breaking:** `Runner.RunAsync(Graph, RunOptions, DrainSignal? drain = null, CancellationToken cancellationToken = default)` replaces the 0.1.0 signature, whose third parameter was the two-stage signal in which the first request stopped the run and the second ended the grace period. `DrainSignal` takes that signal's place, with `Request` and `IsRequested` and no count of requests.
+- **Breaking:** only the grace period running out ends the wait after a stop. Nothing ends it early: not a drain, not the token cancelled again, and, after a stop that Dagline asked for because the journal could no longer be written, not the app's token either. `GraceEnded` no longer has a reason, and the enum of reasons is removed.
+- **Breaking:** `ConsoleStop` is no longer a signal itself: pass its `Drain` and its `Token` to the run. `Dispose` now also disposes the token's source.
+- At the end of a run, cancelling the token drops the reporters still busy only when it comes after every task has ended. A token cancelled earlier is applied as a stop and drops no reporter, and after a stop nothing drops a reporter that hangs. A drain never drops one.
+- The Spectre `STOPPING` banner no longer offers a Ctrl+C, since no key ends the grace period.
+- The plain-text reporter's line for a grace end reads `grace period over: letting go of <n> tasks still running`, in place of `stopped waiting: grace period over, <n> tasks still running`.
 - A journal's description is kept on one line: each line break in it becomes a space, in `JournalInfo.Description` and `JournalSummary.Description`, also for a journal written by 0.1.0. The Spectre header now shows it on one line, as the plain-text reporter already did.
 
 ### Fixed

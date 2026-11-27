@@ -26,15 +26,15 @@ public class GracePeriodTests
             var slow = new PausedBody();
             var builder = new GraphBuilder();
             builder.Task("slow", slow.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var listener = new StopListener(clock);
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [listener] },
-                stop);
+                cancellationToken: stop.Token);
             await slow.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var gracePeriod = await listener.PendingTimerWhenHeard;
             fake.Advance(TimeSpan.FromSeconds(30));
             var result = await run;
@@ -61,19 +61,19 @@ public class GracePeriodTests
             builder.Task("honour", honour.Body);
             var stuckTask = builder.Task("stuck", stuck.Body);
             var tidy = builder.Task("tidy", _ => Task.CompletedTask).After(slowTask);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [watched] },
-                stop);
+                cancellationToken: stop.Token);
             await slow.Started;
             await honour.Started;
             await stuck.Started;
             clock.Advance(TimeSpan.FromSeconds(5));
-            stop.Request();
+            await stop.CancelAsync();
             await watched.Handled("honour: running -> cancelled");
             await clock.AdvanceUntilAsync(run, _step);
             var result = await run;
@@ -83,7 +83,7 @@ public class GracePeriodTests
             [
                 "stop requested",
                 "honour: running -> cancelled",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "slow: running -> cancelled",
                 "stuck: running -> cancelled",
                 "tidy: pending -> ready",
@@ -92,7 +92,7 @@ public class GracePeriodTests
             var requested = reporter.Events.OfType<StopRequested>().Single();
             (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart.AddSeconds(5), StopRequester.App, TimeSpan.FromSeconds(30)));
             var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
-            (graceEnded.At, graceEnded.Reason).ShouldBe((_runStart.AddSeconds(35), GraceEndReason.GracePeriodOver));
+            graceEnded.At.ShouldBe(_runStart.AddSeconds(35));
             result.Snapshot[slowTask.Path].Message.ShouldBe(_leftBehind);
             result.Snapshot[stuckTask.Path].Settled.ShouldBe(_runStart.AddSeconds(35));
             result.Snapshot[tidy.Path].Status.ShouldBe(NodeStatus.Ready);
@@ -112,15 +112,15 @@ public class GracePeriodTests
             var load = new StoppedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] },
-                stop);
+                cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
@@ -131,24 +131,32 @@ public class GracePeriodTests
     }
 
     [Test]
-    public async Task A_second_request_ends_the_wait_at_once_and_a_third_changes_nothing()
+    public async Task Neither_a_drain_nor_cancelling_the_token_again_ends_the_wait_before_the_grace_period_runs_out()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
+            var clock = new FakeTimeProvider(_runStart);
             var load = new PausedBody();
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            var drain = new DrainSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, stop);
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [watched] },
+                drain,
+                stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             await watched.Handled("stop requested");
-            stop.Request();
-            stop.Request();
+            drain.Request();
+            await stop.CancelAsync();
+            await clock.AdvanceUntilAsync(run, _step);
             var result = await run;
+            load.Release();
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
             reporter.Lines.ShouldBe(
@@ -157,41 +165,12 @@ public class GracePeriodTests
                 "load: pending -> ready",
                 "load: ready -> running",
                 "stop requested",
-                "stopped waiting: second stop",
+                "grace period over",
                 "load: running -> cancelled",
                 "run ended: stopped",
             ]);
+            reporter.Events.OfType<GraceEnded>().Single().At.ShouldBe(_runStart.AddSeconds(30));
             result.Snapshot[loadTask.Path].Message.ShouldBe(_leftBehind);
-            load.Release();
-        }
-    }
-
-    [Test]
-    public async Task Two_requests_heard_at_once_stop_the_run_and_end_the_wait()
-    {
-        for (var repeat = 0; repeat < _repeats; repeat++)
-        {
-            var load = new PausedBody();
-            var builder = new GraphBuilder();
-            builder.Task("load", load.Body);
-            var stop = new StopSignal();
-            var reporter = new RecordingReporter();
-
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
-            await load.Started;
-            stop.Request();
-            stop.Request();
-            var result = await run;
-
-            result.Outcome.ShouldBe(RunOutcome.Stopped);
-            reporter.Lines.Skip(3).ShouldBe(
-            [
-                "stop requested",
-                "stopped waiting: second stop",
-                "load: running -> cancelled",
-                "run ended: stopped",
-            ]);
-            load.Release();
         }
     }
 
@@ -203,21 +182,21 @@ public class GracePeriodTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero, Reporters = [reporter] },
-                stop);
+                cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             reporter.Lines.Skip(3).ShouldBe(
             [
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "load: running -> cancelled",
                 "run ended: stopped",
             ]);
@@ -237,16 +216,16 @@ public class GracePeriodTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, GracePeriod = Timeout.InfiniteTimeSpan, Reporters = [watched] },
-                stop);
+                cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             await watched.Handled("stop requested");
             clock.Advance(TimeSpan.FromDays(1));
             load.Release();
@@ -259,59 +238,6 @@ public class GracePeriodTests
         }
     }
 
-    [Test]
-    public async Task A_second_request_still_ends_an_unlimited_wait()
-    {
-        for (var repeat = 0; repeat < _repeats; repeat++)
-        {
-            var load = new PausedBody();
-            var builder = new GraphBuilder();
-            builder.Task("load", load.Body);
-            var stop = new StopSignal();
-            var reporter = new RecordingReporter();
-            var watched = new WatchedReporter(reporter);
-
-            var run = Runner.RunAsync(
-                builder.Build(),
-                new RunOptions { Journal = Journal.None, GracePeriod = Timeout.InfiniteTimeSpan, Reporters = [watched] },
-                stop);
-            await load.Started;
-            stop.Request();
-            await watched.Handled("stop requested");
-            stop.Request();
-            var result = await run;
-
-            result.Outcome.ShouldBe(RunOutcome.Stopped);
-            reporter.Lines.ShouldContain("stopped waiting: second stop");
-            reporter.Lines.ShouldContain("load: running -> cancelled");
-            load.Release();
-        }
-    }
-
-    [Test]
-    public async Task A_signal_requested_twice_before_the_run_starts_gives_the_same_result_as_once()
-    {
-        for (var repeat = 0; repeat < _repeats; repeat++)
-        {
-            var bodyRan = false;
-            var builder = new GraphBuilder();
-            builder.Task("load", _ =>
-            {
-                bodyRan = true;
-                return Task.CompletedTask;
-            });
-            var stop = new StopSignal();
-            stop.Request();
-            stop.Request();
-            var reporter = new RecordingReporter();
-
-            var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
-
-            result.Outcome.ShouldBe(RunOutcome.Stopped);
-            reporter.Lines.ShouldBe(["run started", "load: pending -> ready", "stop requested", "run ended: stopped"]);
-            bodyRan.ShouldBeFalse();
-        }
-    }
 
     [Test]
     public async Task The_snapshot_carries_the_grace_period_and_the_deadline()
@@ -320,16 +246,16 @@ public class GracePeriodTests
         var load = new StoppedBody();
         var builder = new GraphBuilder();
         builder.Task("load", load.Body);
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var reporter = new RecordingReporter();
 
         var run = Runner.RunAsync(
             builder.Build(),
             new RunOptions { Journal = Journal.None, TimeProvider = clock, GracePeriod = TimeSpan.FromMinutes(2), Reporters = [reporter] },
-            stop);
+            cancellationToken: stop.Token);
         await load.Started;
         clock.Advance(TimeSpan.FromSeconds(10));
-        stop.Request();
+        await stop.CancelAsync();
         var result = await run;
 
         var requestedAt = _runStart.AddSeconds(10);
@@ -385,28 +311,22 @@ public class GracePeriodTests
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
-            var load = new PausedBody();
+            var load = new StoppedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var stop = new StopSignal();
-            var reporter = new RecordingReporter();
-            var watched = new WatchedReporter(reporter);
+            using var stop = new CancellationTokenSource();
             var gracePeriod = TimeSpan.FromMilliseconds(4_294_967_294L);
 
             var run = Runner.RunAsync(
                 builder.Build(),
-                new RunOptions { Journal = Journal.None, GracePeriod = gracePeriod, Reporters = [watched] },
-                stop);
+                new RunOptions { Journal = Journal.None, GracePeriod = gracePeriod },
+                cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
-            await watched.Handled("stop requested");
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
-            load.Release();
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
             result.Snapshot.Stop!.GracePeriod.ShouldBe(gracePeriod);
-            reporter.Lines.ShouldContain("stopped waiting: second stop");
         }
     }
 
@@ -426,11 +346,11 @@ public class GracePeriodTests
                 context.AddDetail("stopped at entity 41");
                 await load.Body(context);
             });
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             var leftBehind = result.Snapshot[loadTask.Path];
@@ -459,11 +379,11 @@ public class GracePeriodTests
                 await load.Body(context);
             });
             var publishTask = builder.Task("publish", _ => Task.CompletedTask).Requires(loadTask);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             var leftBehind = result.Snapshot[loadTask.Path];
@@ -491,21 +411,21 @@ public class GracePeriodTests
                     await poll.Body(context);
                 }
             });
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero, Reporters = [reporter] },
-                stop);
+                cancellationToken: stop.Token);
             await poll.Started;
-            stop.Request();
+            await stop.CancelAsync();
             await run;
 
             reporter.Lines.Skip(4).ShouldBe(
             [
                 "stop requested",
-                "stopped waiting: grace period over",
+                "grace period over",
                 "waited job",
                 "job: running -> cancelled",
                 "run ended: stopped",
@@ -524,15 +444,15 @@ public class GracePeriodTests
             var builder = new GraphBuilder();
             var prepare = builder.Task("prepare", _ => Task.CompletedTask);
             var loadTask = builder.Task("load", load.Body).Requires(prepare);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
             var run = Runner.RunAsync(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, GracePeriod = TimeSpan.Zero, Reporters = [reporter] },
-                stop);
+                cancellationToken: stop.Token);
             var context = await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
             var source = await reporter.Source;
             var events = reporter.Events.Count;
@@ -568,11 +488,11 @@ public class GracePeriodTests
                 using var blocking = context.CancellationToken.Register(() => callbackMayEnd.Wait(TimeSpan.FromSeconds(30)));
                 await load.Body(context);
             });
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero }, cancellationToken: stop.Token);
             var context = await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
             var signalled = context.CancellationToken.IsCancellationRequested;
             callbackMayEnd.Set();
@@ -608,15 +528,15 @@ public class GracePeriodTests
                         ended.TrySetResult();
                     }
                 });
-                var stop = new StopSignal();
+                using var stop = new CancellationTokenSource();
                 var reporter = new RecordingReporter();
 
                 var run = Runner.RunAsync(
                     builder.Build(),
                     new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero, Reporters = [reporter] },
-                    stop);
+                    cancellationToken: stop.Token);
                 await load.Started;
-                stop.Request();
+                await stop.CancelAsync();
                 var result = await run;
                 var source = await reporter.Source;
                 var events = reporter.Events.Count;

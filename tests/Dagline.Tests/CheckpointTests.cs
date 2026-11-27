@@ -36,7 +36,7 @@ public class CheckpointTests
     {
         using var temporary = new TemporaryDirectory();
         var firstRun = true;
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var handedBack = new List<string>();
         var builder = new GraphBuilder();
         var export = builder.Task("export", async context =>
@@ -45,13 +45,13 @@ public class CheckpointTests
             if (firstRun)
             {
                 await context.SaveCheckpointAsync("job-17");
-                stop.Request();
+                await stop.CancelAsync();
                 await Task.Delay(Timeout.InfiniteTimeSpan, context.CancellationToken);
             }
         });
         var graph = builder.Build();
 
-        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, stop);
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, cancellationToken: stop.Token);
         firstRun = false;
         await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
 
@@ -305,7 +305,7 @@ public class CheckpointTests
         {
             using var temporary = new TemporaryDirectory();
             var firstRun = true;
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var handedBack = new List<string>();
             var builder = new GraphBuilder();
             var export = builder.Task("export", async context =>
@@ -313,7 +313,7 @@ public class CheckpointTests
                 handedBack.Add(context.Checkpoint);
                 if (firstRun)
                 {
-                    stop.Request();
+                    await stop.CancelAsync();
                     var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     using (context.CancellationToken.Register(() => stopped.TrySetResult()))
                     {
@@ -326,7 +326,7 @@ public class CheckpointTests
             });
             var graph = builder.Build();
 
-            var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, stop);
+            var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, cancellationToken: stop.Token);
             firstRun = false;
             await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
 
@@ -346,13 +346,15 @@ public class CheckpointTests
             var builder = new GraphBuilder();
             var exportTask = builder.Task("export", export.Body);
             var graph = builder.Build();
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, stop);
+            var run = Runner.RunAsync(
+                graph,
+                new RunOptions { Journal = Journal.New(temporary.Path), GracePeriod = TimeSpan.Zero },
+                cancellationToken: stop.Token);
             var context = await export.Started;
             await context.SaveCheckpointAsync("job-17");
-            stop.Request();
-            stop.Request();
+            await stop.CancelAsync();
             var first = await run;
             await Should.ThrowAsync<InvalidOperationException>(context.SaveCheckpointAsync("job-18"));
             await Should.ThrowAsync<InvalidOperationException>(context.ClearCheckpointAsync());

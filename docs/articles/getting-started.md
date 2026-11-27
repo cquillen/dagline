@@ -15,7 +15,7 @@ dotnet add package Dagline
 dotnet add package Dagline.Spectre
 ```
 
-`Dagline` builds and runs the graph, and turns Ctrl+C into a stop when the app asks. `Dagline.Spectre` draws the run on the terminal. The core package has no console or UI dependency, so an app that never shows a terminal can leave the second one out.
+`Dagline` builds and runs the graph, and turns Ctrl+C into a drain or a stop when the app asks. `Dagline.Spectre` draws the run on the terminal. The core package has no console or UI dependency, so an app that never shows a terminal can leave the second one out.
 
 Replace `Program.cs` with the code below, in the order it is shown.
 
@@ -76,22 +76,31 @@ Dagline never picks a journal for you. These few lines are this app's policy, an
 ## Hook Ctrl+C and SIGTERM
 
 ```csharp
-// Ctrl+C or SIGTERM: the first stops the run, the second stops waiting for the running tasks to end.
-using var stop = ConsoleStop.Hook();
+// The first Ctrl+C drains the run: nothing new starts and the running tasks finish. A second Ctrl+C, or a SIGTERM, stops it:
+// the running tasks are told to end, and the run waits for them for its grace period.
+using var console = ConsoleStop.Hook();
 ```
 
-<xref:Dagline.ConsoleStop.Hook*>, in the core package, gives a <xref:Dagline.StopSignal> hooked to the console's cancel key and to SIGTERM, the signal a service manager or a container runtime sends to ask a process to end. The first Ctrl+C or SIGTERM asks the run to stop: it starts nothing more and waits for the running tasks to end, for at most 30 seconds. A second one, of either kind, ends that wait at once. Both are swallowed, so the run winds down and your app still gets its result. A third is not swallowed, and ends the process: the way out of an app that hangs. `using` unhooks both when the app ends. Dagline hooks nothing unless your app calls `Hook`.
+<xref:Dagline.ConsoleStop.Hook*>, in the core package, hooks the console's cancel key and SIGTERM, the signal a service manager or a container runtime sends to ask a process to end. It gives a drain signal, `console.Drain`, and a cancellation token, `console.Token`, to pass to the run:
 
-An app with a stop trigger of its own, such as a file appearing or a timer, needs no hook. It makes a plain signal, passes it to the run, and requests it from that trigger:
+- The first Ctrl+C **drains** the run: it starts nothing more and lets the running tasks finish, however long they take.
+- A second Ctrl+C, or a SIGTERM at any time, **stops** it: the running tasks see their cancellation token signalled, and the run waits for them to end for at most 30 seconds.
+- After that, a Ctrl+C or SIGTERM is not swallowed, and ends the process: the way out of an app that hangs.
+
+The drain and the stop are swallowed, so the process lives on and your app still gets the run's result. `using` unhooks both when the app ends. Dagline hooks nothing unless your app calls `Hook`.
+
+An app with a trigger of its own, such as a file appearing or a timer, needs no hook. It makes a plain drain signal and requests it from that trigger, or passes a token it already has, such as its host's shutdown token:
 
 ```csharp
-var stop = new StopSignal();
+var drain = new DrainSignal();
+using var stop = new CancellationTokenSource();
 
 // Later, from wherever the app decides:
-stop.Request();
+drain.Request();   // let the running tasks finish
+stop.Cancel();     // or have them end now
 ```
 
-A signal made with `new StopSignal()` holds nothing to release and is not disposable, so it takes no `using`. Only the hooked `ConsoleStop` is disposable.
+A signal made with `new DrainSignal()` holds nothing to release and is not disposable, so it takes no `using`.
 
 ## Run it
 
@@ -101,7 +110,7 @@ var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = journal,
     Reporters = [SpectreReporter.Create()],
-}, stop);
+}, console.Drain, console.Token);
 ```
 
 <xref:Dagline.Runner.RunAsync*> runs the graph and returns when the run has ended. The journal choice is the one option you must set. A reporter shows the run while it happens, and <xref:Dagline.Spectre.SpectreReporter.Create*> gives the right one for where the app runs: the display on a terminal, and timestamped lines of plain text when output is redirected to a file or a build log.
@@ -112,13 +121,13 @@ var result = await Runner.RunAsync(graph, new RunOptions
 ## Map the run outcome to an exit code
 
 ```csharp
-// The process exits with 0 when every task succeeded, 1 when one did not, and 2 when the run was stopped.
+// The process exits with 0 when every task succeeded, 1 when one did not, and 2 when the run was drained or stopped.
 return result.Outcome.ToExitCode();
 ```
 
 The run outcome says how the run ended: complete, incomplete or stopped. Dagline never sets your exit code: <xref:Dagline.RunOutcomeExtensions.ToExitCode*> is a default mapping that a script calling your app can rely on, and you are free to choose your own.
 
-## Watch, stop and continue
+## Watch, drain, stop and continue
 
 Run the app with `dotnet run`. The display takes the whole terminal and redraws four times a second. About five seconds in, while `store` is halfway, it shows:
 
@@ -134,7 +143,7 @@ Dagline  basic sample  journal 20261111T041200Z-a3f9c2 · run 1           50%  e
 
 The header names the journal and the run of it, how much of the run has settled and how long it has taken, then a bar and a count per status. Below it, one row per group with a cell per task, and the tasks that are working now with their progress. [The terminal display](terminal-ui.md) explains every pane.
 
-Now press Ctrl+C while `store` is running. A banner under the header says the run is stopping. `store` ends at once, because its delay was passed the token, and the display gives way to the summary on the ordinary screen, where it stays in your scrollback:
+Now press Ctrl+C while `store` is running. A banner under the header says the run is draining: nothing new would start, and `store` carries on. Press Ctrl+C again before it finishes. The banner now says the run is stopping. `store` ends at once, because its delay was passed the token, and the display gives way to the summary on the ordinary screen, where it stays in your scrollback:
 
 ```text
 ────────────────────────────────────────────────────────────────────────────────────────

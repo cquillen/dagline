@@ -114,7 +114,7 @@ public class ContinueTests
     {
         using var temporary = new TemporaryDirectory();
         var stopNow = false;
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var ran = new ConcurrentQueue<string>();
         var builder = new GraphBuilder();
         var check = builder.Task("check", context =>
@@ -132,7 +132,7 @@ public class ContinueTests
             ran.Enqueue("wait");
             if (!stopNow)
             {
-                stop.Request();
+                await stop.CancelAsync();
                 await Task.Delay(Timeout.InfiniteTimeSpan, context.CancellationToken);
             }
         });
@@ -143,7 +143,7 @@ public class ContinueTests
         }).After(wait).After(check);
         var graph = builder.Build();
 
-        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, stop);
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, cancellationToken: stop.Token);
         first.Snapshot.Nodes.Select(node => node.Status)
             .ShouldBe([NodeStatus.Failed, NodeStatus.Blocked, NodeStatus.Cancelled, NodeStatus.Ready]);
         stopNow = true;

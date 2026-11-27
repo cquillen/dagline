@@ -7,7 +7,7 @@ public class StopTests
     private const int _repeats = 50;
 
     [Test]
-    public async Task A_signal_requested_before_the_run_starts_starts_nothing_and_the_run_is_stopped()
+    public async Task A_token_cancelled_before_the_run_starts_starts_nothing_and_the_run_is_stopped()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -15,11 +15,11 @@ public class StopTests
             var load = builder.Task("load", _ => Task.CompletedTask);
             var verify = builder.Task("verify", _ => Task.CompletedTask);
             var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(load);
-            var stop = new StopSignal();
-            stop.Request();
+            using var stop = new CancellationTokenSource();
+            await stop.CancelAsync();
             var reporter = new RecordingReporter();
 
-            var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+            var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
             reporter.Lines.ShouldBe(
@@ -37,32 +37,36 @@ public class StopTests
     }
 
     [Test]
-    public async Task A_run_given_a_signal_that_is_never_requested_runs_to_its_end()
+    public async Task A_run_given_a_token_that_is_never_cancelled_runs_to_its_end()
     {
         var builder = new GraphBuilder();
         var load = builder.Task("load", _ => Task.CompletedTask);
         builder.Task("publish", _ => Task.CompletedTask).Requires(load);
         var reporter = new RecordingReporter();
+        using var stop = new CancellationTokenSource();
 
         var result = await Runner.RunAsync(
             builder.Build(),
             new RunOptions { Journal = Journal.None, Reporters = [reporter] },
-            new StopSignal());
+            new DrainSignal(),
+            stop.Token);
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
         reporter.Lines.ShouldNotContain("stop requested");
+        reporter.Lines.ShouldNotContain("drain requested");
         result.Snapshot.Stop.ShouldBeNull();
+        result.Snapshot.Drain.ShouldBeNull();
         result.Snapshot.NeverReached.ShouldBeEmpty();
     }
 
     [Test]
     public async Task An_empty_graph_with_a_stop_is_complete()
     {
-        var stop = new StopSignal();
-        stop.Request();
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
         var reporter = new RecordingReporter();
 
-        var result = await Runner.RunAsync(new GraphBuilder().Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+        var result = await Runner.RunAsync(new GraphBuilder().Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
         reporter.Lines.ShouldBe(["run started", "stop requested", "run ended: complete"]);
@@ -82,13 +86,13 @@ public class StopTests
             var then = builder.Task("then", _ => Task.CompletedTask).Requires(finishTask);
             var needs = builder.Task("needs", _ => Task.CompletedTask).Requires(honourTask);
             var tidy = builder.Task("tidy", _ => Task.CompletedTask).After(honourTask);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 2, Reporters = [reporter] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 2, Reporters = [reporter] }, cancellationToken: stop.Token);
             await honour.Started;
             await finish.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
@@ -125,12 +129,12 @@ public class StopTests
             var builder = new GraphBuilder();
             var ownTokenTask = builder.Task("own-token", ownToken.Body);
             var noTokenTask = builder.Task("no-token", noToken.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, cancellationToken: stop.Token);
             await ownToken.Started;
             await noToken.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
@@ -149,12 +153,12 @@ public class StopTests
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
             var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(loadTask);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
@@ -186,11 +190,11 @@ public class StopTests
             });
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             var failed = result.Snapshot[loadTask.Path];
@@ -216,11 +220,11 @@ public class StopTests
             });
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             var cancelled = result.Snapshot[loadTask.Path];
@@ -247,14 +251,14 @@ public class StopTests
             extract.Task("verify", _ => Task.CompletedTask);
             var publish = builder.Group("publish");
             publish.Task("send", _ => Task.CompletedTask).Requires(loadTask);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, cancellationToken: stop.Token);
             await load.Started;
             await watched.Handled("extract/verify: running -> succeeded");
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             reporter.Lines.ShouldContain("group extract settled: cancelled");
@@ -279,15 +283,15 @@ public class StopTests
             var cancelledAndBlocked = builder.Group("shard-2");
             cancelledAndBlocked.Task("load", secondSlow.Body);
             cancelledAndBlocked.Task("publish", _ => Task.CompletedTask).Requires(check);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, cancellationToken: stop.Token);
             await Task.WhenAll(firstSlow.Started, secondSlow.Started);
             await watched.Handled("shard-2/publish: pending -> blocked");
             await watched.Handled("shard-1/verify: running -> failed");
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             result.Snapshot[failedAndCancelled.Path].Status.ShouldBe(NodeStatus.Failed);
@@ -306,11 +310,11 @@ public class StopTests
             var load = new StoppedBody(_ => { });
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Complete);
@@ -327,12 +331,12 @@ public class StopTests
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
             var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(loadTask);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
 
             var events = reporter.Events;
@@ -348,7 +352,7 @@ public class StopTests
     }
 
     [Test]
-    public async Task A_signal_passed_to_a_second_run_after_the_first_has_ended_stops_that_run_from_its_start()
+    public async Task A_token_passed_to_a_second_run_after_the_first_has_ended_stops_that_run_from_its_start()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -356,15 +360,15 @@ public class StopTests
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
             var graph = builder.Build();
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var first = Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, stop);
+            var first = Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, cancellationToken: stop.Token);
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             (await first).Outcome.ShouldBe(RunOutcome.Stopped);
 
             var reporter = new RecordingReporter();
-            var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+            var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
 
             second.Outcome.ShouldBe(RunOutcome.Stopped);
             reporter.Lines.ShouldBe(["run started", "load: pending -> ready", "stop requested", "run ended: stopped"]);

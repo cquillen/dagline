@@ -26,8 +26,10 @@ namespace Dagline.Testing;
 /// save. The save publishes no event and changes no snapshot.
 /// </para>
 /// <para>
-/// The grace period is unlimited in every run, so the run never lets go of the task: a body that ignores a stop keeps the call
-/// from returning, and the test's own timeout is what fails it.
+/// Each run method takes a <see cref="CancellationToken"/>, passed straight through as the run's token: cancelling it stops the
+/// run, which signals the task's <see cref="TaskContext.CancellationToken"/>, and the call returns the outcome the task ends with.
+/// It never makes the call throw. The grace period is unlimited in every run, so the run never lets go of the task: a body that
+/// ignores a stop keeps the call from returning, and the test's own timeout is what fails it.
 /// </para>
 /// <para>
 /// A harness does one run at a time. It is not safe to call from two threads at once. It works with any test framework and
@@ -82,6 +84,10 @@ public sealed class TaskHarness : IAsyncDisposable
     }
 
     /// <summary>Runs the task to the end of the run and returns its outcome from the run's final snapshot.</summary>
+    /// <param name="cancellationToken">
+    /// The run's token: cancelling it stops the run, and the task ends as its body chooses. A token already cancelled starts no
+    /// run of the body, and the task is returned as it was left: ready, or an earlier success.
+    /// </param>
     /// <returns>
     /// The task's outcome. <see cref="TaskOutcome.Waited"/> is <see langword="true"/> if the task began waiting at least once in
     /// this run. When the task succeeded in an earlier run of this harness, the body is not called and the earlier success's
@@ -100,12 +106,17 @@ public sealed class TaskHarness : IAsyncDisposable
     /// with more fake time passed than its guard. This is thrown in place of the outcome, which would be the unexpected failure
     /// the guard caused, so a check that never returns <see langword="true"/> fails the test with this exception.
     /// </exception>
-    public Task<TaskOutcome> RunAsync() => RunWithAsync(_runClock, stopAtWait: null);
+    public Task<TaskOutcome> RunAsync(CancellationToken cancellationToken = default)
+        => RunWithAsync(_runClock, stopAtWait: null, cancellationToken);
 
     /// <summary>
-    /// Runs the task, requests a stop as soon as it begins waiting, as an operator would, and returns the outcome the run ends
+    /// Runs the task, stops the run as soon as it begins waiting, as an operator would, and returns the outcome the run ends
     /// with. This is how a first run is cut short, so that a later <see cref="RunAsync"/> can test how the task re-attaches.
     /// </summary>
+    /// <param name="cancellationToken">
+    /// The caller's token, to which the harness's own stop is linked: cancelling it stops the run before the task begins waiting,
+    /// as the wait would.
+    /// </param>
     /// <returns>
     /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntilAsync"/> it is
     /// <see cref="NodeStatus.Cancelled"/> with <see cref="TaskOutcome.Waited"/> <see langword="true"/>. A task that handles the
@@ -114,9 +125,9 @@ public sealed class TaskHarness : IAsyncDisposable
     /// </returns>
     /// <remarks>
     /// <para>
-    /// The stop is requested once, through a <see cref="StopSignal"/> of this run's own, when the harness's reporter sees the
-    /// first <see cref="WaitingChanged"/> that begins a wait. The grace period is unlimited, so the run waits for the task to end
-    /// however long it takes.
+    /// The stop is made once, by cancelling a token source of this run's own, linked to <paramref name="cancellationToken"/> and
+    /// passed as the run's token, when the harness's reporter sees the first <see cref="WaitingChanged"/> that begins a wait. The
+    /// grace period is unlimited, so the run waits for the task to end however long it takes.
     /// </para>
     /// <para>
     /// With no clock passed to <see cref="For"/>, the run uses a clock on which no delay ever ends, so the task is still waiting
@@ -135,7 +146,11 @@ public sealed class TaskHarness : IAsyncDisposable
     /// The clock passed to <see cref="For"/> is an <see cref="InstantClock"/>, and the run ended with more fake time passed than
     /// its guard.
     /// </exception>
-    public Task<TaskOutcome> RunUntilWaitingThenStopAsync() => RunWithAsync(_stopClock, stopAtWait: new StopSignal());
+    public async Task<TaskOutcome> RunUntilWaitingThenStopAsync(CancellationToken cancellationToken = default)
+    {
+        using var stopAtWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        return await RunWithAsync(_stopClock, stopAtWait, stopAtWait.Token).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Deletes the harness's temporary directory and its journal, if a run created them. Disposing twice is harmless, and a run
@@ -154,7 +169,7 @@ public sealed class TaskHarness : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    private async Task<TaskOutcome> RunWithAsync(TimeProvider clock, StopSignal? stopAtWait)
+    private async Task<TaskOutcome> RunWithAsync(TimeProvider clock, CancellationTokenSource? stopAtWait, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _directory ??= CreateDirectory();
@@ -171,7 +186,7 @@ public sealed class TaskHarness : IAsyncDisposable
         RunResult result;
         try
         {
-            result = await Runner.RunAsync(_graph, options, stopAtWait).ConfigureAwait(false);
+            result = await Runner.RunAsync(_graph, options, drain: null, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -210,7 +225,7 @@ public sealed class TaskHarness : IAsyncDisposable
 
     private static string CreateDirectory() => Directory.CreateTempSubdirectory("dagline-harness-").FullName;
 
-    private sealed class WaitWatcher(StopSignal? stopAtWait) : IReporter
+    private sealed class WaitWatcher(CancellationTokenSource? stopAtWait) : IReporter
     {
         public bool Waited { get; private set; }
 
@@ -230,9 +245,7 @@ public sealed class TaskHarness : IAsyncDisposable
             if (!Waited)
             {
                 Waited = true;
-
-                // A second request would end the unlimited grace wait and let go of the task.
-                stopAtWait?.Request();
+                stopAtWait?.Cancel();
             }
 
             return ValueTask.CompletedTask;

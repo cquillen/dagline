@@ -132,7 +132,7 @@ public class SetAsideTests
     {
         using var temporary = new TemporaryDirectory();
         var fail = true;
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var succeedsOnceStopped = new StoppedBody(onStop: _ => { });
         var summaries = 0;
         var builder = new GraphBuilder();
@@ -143,7 +143,7 @@ public class SetAsideTests
                 throw context.Fail("bad data");
             }
 
-            stop.Request();
+            stop.Cancel();
             return succeedsOnceStopped.Body(context);
         });
         var summary = builder.Task("summary", _ =>
@@ -156,7 +156,7 @@ public class SetAsideTests
         var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
         var id = first.Snapshot.Journal!.Id;
         fail = false;
-        var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) }, stop);
+        var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) }, cancellationToken: stop.Token);
         var third = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) });
 
         second.Outcome.ShouldBe(RunOutcome.Stopped);

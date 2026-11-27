@@ -7,15 +7,16 @@ public class ReporterStopTests
     private const int _repeats = 50;
 
     [Test]
-    public async Task With_no_stop_request_the_run_waits_for_a_slow_reporter_and_never_cancels_its_token()
+    public async Task With_no_cancellation_the_run_waits_for_a_slow_reporter_and_never_cancels_its_token()
     {
         var builder = new GraphBuilder();
         var prepare = builder.Task("prepare", _ => Task.CompletedTask);
         builder.Task("publish", _ => Task.CompletedTask).Requires(prepare);
         var slow = new HeldReporter("run started");
         var watching = new RecordingReporter();
+        using var stop = new CancellationTokenSource();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [slow, watching] }, new StopSignal());
+        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [slow, watching] }, cancellationToken: stop.Token);
         await slow.Held;
         await watching.Ended;
         var returnedWhileHeld = run.IsCompleted;
@@ -30,7 +31,7 @@ public class ReporterStopTests
     }
 
     [Test]
-    public async Task A_first_request_during_the_wait_for_reporters_drops_the_busy_reporter_and_the_run_returns()
+    public async Task A_token_cancelled_during_the_wait_for_reporters_drops_the_busy_reporter_and_the_run_returns()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -39,12 +40,12 @@ public class ReporterStopTests
             builder.Task("publish", _ => Task.CompletedTask).Requires(prepare);
             var stuck = new HeldReporter("prepare: ready -> running");
             var watching = new RecordingReporter();
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck, watching] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck, watching] }, cancellationToken: stop.Token);
             await stuck.Held;
             await watching.Ended;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
             var heldToken = stuck.Tokens[^1];
             stuck.Release();
@@ -63,7 +64,7 @@ public class ReporterStopTests
     }
 
     [Test]
-    public async Task A_later_request_during_the_wait_for_reporters_ends_it_once_the_run_has_been_stopped()
+    public async Task A_token_cancelled_before_every_task_has_ended_is_a_stop_and_drops_no_reporter()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -72,31 +73,27 @@ public class ReporterStopTests
             builder.Task("load", load.Body);
             var stuck = new HeldReporter("run started");
             var watching = new RecordingReporter();
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck, watching] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck, watching] }, cancellationToken: stop.Token);
             await stuck.Held;
             await load.Started;
-            stop.Request();
+            await stop.CancelAsync();
             await watching.Ended;
-            stop.Request();
-            var result = await run;
-            var heldToken = stuck.Tokens[^1];
+            var returnedWhileHeld = run.IsCompleted;
             stuck.Release();
-            await stuck.Returned;
+            var result = await run;
 
+            returnedWhileHeld.ShouldBeFalse();
             result.Outcome.ShouldBe(RunOutcome.Stopped);
-            var error = result.ReporterErrors.ShouldHaveSingleItem();
-            error.Reporter.ShouldBeSameAs(stuck);
-            error.Event.ShouldBeSameAs(watching.Events[0]);
-            error.Exception.ShouldBeAssignableTo<OperationCanceledException>();
-            heldToken.IsCancellationRequested.ShouldBeTrue();
-            stuck.Lines.ShouldBe(["run started"]);
+            result.ReporterErrors.ShouldBeEmpty();
+            stuck.Lines.ShouldBe(watching.Lines);
+            stuck.Tokens.ShouldAllBe(token => !token.IsCancellationRequested);
         }
     }
 
     [Test]
-    public async Task A_reporter_that_had_handled_every_event_is_not_affected_by_the_request()
+    public async Task A_reporter_that_had_handled_every_event_is_not_affected_by_the_cancellation()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -104,12 +101,12 @@ public class ReporterStopTests
             builder.Task("prepare", _ => Task.CompletedTask);
             var stuck = new HeldReporter("run ended: complete");
             var done = new WatchedReporter(new RecordingReporter());
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [done, stuck] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [done, stuck] }, cancellationToken: stop.Token);
             await stuck.Held;
             await done.Handled("run ended: complete");
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run;
             stuck.Release();
             await stuck.Returned;
@@ -120,7 +117,7 @@ public class ReporterStopTests
     }
 
     [Test]
-    public async Task The_request_never_cancels_the_token_of_a_reporter_that_had_handled_every_event()
+    public async Task The_cancellation_never_cancels_the_token_of_a_reporter_that_had_handled_every_event()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -129,12 +126,12 @@ public class ReporterStopTests
             var stuck = new HeldReporter("run ended: complete");
             var finished = new HeldReporter(holdsOn: "no event has this line");
             var done = new WatchedReporter(finished);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [done, stuck] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [done, stuck] }, cancellationToken: stop.Token);
             await stuck.Held;
             await done.Handled("run ended: complete");
-            stop.Request();
+            await stop.CancelAsync();
             await run;
             stuck.Release();
             await stuck.Returned;
@@ -145,7 +142,7 @@ public class ReporterStopTests
     }
 
     [Test]
-    public async Task A_request_ends_the_wait_for_a_reporter_that_blocks_its_thread_inside_a_call()
+    public async Task A_cancellation_ends_the_wait_for_a_reporter_that_blocks_its_thread_inside_a_call()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -153,12 +150,12 @@ public class ReporterStopTests
             builder.Task("prepare", _ => Task.CompletedTask);
             using var blocking = new BlockingReporter("prepare: ready -> running");
             var watching = new RecordingReporter();
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [blocking, watching] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [blocking, watching] }, cancellationToken: stop.Token);
             await blocking.Blocked;
             await watching.Ended;
-            stop.Request();
+            await stop.CancelAsync();
             var result = await run.WaitAsync(TimeSpan.FromSeconds(30));
             var blockedToken = blocking.Tokens[^1];
             blocking.Release();
@@ -174,7 +171,7 @@ public class ReporterStopTests
     }
 
     [Test]
-    public async Task A_request_made_as_the_run_ends_is_heard_by_the_run_or_ends_the_wait_for_reporters()
+    public async Task A_token_cancelled_as_the_run_ends_is_a_stop_or_ends_the_wait_for_reporters()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -182,30 +179,38 @@ public class ReporterStopTests
             var builder = new GraphBuilder();
             builder.Task("prepare", prepare.Body);
             var stuck = new HeldReporter("run ended: complete");
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck] }, stop);
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck] }, cancellationToken: stop.Token);
             await prepare.Started;
-            var request = Task.Run(stop.Request);
+            var cancel = Task.Run(stop.Cancel);
             prepare.Release();
-            await request;
+            await cancel;
             await Task.WhenAny(run, stuck.Held);
-            if (stuck.Held.IsCompleted && stuck.Lines.Contains("stop requested"))
+            var applied = stuck.Held.IsCompleted && stuck.Lines.Contains("stop requested");
+            if (applied)
             {
-                // The run applied the request, so it was not one made during the wait for reporters: make one that is.
-                stop.Request();
+                // The run applied the stop, so nothing drops the reporter: the run waits for it.
+                stuck.Release();
             }
 
             var result = await run;
             stuck.Release();
             if (stuck.Held.IsCompleted)
             {
-                // The request can drop the reporter before it is handed the event it holds on, and then it holds nothing.
+                // The cancellation can drop the reporter before it is handed the event it holds on, and then it holds nothing.
                 await stuck.Returned;
             }
 
             result.Outcome.ShouldBe(RunOutcome.Complete);
-            result.ReporterErrors.ShouldHaveSingleItem().Reporter.ShouldBeSameAs(stuck);
+            if (applied)
+            {
+                result.ReporterErrors.ShouldBeEmpty();
+            }
+            else
+            {
+                result.ReporterErrors.ShouldHaveSingleItem().Reporter.ShouldBeSameAs(stuck);
+            }
         }
     }
 

@@ -6,18 +6,24 @@ public static class Runner
     /// <summary>Runs every task of <paramref name="graph"/> in dependency order and returns once the run has ended.</summary>
     /// <param name="graph">The graph to run. It is not changed, and can be run again.</param>
     /// <param name="options">The choices for this run.</param>
-    /// <param name="stop">
-    /// The signal through which the app asks this run to stop, or <see langword="null"/> for a run that cannot be stopped.
-    /// A signal already requested stops the run from its start, and requests made after the run has ended are ignored.
+    /// <param name="drain">
+    /// The signal through which the app asks this run to drain, or <see langword="null"/> for a run that cannot be drained.
+    /// A signal already requested drains the run from its start, and a request made after the run has ended is ignored.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// The token whose cancellation stops this run. A token already cancelled stops the run from its start. Its cancellation never
+    /// makes this method or the returned task throw: the run ends and returns its result as usual.
     /// </param>
     /// <returns>
     /// A task that completes when no task is running and none is ready, and every reporter that was not dropped
-    /// has handled every event. That wait has no time bound, but any request on <paramref name="stop"/> made during it,
-    /// the first or a later one, ends it: each reporter still busy is dropped, the token passed to its
+    /// has handled every event. That wait has no time bound. When the run ended without applying a stop, cancelling
+    /// <paramref name="cancellationToken"/> during it ends it: each reporter still busy is dropped, the token passed to its
     /// <see cref="IReporter.OnEventAsync"/> is cancelled, its remaining events are discarded, and the task completes
-    /// without waiting for its call to come back. Such a request does not change the run outcome.
+    /// without waiting for its call to come back. That cancellation does not change the run outcome. A token cancelled before every
+    /// task had ended is applied as a stop instead, and drops no reporter, and once a stop has been applied nothing drops a reporter
+    /// that hangs. A drain never drops a reporter.
     /// A reporter's exception never faults the task either: the reporter is dropped and its error is on
-    /// <see cref="RunResult.ReporterErrors"/>. A reporter dropped by a stop has an <see cref="OperationCanceledException"/> there.
+    /// <see cref="RunResult.ReporterErrors"/>. A reporter dropped by the token has an <see cref="OperationCanceledException"/> there.
     /// </returns>
     /// <remarks>
     /// <para>
@@ -48,20 +54,36 @@ public static class Runner
     /// The run outcome is then <see cref="RunOutcome.Incomplete"/>.
     /// </para>
     /// <para>
-    /// A run is stopped through <paramref name="stop"/>, not through a <see cref="CancellationToken"/>. Once the first request
-    /// on it has been applied, which publishes <see cref="StopRequested"/>, nothing starts, <em>after</em> tasks included,
-    /// and <see cref="TaskContext.CancellationToken"/> is signalled on every running task. The run then waits for its running tasks
-    /// to end, for at most <see cref="RunOptions.GracePeriod"/> on the run's clock, and a second request on <paramref name="stop"/>
-    /// ends the wait at once. When the wait ends with tasks still running, <see cref="GraceEnded"/> is published, each of them
-    /// is recorded as cancelled in declaration order, and the run lets go of it: this method returns while its body may still be
-    /// running, and nothing the body does afterwards changes the run. While it waits a task that succeeds still makes its dependents ready, where they stay,
-    /// and a task that fails still blocks its dependents. <see cref="TaskContext.CancellationToken"/> says how a task ends
-    /// once a stop has been requested. Tasks the run never reached keep their status, pending or ready, and are listed in
-    /// <see cref="Snapshot.NeverReached"/>.
+    /// An app ends a run early in one of two ways. A <em>drain</em> is a request on <paramref name="drain"/>. Once the run has
+    /// applied it, which publishes <see cref="DrainRequested"/>, nothing starts, <em>after</em> tasks included, and the running
+    /// tasks finish as they would: their <see cref="TaskContext.CancellationToken"/> is not signalled and no time limit is set.
+    /// Requesting it again, or once a stop has been applied, changes nothing.
     /// </para>
     /// <para>
-    /// The run outcome is <see cref="RunOutcome.Stopped"/> when a stop was applied and a task has not succeeded,
-    /// and <see cref="RunOutcome.Complete"/> when every task succeeded, stop or no stop.
+    /// A <em>stop</em> is the cancellation of <paramref name="cancellationToken"/>. Once the run has applied it, which publishes
+    /// <see cref="StopRequested"/>, nothing starts, <em>after</em> tasks included, and <see cref="TaskContext.CancellationToken"/>
+    /// is signalled on every running task. A stop can follow a drain, and is published after it. The run then waits for its running
+    /// tasks to end, for at most <see cref="RunOptions.GracePeriod"/> on the run's clock, and only the grace period running out ends
+    /// the wait. When it runs out with tasks still running, <see cref="GraceEnded"/> is published, each of them is recorded as
+    /// cancelled in declaration order, and the run lets go of it: this method returns while its body may still be running, and
+    /// nothing the body does afterwards changes the run. The run hears the token on the thread pool, never on the thread that
+    /// cancels it, and the token a task sees is the run's own, signalled in the step that applies the stop, so a task never sees
+    /// a stop before its <see cref="StopRequested"/>.
+    /// </para>
+    /// <para>
+    /// While the run waits after a drain or a stop, a task that succeeds still makes its dependents ready, where they stay,
+    /// and a task that fails still blocks its dependents. Tasks the run never reached keep their status, pending or ready, and are
+    /// listed in <see cref="Snapshot.NeverReached"/>. A cancellation exception that escapes a task makes it cancelled only after a
+    /// stop: during a drain it is a failure.
+    /// </para>
+    /// <para>
+    /// A drain already requested, or a token already cancelled, at the call starts no task, and the run outcome is
+    /// <see cref="RunOutcome.Stopped"/>, unless the graph has no task. Both are read after the options and the journal have been
+    /// checked, so those checks still throw first. When both are already made, <see cref="DrainRequested"/> comes first.
+    /// </para>
+    /// <para>
+    /// The run outcome is <see cref="RunOutcome.Stopped"/> when a drain or a stop was applied and a task has not succeeded,
+    /// and <see cref="RunOutcome.Complete"/> when every task succeeded, drain, stop or neither.
     /// </para>
     /// <para>
     /// A run on a journal opens it at the call, before the run exists: a new journal is created with its first line flushed to the disk,
@@ -74,8 +96,9 @@ public static class Runner
     /// <para>
     /// When a journal write fails during the run, for instance because the disk is full or the file is gone, Dagline stops the run
     /// itself: <see cref="StopRequested"/> is published with <see cref="StopRequester.Dagline"/>, unless a stop was already in progress,
-    /// nothing new starts, the running tasks are signalled and the run waits the grace period, which any request on
-    /// <paramref name="stop"/> ends. A task that the failing step had already started still starts, and the stop signals it at once.
+    /// nothing new starts, the running tasks are signalled and the run waits the grace period, which neither a drain nor the
+    /// cancellation of <paramref name="cancellationToken"/> shortens. A task that the failing step had already started still starts,
+    /// and the stop signals it at once.
     /// No further write is attempted, though events still describe what happens. <see cref="RunEnded"/> carries a
     /// <see cref="JournalWriteException"/> and no run outcome, and this method throws it once reporters have handled every event.
     /// </para>
@@ -86,7 +109,7 @@ public static class Runner
     /// </para>
     /// <para>
     /// Dagline never writes to the console, and hooks no console or process signal unless the app calls <see cref="ConsoleStop.Hook"/>:
-    /// the app decides what requests a stop.
+    /// the app decides what requests a drain and what cancels the token.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
@@ -114,7 +137,11 @@ public static class Runner
     /// reporters have handled every event, with the final snapshot in <see cref="JournalWriteException.Snapshot"/> and the cause as its
     /// inner exception. <see cref="RunResult.ReporterErrors"/> is not available.
     /// </exception>
-    public static Task<RunResult> RunAsync(Graph graph, RunOptions options, StopSignal? stop = null)
+    public static Task<RunResult> RunAsync(
+        Graph graph,
+        RunOptions options,
+        DrainSignal? drain = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(options);
@@ -125,19 +152,20 @@ public static class Runner
         var settings = RunSettings.From(graph, options);
         var journal = options.Journal.Open(settings.TimeProvider);
 
-        return RunToEndAsync(graph, settings, journal, reporters, stop);
+        return RunToEndAsync(graph, settings, journal, reporters, drain, cancellationToken);
     }
 
-    // No token, by design: a run is stopped through its StopSignal, not a CancellationToken, so there is none to pass on.
+    // The token is the run's own input, which stops it: the awaits here wait for the run to end however it ends, so none takes it.
     private static async Task<RunResult> RunToEndAsync(
         Graph graph,
         RunSettings settings,
         JournalFile? journal,
         IReporter[] reporters,
-        StopSignal? stop)
+        DrainSignal? drain,
+        CancellationToken cancellationToken)
     {
-        var delivery = new ReporterDelivery(reporters, stop);
-        var run = new Run(graph, settings, delivery, stop, journal);
+        var delivery = new ReporterDelivery(reporters);
+        var run = new Run(graph, settings, delivery, drain, journal, cancellationToken);
 
         run.Start();
         await ((Task)run.Ended).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);

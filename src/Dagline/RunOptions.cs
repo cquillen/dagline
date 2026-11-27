@@ -72,14 +72,16 @@ public sealed record RunOptions
     /// <remarks>
     /// <para>
     /// The wait is measured on <see cref="TimeProvider"/> from the moment the stop is applied, and
-    /// <see cref="Snapshot.Stop"/> carries its deadline. It ends early when the last running task ends, and at once on a second
-    /// request on the <see cref="StopSignal"/>. When it ends with tasks still running, the run publishes <see cref="GraceEnded"/>,
+    /// <see cref="Snapshot.Stop"/> carries its deadline. It ends early when the last running task ends, and nothing else shortens
+    /// it: not a drain, and not the app's token cancelled after a stop that Dagline asked for. When it runs out with tasks still
+    /// running, the run publishes <see cref="GraceEnded"/>,
     /// records each of those tasks as <see cref="NodeStatus.Cancelled"/> in declaration order and lets go of it: the run returns
     /// while its body may still be running.
     /// </para>
     /// <para>
     /// <see cref="TimeSpan.Zero"/> lets go of the running tasks at once, in the step that applies the stop.
-    /// <see cref="Timeout.InfiniteTimeSpan"/> waits until the running tasks have ended, or until a second request.
+    /// <see cref="Timeout.InfiniteTimeSpan"/> waits until the running tasks have ended, however long they take. A drain has no
+    /// grace period: it waits for the running tasks however long they take, whatever this is.
     /// A limited grace period is at most <see cref="uint.MaxValue"/> - 1 milliseconds, about 49.7 days: the longest timer
     /// a <see cref="System.TimeProvider"/> can create. Any other value below zero, and any value above that limit, is refused by
     /// <see cref="Runner.RunAsync"/> with <see cref="RunConfigurationException"/> before the run exists.

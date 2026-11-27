@@ -9,18 +9,18 @@ public class StopBannerTests
     {
         var a = new PausedBody();
         var b = new PausedBody();
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var builder = new GraphBuilder();
         builder.Task("a", a.Body);
         builder.Task("b", b.Body);
         builder.Task("c", _ => Task.CompletedTask);
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, stop: stop);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, stop: stop.Token);
         await a.Started;
         await b.Started;
         await display.Handled("c: running -> succeeded");
         var before = display.NextFrame();
-        stop.Request();
+        await stop.CancelAsync();
         await display.Handled("stop requested");
         var stopped = display.NextFrame();
         display.Clock.Advance(TimeSpan.FromSeconds(4) - (DisplayRun.RedrawInterval * 2));
@@ -35,7 +35,7 @@ public class StopBannerTests
             Pinned("Dagline  no journal", "33%  elapsed 0s", 100),
             new string('━', 100),
             Pinned("✓ 1  ● 2", "cap 2/16", 100),
-            " STOPPING  waiting for 2 running tasks to end · 29s left · Ctrl+C again to stop waiting",
+            " STOPPING  waiting for 2 running tasks to end · 29s left",
             "── Groups " + new string('─', 90),
             "● a 0/1",
             "● b 0/1",
@@ -44,49 +44,85 @@ public class StopBannerTests
             Pinned("● a", "0s", 100),
             Pinned("● b", "0s", 100),
         ]);
-        later[3].ShouldBe(" STOPPING  waiting for 2 running tasks to end · 26s left · Ctrl+C again to stop waiting");
+        later[3].ShouldBe(" STOPPING  waiting for 2 running tasks to end · 26s left");
+    }
+
+    [Test]
+    public async Task After_a_drain_a_banner_says_the_running_tasks_are_finishing_and_a_stop_after_it_replaces_it()
+    {
+        var a = new PausedBody();
+        var b = new PausedBody();
+        var drain = new DrainSignal();
+        using var stop = new CancellationTokenSource();
+        var builder = new GraphBuilder();
+        builder.Task("a", a.Body);
+        builder.Task("b", b.Body);
+        builder.Task("c", _ => Task.CompletedTask);
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, drain: drain, stop: stop.Token);
+        await a.Started;
+        await b.Started;
+        await display.Handled("c: running -> succeeded");
+        var before = display.NextFrame();
+        drain.Request();
+        await display.Handled("drain requested");
+        var draining = display.NextFrame();
+        a.Release();
+        await display.Handled("a: running -> succeeded");
+        var oneLeft = display.NextFrame();
+        await stop.CancelAsync();
+        await display.Handled("stop requested");
+        var stopping = display.NextFrame();
+        b.Release();
+        await display.Run;
+
+        before.ShouldNotContain(line => line.Contains("DRAINING", StringComparison.Ordinal));
+        draining[3].ShouldBe(" DRAINING  letting 2 running tasks finish · Ctrl+C again to stop");
+        oneLeft[3].ShouldBe(" DRAINING  letting 1 running task finish · Ctrl+C again to stop");
+        stopping[3].ShouldStartWith(" STOPPING  waiting for 1 running task to end · ");
+        stopping.ShouldNotContain(line => line.Contains("DRAINING", StringComparison.Ordinal));
     }
 
     [Test]
     public async Task An_unlimited_grace_period_has_no_time_left_and_one_running_task_is_counted_as_one()
     {
         var a = new PausedBody();
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var builder = new GraphBuilder();
         builder.Task("a", a.Body);
         var options = new RunOptions { Journal = Journal.None, GracePeriod = Timeout.InfiniteTimeSpan };
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, options, stop);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, options, stop: stop.Token);
         await a.Started;
-        stop.Request();
+        await stop.CancelAsync();
         await display.Handled("stop requested");
         display.Clock.Advance(TimeSpan.FromMinutes(1));
         var frame = display.NextFrame();
         a.Release();
         await display.Run;
 
-        frame[3].ShouldBe(" STOPPING  waiting for 1 running task to end · Ctrl+C again to stop waiting");
+        frame[3].ShouldBe(" STOPPING  waiting for 1 running task to end");
     }
 
     [Test]
-    public async Task On_a_narrow_terminal_the_banner_cuts_what_the_run_is_waiting_for_and_keeps_what_Ctrl_C_does()
+    public async Task On_a_narrow_terminal_the_drain_banner_cuts_what_the_run_is_waiting_for_and_keeps_what_Ctrl_C_does()
     {
         var a = new PausedBody();
-        var stop = new StopSignal();
+        var drain = new DrainSignal();
         var builder = new GraphBuilder();
         builder.Task("a", a.Body);
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15, stop: stop);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15, drain: drain);
         await a.Started;
-        stop.Request();
-        await display.Handled("stop requested");
+        drain.Request();
+        await display.Handled("drain requested");
         var frame = display.NextFrame();
         var overflowed = display.Screen.Overflowed;
         a.Release();
         await display.Run;
 
         overflowed.ShouldBeFalse();
-        frame[3].ShouldBe(" STOPPING  waiting for 1 run… · Ctrl+C again to stop waiting");
+        frame[3].ShouldBe(" DRAINING  letting 1 running task fi… · Ctrl+C again to stop");
     }
 
     /// <summary><paramref name="left"/> at the start of a line <paramref name="width"/> cells wide and <paramref name="right"/> at its end.</summary>

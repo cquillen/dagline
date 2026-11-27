@@ -10,7 +10,7 @@ The examples below use Shouldly for assertions. Any assertion library does the s
 
 ## The harness and its outcome
 
-<xref:Dagline.Testing.TaskHarness.For(Dagline.TaskBody,System.TimeProvider,System.String)> wraps one task body, and <xref:Dagline.Testing.TaskHarness.RunAsync> runs it and returns a <xref:Dagline.Testing.TaskOutcome>:
+<xref:Dagline.Testing.TaskHarness.For(Dagline.TaskBody,System.TimeProvider,System.String)> wraps one task body, and <xref:Dagline.Testing.TaskHarness.RunAsync*> runs it and returns a <xref:Dagline.Testing.TaskOutcome>:
 
 ```csharp
 [Test]
@@ -98,7 +98,7 @@ public async Task The_export_waits_for_the_job_to_finish()
 
 A task that triggers work in an external system should save a checkpoint and, in a later run, re-attach to that work instead of triggering it twice. [Trigger or re-attach](waiting-on-external-systems.md#trigger-or-re-attach) shows the pattern. The harness tests it in a few lines, because every run after the first continues the harness's own journal, and the task gets back the checkpoint it saved.
 
-<xref:Dagline.Testing.TaskHarness.RunUntilWaitingThenStopAsync> ends a first run the way an operator would: it requests a stop as soon as the task begins waiting and returns the outcome the run ends with. Run the harness again, and assert that the fake external system saw one trigger:
+<xref:Dagline.Testing.TaskHarness.RunUntilWaitingThenStopAsync*> ends a first run the way an operator would: it stops the run as soon as the task begins waiting and returns the outcome the run ends with. Run the harness again, and assert that the fake external system saw one trigger:
 
 ```csharp
 [Test]
@@ -153,9 +153,40 @@ outcome.Message.ShouldBe("stopped before the export finished");
 
 A task that settles without ever waiting returns its own outcome from the call, so a test of a fast path does not hang.
 
-With no clock passed, this call runs on a clock on which no delay ever ends, so the task is still waiting when the stop arrives. That clock is internal to the harness. Every delay on it never ends, not only the wait's, so a body that delays on `context.TimeProvider` before it begins waiting never reaches the wait: the stop is never requested and the call does not return. Pass a clock to `For` for such a body. A clock you pass to `For` is used as is here too. With an `InstantClock` passed, the call is a race by nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is the one returned.
+The harness stops the run by cancelling a token source of its own, which it passes as the run's token, when its reporter sees the first wait begin.
+
+With no clock passed, this call runs on a clock on which no delay ever ends, so the task is still waiting when the stop arrives. That clock is internal to the harness. Every delay on it never ends, not only the wait's, so a body that delays on `context.TimeProvider` before it begins waiting never reaches the wait: the stop is never made and the call does not return, unless the token you pass is cancelled. Pass a clock to `For` for such a body. A clock you pass to `For` is used as is here too. With an `InstantClock` passed, the call is a race by nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is the one returned.
 
 Every run of the harness has an unlimited grace period, so the run never lets go of the task. A body that ignores the stop keeps the call from returning, and your test framework's timeout is what fails the test.
+
+## Stopping a run with your token
+
+`RunAsync` and `RunUntilWaitingThenStopAsync` each take a `CancellationToken`, passed straight through as the run's token. Cancelling it stops the run, as an operator would: the task's `context.CancellationToken` is signalled, the call returns the outcome the task ends with, and it never throws because of the cancellation. `RunUntilWaitingThenStopAsync` links its own stop to your token, so either one stops the run. A token already cancelled starts no body: the task comes back ready, or as the earlier success it was.
+
+So a test can stop a task at a moment of its own choosing, or pass its framework's timeout token so that a stuck test ends with the task's outcome:
+
+```csharp
+[Test]
+public async Task A_load_stopped_while_it_runs_comes_back_cancelled()
+{
+    var loading = new TaskCompletionSource();
+    await using var harness = TaskHarness.For(async context =>
+    {
+        loading.TrySetResult();
+        await Task.Delay(Timeout.InfiniteTimeSpan, context.TimeProvider, context.CancellationToken);
+    });
+    using var stop = new CancellationTokenSource();
+
+    var running = harness.RunAsync(stop.Token);
+    await loading.Task;
+    await stop.CancelAsync();
+    var outcome = await running;
+
+    outcome.Status.ShouldBe(NodeStatus.Cancelled);
+}
+```
+
+The grace period is still unlimited: a body that ignores its token still keeps the call from returning.
 
 ## Write a task as a named method or factory
 

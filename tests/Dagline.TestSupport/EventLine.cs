@@ -9,8 +9,8 @@ public static class EventLine
     /// <summary>
     /// <c>run started</c>, <c>prepare: pending -> ready</c>, <c>warning prepare: entity 9 has no region</c>,
     /// <c>waiting job: job 17 to finish</c> (or <c>waiting job</c> with no text), <c>waited job</c>,
-    /// <c>group shard-1 settled: succeeded</c>, <c>stop requested</c>, <c>stopped waiting: second stop</c>,
-    /// <c>stopped waiting: grace period over</c> or <c>run ended: complete</c>.
+    /// <c>group shard-1 settled: succeeded</c>, <c>drain requested</c>, <c>stop requested</c>,
+    /// <c>grace period over</c> or <c>run ended: complete</c>.
     /// A kind of event this does not know is written with its own <c>ToString</c>.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="runEvent"/> is <see langword="null"/>.</exception>
@@ -27,9 +27,9 @@ public static class EventLine
             WaitingChanged { Waiting: true } began => $"waiting {began.Path}: {began.Text}",
             WaitingChanged ended => $"waited {ended.Path}",
             GroupSettled settled => $"group {settled.Path} settled: {Lower(settled.Status)}",
+            DrainRequested => "drain requested",
             StopRequested => "stop requested",
-            GraceEnded { Reason: GraceEndReason.SecondStop } => "stopped waiting: second stop",
-            GraceEnded => "stopped waiting: grace period over",
+            GraceEnded => "grace period over",
             RunEnded { Outcome: { } outcome } => $"run ended: {Lower(outcome)}",
             RunEnded ended => $"run ended: {ended.Error!.GetType().Name}",
             _ => runEvent.ToString(),
