@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `TaskHarness.RunUntilWaitingThenStopAsync` with no clock passed no longer hangs on a task body that delays on its clock before it begins waiting. Its default clock now ends a delay or timer at once while the task is not waiting and never fires one while it is, deciding from the run's live snapshot. It shares the harness's `InstantClock`, so fake time carries to a later `RunAsync`, and a body that delays in a loop and never waits throws `ClockGuardException` instead of hanging.
 - A stop's grace period starts on the run's clock before `StopRequested` is published, not just after. A test that heard the stop and then advanced a fake clock could move the clock before the grace period began, so the grace period ended late.
 
 - `Journals.ListAsync` leaves out a journal whose directory is deleted while the listing runs, as it already left out a journal deleted then, instead of listing it in `Unreadable` with a `JournalAccessException`.

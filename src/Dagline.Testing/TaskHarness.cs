@@ -69,8 +69,9 @@ public sealed class TaskHarness : IAsyncDisposable
     /// The clock every run uses, as <see cref="RunOptions.TimeProvider"/>, and so the one the body sees as
     /// <see cref="TaskContext.TimeProvider"/>. It is used as is. With none, <see cref="RunAsync"/> uses an
     /// <see cref="InstantClock"/> with the default guard, one for the life of the harness, so its guard counts fake time across
-    /// runs, and <see cref="RunUntilWaitingThenStopAsync"/> uses a clock on which no delay ever ends, so a body that delays on
-    /// its clock before it begins waiting never reaches the wait in that call.
+    /// runs. <see cref="RunUntilWaitingThenStopAsync"/> uses a clock built on that same <see cref="InstantClock"/>, so fake time
+    /// and the guard carry across both calls: on it a delay or timer ends at once while the task is not waiting, and never
+    /// fires while it is.
     /// </param>
     /// <param name="checkpoint">
     /// A checkpoint for the task to read back as <see cref="TaskContext.Checkpoint"/> in the first run, as if an earlier run had
@@ -125,7 +126,8 @@ public sealed class TaskHarness : IAsyncDisposable
     /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntilAsync"/> it is
     /// <see cref="NodeStatus.Cancelled"/> with <see cref="TaskOutcome.Waited"/> <see langword="true"/>. A task that handles the
     /// stop itself, by catching the cancellation and reporting, returns the outcome it chose. A task that settles without ever
-    /// waiting returns its own outcome, and the call does not hang.
+    /// waiting returns its own outcome, and the call does not hang. A task that delays on its clock before it begins waiting,
+    /// such as a back-off or a retry loop around a trigger, reaches its wait and is stopped there.
     /// </returns>
     /// <remarks>
     /// <para>
@@ -134,11 +136,26 @@ public sealed class TaskHarness : IAsyncDisposable
     /// grace period is unlimited, so the run waits for the task to end however long it takes.
     /// </para>
     /// <para>
-    /// With no clock passed to <see cref="For"/>, the run uses a clock on which no delay ever ends, so the task is still waiting
-    /// when the stop arrives. That holds for every delay on the clock, not only the wait's: a body that delays on its clock
-    /// before it begins waiting never reaches the wait, so the stop is never requested and the call does not return. Pass a
-    /// clock to <see cref="For"/> for such a body. A clock passed in is used as is. With an <see cref="InstantClock"/> passed in this is a race by
-    /// nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is returned.
+    /// With no clock passed to <see cref="For"/>, the run uses a clock on which delays end at once until the task waits, and
+    /// never while it waits. It decides each delay or timer from the run's live snapshot, <see cref="ISnapshotSource.Current"/>
+    /// on the source <see cref="RunStarted"/> carries, by whether the task's node <see cref="NodeSnapshot.IsWaiting"/>: when
+    /// the task is not waiting, a delay or timer ends at once, as on an <see cref="InstantClock"/>; when it is, it never fires,
+    /// even after the wait ends. The decision is made when the timer is made, again on every <see cref="ITimer.Change"/>, and
+    /// again before each repeat of a periodic timer, so no timer fires while the task is waiting, whenever it was made. A
+    /// task is waiting inside <see cref="TaskContext.WaitUntilAsync"/> and inside a <see cref="TaskContext.BeginWaiting"/>
+    /// scope alike, and is marked so as the scope opens, before the wait makes its first delay, so the wait's own delays never
+    /// end and the task is still waiting when the stop arrives. A delay made after the wait, such as one in cleanup after the
+    /// stop, ends at once again. The harness holds the body until its reporter has received <see cref="RunStarted"/>, so every
+    /// delay the body makes is decided from the live snapshot.
+    /// </para>
+    /// <para>
+    /// The clock's time and guard are those of the <see cref="InstantClock"/> that <see cref="RunAsync"/> uses, one for the
+    /// life of the harness, so fake time carries from this call to a later <see cref="RunAsync"/>, and a body that delays in a
+    /// loop and never waits ends with <see cref="ClockGuardException"/> instead of hanging.
+    /// </para>
+    /// <para>
+    /// A clock passed to <see cref="For"/> is used as is. With an <see cref="InstantClock"/> passed in this is a race by nature:
+    /// the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is returned.
     /// </para>
     /// <para>
     /// Exceptions are as for <see cref="RunAsync"/>: one from the body is the task's unexpected failure, and one from the run
@@ -147,8 +164,8 @@ public sealed class TaskHarness : IAsyncDisposable
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The harness has been disposed.</exception>
     /// <exception cref="ClockGuardException">
-    /// The clock passed to <see cref="For"/> is an <see cref="InstantClock"/>, and the run ended with more fake time passed than
-    /// its guard.
+    /// No clock was passed to <see cref="For"/>, or the clock passed is an <see cref="InstantClock"/>, and the run ended with
+    /// more fake time passed than its guard, as for <see cref="RunAsync"/>.
     /// </exception>
     public async Task<TaskOutcome> RunUntilWaitingThenStopAsync(CancellationToken cancellationToken = default)
     {
