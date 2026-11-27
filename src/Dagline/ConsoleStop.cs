@@ -125,29 +125,16 @@ public sealed class ConsoleStop : IDisposable
         }
     }
 
-    private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs pressed)
-    {
-        if (pressed.SpecialKey == ConsoleSpecialKey.ControlC && TryDrainOrStop())
-        {
-            pressed.Cancel = true;
-        }
-    }
-
-    private void OnTerminate(PosixSignalContext received)
-    {
-        if (TryStop())
-        {
-            received.Cancel = true;
-        }
-    }
+    /// <summary>A console stop hooked to nothing, for the shared test support alone, which applies its presses itself.</summary>
+    internal static ConsoleStop Unhooked() => new();
 
     /// <summary>Applies a Ctrl+C: the first drains, and the second stops.</summary>
-    /// <returns>Whether it is swallowed: whether it drained or stopped, rather than finding the token already cancelled.</returns>
-    private bool TryDrainOrStop()
+    /// <returns>Whether it is swallowed: whether it drained or stopped, rather than finding the hook no longer listening.</returns>
+    internal bool CtrlCPressed()
     {
         lock (_gate)
         {
-            if (_disposed || _stop.IsCancellationRequested)
+            if (!IsListening)
             {
                 return false;
             }
@@ -155,28 +142,51 @@ public sealed class ConsoleStop : IDisposable
             if (++_presses == 1)
             {
                 Drain.Request();
-                return true;
+            }
+            else
+            {
+                CancelTheToken();
             }
 
-            return TryStop();
+            return true;
         }
     }
 
-    /// <summary>Applies a SIGTERM, or a second Ctrl+C: cancels the token.</summary>
-    /// <returns>Whether it is swallowed: whether it stopped, rather than finding the token already cancelled.</returns>
-    private bool TryStop()
+    /// <summary>Applies a SIGTERM: cancels the token, whether or not a drain came first.</summary>
+    /// <returns>Whether it is swallowed: whether it stopped, rather than finding the hook no longer listening.</returns>
+    internal bool SigtermReceived()
     {
         lock (_gate)
         {
-            // Under the gate, so that a press racing Dispose never cancels a source that is disposed.
-            if (_disposed || _stop.IsCancellationRequested)
+            if (!IsListening)
             {
                 return false;
             }
 
-            // Not inline: the callbacks registered on the token run on the thread pool, never on the console's handler thread.
-            _stop.CancelLettingCallbackFaultsGo();
+            CancelTheToken();
             return true;
         }
     }
+
+    // Read under the gate, so that a press racing Dispose never cancels a source that is disposed.
+    private bool IsListening => !_disposed && !_stop.IsCancellationRequested;
+
+    private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs pressed)
+    {
+        if (pressed.SpecialKey == ConsoleSpecialKey.ControlC && CtrlCPressed())
+        {
+            pressed.Cancel = true;
+        }
+    }
+
+    private void OnTerminate(PosixSignalContext received)
+    {
+        if (SigtermReceived())
+        {
+            received.Cancel = true;
+        }
+    }
+
+    // Not inline: the callbacks registered on the token run on the thread pool, never on the console's handler thread.
+    private void CancelTheToken() => _stop.CancelLettingCallbackFaultsGo();
 }
