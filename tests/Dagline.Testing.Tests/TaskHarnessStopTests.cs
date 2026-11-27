@@ -177,20 +177,23 @@ public class TaskHarnessStopTests
     [Test]
     public async Task With_no_clock_passed_fake_time_carries_from_a_run_until_waiting_to_a_later_run()
     {
-        var seen = new ConcurrentQueue<DateTimeOffset>();
-        await using var harness = TaskHarness.For(async context =>
+        for (var repeat = 0; repeat < _repeats; repeat++)
         {
-            await Task.Delay(TimeSpan.FromHours(1), context.TimeProvider, context.CancellationToken);
-            seen.Enqueue(context.TimeProvider.GetUtcNow());
-            await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(seen.Count == 2));
-        });
+            var seen = new ConcurrentQueue<DateTimeOffset>();
+            await using var harness = TaskHarness.For(async context =>
+            {
+                await Task.Delay(TimeSpan.FromHours(1), context.TimeProvider, context.CancellationToken);
+                seen.Enqueue(context.TimeProvider.GetUtcNow());
+                await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(seen.Count == 2));
+            });
 
-        await harness.RunUntilWaitingThenStopAsync();
-        await harness.RunAsync();
+            await harness.RunUntilWaitingThenStopAsync();
+            await harness.RunAsync();
 
-        var times = seen.ToArray();
-        times.Length.ShouldBe(2);
-        times[1].ShouldBeGreaterThan(times[0]);
+            var times = seen.ToArray();
+            times.Length.ShouldBe(2);
+            times[1].ShouldBeGreaterThan(times[0]);
+        }
     }
 
     [Test]
@@ -320,15 +323,18 @@ public class TaskHarnessStopTests
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
             TimeProvider? seen = null;
+            var checks = 0;
             await using var harness = TaskHarness.For(async context =>
             {
                 seen = context.TimeProvider;
-                await context.WaitUntilAsync(TimeSpan.FromMilliseconds(1), _ => Task.FromResult(false));
+                await context.WaitUntilAsync(TimeSpan.FromMilliseconds(1), _ => Task.FromResult(Interlocked.Increment(ref checks) > 1));
             });
 
             var outcome = await harness.RunUntilWaitingThenStopAsync();
 
             outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            outcome.Waited.ShouldBeTrue();
+            checks.ShouldBe(1);
             seen.ShouldNotBeNull();
             seen.ShouldNotBeOfType<InstantClock>();
             seen.GetType().IsVisible.ShouldBeFalse();

@@ -6,8 +6,8 @@ namespace Dagline.Testing;
 /// </summary>
 /// <remarks>
 /// Whether the task is waiting is decided when a timer is made, again on every change, and again before each repeat of a
-/// periodic timer, so no timer fires while the task is waiting, whenever it was made. A timer decided while the task was
-/// waiting never fires, even after the wait ends. Time, its zone and the guard are the shared instant clock's.
+/// periodic timer, so no timer fires while the task is waiting, whenever it was made; only a firing already under way
+/// as the wait begins still runs. A timer decided while the task was waiting never fires, even after the wait ends. Time, its zone and the guard are the shared instant clock's.
 /// </remarks>
 internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isWaiting) : TimeProvider
 {

@@ -161,7 +161,7 @@ With no clock passed, this call runs on a clock internal to the harness on which
 - While the task is waiting, through `WaitUntilAsync` or in a hand-written loop inside a `BeginWaiting` scope, no delay or timer fires, so the task is still waiting when the stop arrives. A delay made while the task waits never ends, even after the wait does.
 - Once the wait has ended, such as in cleanup after the stop, a new delay ends at once again.
 
-The clock decides each delay from the run as it is now, through the live snapshot, not from the events a reporter has been handed, which can lag. It decides when the delay or timer is made, again whenever a timer is changed, and again before each repeat of a periodic timer, so no timer fires while the task is waiting, whenever it was made. A task is marked as waiting as its waiting scope opens, before the wait makes its first delay, so there is no race between the two.
+The clock decides each delay from the run as it is now, through the live snapshot, not from the events a reporter has been handed, which can lag. It decides when the delay or timer is made, again whenever a timer is changed, and again before each repeat of a periodic timer, so no timer fires while the task is waiting, whenever it was made. Only a firing already under way as the wait begins, decided while the task was not waiting, still runs. A task is marked as waiting as its waiting scope opens, before the wait makes its first delay, so there is no race between the two.
 
 The clock shares its time and its guard with the `InstantClock` that `RunAsync` uses for the life of the harness. Fake time carries from this call to a later `RunAsync`, and a body that delays in a loop and never waits ends with `ClockGuardException` instead of hanging.
 

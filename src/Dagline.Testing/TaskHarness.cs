@@ -141,7 +141,8 @@ public sealed class TaskHarness : IAsyncDisposable
     /// on the source <see cref="RunStarted"/> carries, by whether the task's node <see cref="NodeSnapshot.IsWaiting"/>: when
     /// the task is not waiting, a delay or timer ends at once, as on an <see cref="InstantClock"/>; when it is, it never fires,
     /// even after the wait ends. The decision is made when the timer is made, again on every <see cref="ITimer.Change"/>, and
-    /// again before each repeat of a periodic timer, so no timer fires while the task is waiting, whenever it was made. A
+    /// again before each repeat of a periodic timer, so no timer fires while the task is waiting, whenever it was made. Only a
+    /// firing already under way as the wait begins, decided while the task was not waiting, still runs its callback. A
     /// task is waiting inside <see cref="TaskContext.WaitUntilAsync"/> and inside a <see cref="TaskContext.BeginWaiting"/>
     /// scope alike, and is marked so as the scope opens, before the wait makes its first delay, so the wait's own delays never
     /// end and the task is still waiting when the stop arrives. A delay made after the wait, such as one in cleanup after the
