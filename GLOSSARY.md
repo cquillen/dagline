@@ -136,8 +136,12 @@ _Avoid_: Execution, session, job
 Everything a run does in response to one thing happening: a start, a settle, a stop, a report. Its events share one time and come in a fixed order, causes before effects.
 _Avoid_: Tick, cycle, batch
 
+**Drain**:
+A request, usually from the operator, that the run start nothing new and let its running tasks finish as they would. The running tasks are not told, and the run waits for them however long they take.
+_Avoid_: Soft stop, pause, wind down
+
 **Stop**:
-A request, usually from the operator, that the run start nothing new and that its running tasks end. A second stop ends the wait.
+A request, from the operator or from Dagline itself, that the run start nothing new and that its running tasks end now. The running tasks are told, and the run waits for them for the grace period. A stop can follow a drain.
 _Avoid_: Cancel, abort, kill, shut down
 
 **Grace period**:
@@ -145,7 +149,7 @@ How long a run waits after a stop for its running tasks to end.
 _Avoid_: Timeout, drain time
 
 **Grace end**:
-The end of the wait after a stop while tasks are still running, because the grace period ran out or a second stop came. The run lets go of the tasks still running.
+The end of the wait after a stop while tasks are still running, because the grace period ran out. The run lets go of the tasks still running.
 _Avoid_: Stopped waiting, timeout
 
 **Run outcome**:
@@ -157,11 +161,11 @@ The run outcome when every task has succeeded, in this run or as an earlier succ
 _Avoid_: Successful, passed, done
 
 **Incomplete**:
-The run outcome when the operator did not ask the run to stop, it went as far as it could, and at least one task failed or was blocked.
+The run outcome when the run was neither drained nor stopped, it went as far as it could, and at least one task failed or was blocked.
 _Avoid_: Failed, partial
 
 **Stopped**:
-The run outcome when the operator asked the run to stop and at least one task had not succeeded.
+The run outcome when the run was drained or stopped and at least one task had not succeeded.
 _Avoid_: Cancelled, aborted, interrupted
 
 **Progress**:

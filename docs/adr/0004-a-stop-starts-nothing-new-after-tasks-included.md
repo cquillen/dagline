@@ -4,7 +4,9 @@ When a run is asked to stop, nothing new starts from that moment and every runni
 
 The reason is that an operator who asks for a stop wants the process back in seconds, and an *after* task is a full task that may take minutes or wait on an external system. Most of them could not run anyway: tasks a stopped run never reached are not settled, so an *after* dependency on a group with unreached members is never met. Running only those whose upstreams happened to have settled would make cleanup depend on timing. Cleanup that must happen before the process exits belongs in the task's own code. Everything else happens in a later run that continues the journal.
 
-After a stop the run waits a grace period, 30 seconds by default, for its running tasks to end. A second stop ends the wait at once. Dagline cannot kill a task, so a task still running when the wait ends is recorded as cancelled, with a line on its outcome saying it did not end within the grace period, and anything it does or reports afterwards is ignored.
+A drain starts nothing new in the same way, *after* tasks included, though it does not signal the running tasks (see ADR 0014). The second reason holds for it as much as for a stop.
+
+After a stop the run waits a grace period, 30 seconds by default, for its running tasks to end. Only the grace period running out ends the wait (see ADR 0014). Dagline cannot kill a task, so a task still running when the wait ends is recorded as cancelled, with a line on its outcome saying it did not end within the grace period, and anything it does or reports afterwards is ignored.
 
 ## Considered options
 
@@ -18,6 +20,6 @@ After a stop the run waits a grace period, 30 seconds by default, for its runnin
 - A cancellation exception that escapes a task after a stop makes the task cancelled, whichever token caused it. Before a stop it is a failure.
 - A task left behind may still be executing when the run returns. Dagline has let go of it, not ended it.
 - One thing a task left behind does is not ignored: a checkpoint save throws. A save must never look as though it worked when nothing was written (see ADR 0006). A save made during the grace period, before the task is recorded as cancelled, succeeds.
-- The grace period may be zero, to return at once, or unlimited, to wait until the second stop.
-- A stop that arrives before anything has started starts nothing, and the run outcome is stopped.
-- The core hooks no Ctrl+C and no process signal unless the app calls `ConsoleStop.Hook`, which turns Ctrl+C and SIGTERM into stop requests. A stop arrives from outside.
+- The grace period may be zero, to return at once, or unlimited, to wait for every running task however long it takes.
+- A drain or a stop that arrives before anything has started starts nothing, and the run outcome is stopped.
+- The core hooks no Ctrl+C and no process signal unless the app calls `ConsoleStop.Hook`, which turns the first Ctrl+C into a drain and a second Ctrl+C or SIGTERM into a stop. A drain or a stop arrives from outside.
