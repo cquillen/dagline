@@ -43,6 +43,157 @@ public class TaskHarnessStopTests
     }
 
     [Test]
+    public async Task With_no_clock_passed_a_retry_loop_around_the_trigger_reaches_the_wait_and_the_task_is_stopped_at_it()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var attempts = 0;
+            await using var harness = TaskHarness.For(async context =>
+            {
+                while (++attempts < 3)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), context.TimeProvider, context.CancellationToken);
+                }
+
+                await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(false), "the export to finish");
+            });
+
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
+
+            outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            outcome.Waited.ShouldBeTrue();
+            attempts.ShouldBe(3);
+        }
+    }
+
+    [Test]
+    public async Task With_no_clock_passed_a_hand_written_wait_after_a_delay_is_stopped_at_its_wait()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            await using var harness = TaskHarness.For(async context =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), context.TimeProvider, context.CancellationToken);
+                using (context.BeginWaiting("the export to finish"))
+                {
+                    while (true)
+                    {
+                        await Task.Delay(TimeSpan.FromMinutes(1), context.TimeProvider, context.CancellationToken);
+                    }
+                }
+            });
+
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
+
+            outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            outcome.Waited.ShouldBeTrue();
+        }
+    }
+
+    [Test]
+    public async Task With_no_clock_passed_a_delay_in_cleanup_after_the_stop_ends_and_the_task_returns_the_outcome_it_chose()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            await using var harness = TaskHarness.For(async context =>
+            {
+                try
+                {
+                    await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
+                }
+                catch (OperationCanceledException)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(10), context.TimeProvider);
+                    throw context.Fail("stopped before the export finished");
+                }
+            });
+
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
+
+            outcome.Status.ShouldBe(NodeStatus.Failed);
+            outcome.Message.ShouldBe("stopped before the export finished");
+        }
+    }
+
+    [Test]
+    public async Task With_no_clock_passed_a_periodic_timer_made_before_the_wait_does_not_fire_while_the_task_waits()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var firings = 0;
+            var firingsAtWait = 0;
+            var firingsAfterWait = 0;
+            await using var harness = TaskHarness.For(async context =>
+            {
+                var firedThrice = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                await using var timer = context.TimeProvider.CreateTimer(
+                    _ =>
+                    {
+                        if (Interlocked.Increment(ref firings) == 3)
+                        {
+                            firedThrice.TrySetResult();
+                        }
+                    },
+                    null,
+                    TimeSpan.FromMinutes(1),
+                    TimeSpan.FromMinutes(1));
+                await firedThrice.Task;
+                try
+                {
+                    using (context.BeginWaiting())
+                    {
+                        firingsAtWait = Volatile.Read(ref firings);
+                        await Task.Delay(Timeout.InfiniteTimeSpan, context.TimeProvider, context.CancellationToken);
+                    }
+                }
+                finally
+                {
+                    firingsAfterWait = Volatile.Read(ref firings);
+                }
+            });
+
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
+
+            outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            // One firing may already be under way as the wait begins: it was decided before the task was waiting.
+            firingsAfterWait.ShouldBeLessThanOrEqualTo(firingsAtWait + 1);
+        }
+    }
+
+    [Test]
+    public async Task With_no_clock_passed_a_body_that_delays_for_ever_without_waiting_throws_the_clock_guard()
+    {
+        await using var harness = TaskHarness.For(async context =>
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromHours(1), context.TimeProvider, context.CancellationToken);
+            }
+        });
+
+        await Should.ThrowAsync<ClockGuardException>(() => harness.RunUntilWaitingThenStopAsync());
+    }
+
+    [Test]
+    public async Task With_no_clock_passed_fake_time_carries_from_a_run_until_waiting_to_a_later_run()
+    {
+        var seen = new ConcurrentQueue<DateTimeOffset>();
+        await using var harness = TaskHarness.For(async context =>
+        {
+            await Task.Delay(TimeSpan.FromHours(1), context.TimeProvider, context.CancellationToken);
+            seen.Enqueue(context.TimeProvider.GetUtcNow());
+            await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(seen.Count == 2));
+        });
+
+        await harness.RunUntilWaitingThenStopAsync();
+        await harness.RunAsync();
+
+        var times = seen.ToArray();
+        times.Length.ShouldBe(2);
+        times[1].ShouldBeGreaterThan(times[0]);
+    }
+
+    [Test]
     public async Task A_task_that_handles_the_stop_itself_comes_back_with_the_outcome_it_chose()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -164,7 +315,7 @@ public class TaskHarnessStopTests
     }
 
     [Test]
-    public async Task With_no_clock_passed_the_run_is_on_a_clock_that_is_not_public_and_on_which_no_delay_ends()
+    public async Task With_no_clock_passed_the_run_is_on_a_clock_that_is_not_public_and_on_which_no_delay_ends_while_the_task_waits()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
