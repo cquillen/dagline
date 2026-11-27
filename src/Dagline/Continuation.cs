@@ -77,21 +77,12 @@ internal sealed class Continuation
         private readonly Graph _graph;
         private readonly JournalFold _earlier;
         private readonly bool?[] _keeps;
-        private readonly List<int>[] _tasksBeneath;
 
         public KeepRule(Graph graph, JournalFold earlier)
         {
             _graph = graph;
             _earlier = earlier;
             _keeps = new bool?[graph.Nodes.Length];
-            _tasksBeneath = [.. graph.Nodes.Select(_ => new List<int>())];
-            foreach (var task in graph.Tasks)
-            {
-                foreach (var group in task.Groups)
-                {
-                    _tasksBeneath[group].Add(task.Position);
-                }
-            }
         }
 
         public bool Keeps(int position)
@@ -136,7 +127,7 @@ internal sealed class Continuation
         /// record, what it is <em>after</em>. A task with no success on record needs nothing to be decided.
         /// </summary>
         private IEnumerable<int> PrerequisitesOf(int position)
-            => _graph.Nodes[position] is BuiltGroup ? _tasksBeneath[position]
+            => _graph.Nodes[position] is BuiltGroup group ? group.Tasks
                 : CouldKeep(position) ? _graph.TaskAt(position).Upstreams
                     .Where(upstream => upstream.Kind is DependencyKind.After)
                     .Select(upstream => upstream.Position)

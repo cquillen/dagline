@@ -2,7 +2,8 @@ namespace Dagline.Spectre;
 
 /// <summary>
 /// The parts that the working and waiting panes share in a line about one task: the glyph and the path in a column of their
-/// own, the time at the right edge, and the line that says how many tasks a pane left out.
+/// own, the time at the right edge, and the line that says how many tasks a pane left out; and the line beneath a failed task
+/// that the problems pane and the summary share.
 /// </summary>
 internal static class TaskLine
 {
@@ -35,4 +36,7 @@ internal static class TaskLine
 
     /// <summary>The last line of a pane that was cut short, saying what it left out. The problems pane ends with one too.</summary>
     public static StyledLine More(string text) => StyledLine.Of(DisplayText.Between + text, Palette.Dim);
+
+    /// <summary>A task's message, indented, on the line beneath the task.</summary>
+    public static StyledLine Message(string message, Glyphs glyphs) => StyledLine.Of(DisplayText.Indent + glyphs.Text(message));
 }

@@ -10,6 +10,10 @@ internal readonly record struct Mark(string Glyph, Style Style)
 
     /// <summary>The glyph in its style, then a space and <paramref name="path"/> unstyled: the mark styles only its glyph.</summary>
     public StyledLine Before(NodePath path) => Line().Add($" {path}");
+
+    /// <summary>As <see cref="Before(NodePath)"/>, then <paramref name="note"/>, dim, after a gap, when there is one.</summary>
+    public StyledLine Before(NodePath path, string? note, Glyphs glyphs)
+        => Before(path).Add(note is null ? "" : DisplayText.Between + glyphs.Text(note), Palette.Dim);
 }
 
 /// <summary>

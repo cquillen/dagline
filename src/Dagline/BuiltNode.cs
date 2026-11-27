@@ -62,7 +62,7 @@ internal sealed record BuiltTask(
 /// <param name="Limits">The limits named on this group, as a snapshot shows them.</param>
 /// <param name="Dependents">The positions of the tasks that depend on this group, and so on every task beneath it, in declaration order.</param>
 /// <param name="Depth">How many groups hold this one: zero for a group at the root.</param>
-/// <param name="TaskCount">How many tasks are beneath this group, at any depth.</param>
+/// <param name="Tasks">The positions of the tasks beneath this group, at any depth, in declaration order.</param>
 internal sealed record BuiltGroup(
     int Position,
     NodePath Path,
@@ -71,8 +71,12 @@ internal sealed record BuiltGroup(
     IReadOnlyList<string> Limits,
     ImmutableArray<int> Dependents,
     int Depth,
-    int TaskCount)
-    : BuiltNode(Position, Path, Title, Dependencies, Limits, Dependents);
+    ImmutableArray<int> Tasks)
+    : BuiltNode(Position, Path, Title, Dependencies, Limits, Dependents)
+{
+    /// <summary>How many tasks are beneath this group, at any depth.</summary>
+    public int TaskCount => Tasks.Length;
+}
 
 /// <summary>
 /// One node that a task depends on, and what it must have done for the dependency to be met.

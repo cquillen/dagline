@@ -108,28 +108,33 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     public TaskChange Block(NodePath cause, DateTimeOffset now) => SettleWith(TaskOutcome.Blocked(cause), now);
 
     /// <summary>
-    /// Settles a running task, and decides the outcome it records. <see cref="TaskOutcome.LeftBehind"/> wins over everything and
-    /// clears the reported failure. Otherwise a reported failure wins. Otherwise, once the run has stopped, a body that ended by
-    /// a cancellation exception is cancelled. Otherwise the body's own ending is recorded.
+    /// Settles a running task as its body ended: a reported failure wins over <paramref name="ended"/>, and otherwise
+    /// <paramref name="ended"/> is recorded.
     /// </summary>
-    /// <param name="ended">How the body ended, or <see cref="TaskOutcome.LeftBehind"/> when the run lets go of the task.</param>
-    /// <param name="runHasStopped">Whether a stop has been applied to the run.</param>
+    /// <param name="ended">
+    /// How the body ended, as the run takes it: once the run has stopped, the caller passes <see cref="TaskOutcome.OnceStopped"/>.
+    /// </param>
     /// <param name="now">When the task settles.</param>
     /// <returns>
     /// The end of its wait, when it had a waiting scope open, then its change of status. Nothing at all when the task is not running,
     /// as when its body ends after the run has let go of it.
     /// </returns>
-    public IReadOnlyList<TaskChange> Settle(TaskOutcome ended, bool runHasStopped, DateTimeOffset now)
+    public IReadOnlyList<TaskChange> Settle(TaskOutcome ended, DateTimeOffset now)
+        => SettleRunning(_failureReported ? TaskOutcome.ReportedFailure : ended, now);
+
+    /// <summary>
+    /// Settles a running task the run lets go of after a stop as <see cref="TaskOutcome.LeftBehind"/>, over any failure it reported.
+    /// </summary>
+    /// <returns>As <see cref="Settle"/> returns.</returns>
+    public IReadOnlyList<TaskChange> LeaveBehind(DateTimeOffset now) => SettleRunning(TaskOutcome.LeftBehind, now);
+
+    private IReadOnlyList<TaskChange> SettleRunning(TaskOutcome outcome, DateTimeOffset now)
     {
         if (!IsRunning)
         {
             return [];
         }
 
-        var outcome = ended.IsLeftBehind ? ended
-            : _failureReported ? TaskOutcome.ReportedFailure
-            : runHasStopped ? ended.OnceStopped()
-            : ended;
         _failureReported = false;
 
         if (_openWaitingScopes == 0)

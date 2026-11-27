@@ -104,6 +104,7 @@ public sealed class PlainTextReporter : IReporter
     private BlockedStreak? _blocked;
     private ISnapshotSource? _source;
     private ITimer? _idleTimer;
+    private bool _idleTimerArmed;
     private long _lastLine;
     private ExceptionDispatchInfo? _idleLineFailure;
 
@@ -193,6 +194,7 @@ public sealed class PlainTextReporter : IReporter
         _blocked = null;
         _idleLineFailure = null;
         _source = source;
+        _idleTimerArmed = false;
 
         // Not due yet: the first line printed sets it going.
         _idleTimer = _timeProvider.CreateTimer(_ => PrintIdleLine(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
@@ -222,7 +224,13 @@ public sealed class PlainTextReporter : IReporter
         _writer.Flush();
 
         _lastLine = _timeProvider.GetTimestamp();
-        _idleTimer?.Change(_idleAfter, Timeout.InfiniteTimeSpan);
+
+        // Armed once, not at every line: when it fires it measures the quiet time from the last line and waits out the rest.
+        if (!_idleTimerArmed && _idleTimer is not null)
+        {
+            _idleTimer.Change(_idleAfter, Timeout.InfiniteTimeSpan);
+            _idleTimerArmed = true;
+        }
     }
 
     /// <summary>Called by the timer, on a thread of its own, when a minute may have passed since the last line.</summary>
@@ -242,6 +250,9 @@ public sealed class PlainTextReporter : IReporter
                 _idleTimer.Change(_idleAfter - quiet, Timeout.InfiniteTimeSpan);
                 return;
             }
+
+            // It has fired and is due no more, so the line of counts printed next arms it again.
+            _idleTimerArmed = false;
 
             try
             {

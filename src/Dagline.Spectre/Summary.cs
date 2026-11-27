@@ -64,8 +64,7 @@ internal static class Summary
             :
             [
                 Heading("Cancelled", snapshot.Cancelled.Count),
-                .. snapshot.Cancelled.Select(task => StatusMark.For(NodeStatus.Cancelled, glyphs).Before(task.Path)
-                    .Add(task.Message is { } message ? DisplayText.Between + glyphs.Text(message) : "", Palette.Dim)),
+                .. snapshot.Cancelled.Select(task => StatusMark.For(NodeStatus.Cancelled, glyphs).Before(task.Path, task.Message, glyphs)),
             ];
 
     /// <summary>
@@ -173,7 +172,7 @@ internal static class Summary
 
         if (task.Message is { } message)
         {
-            yield return StyledLine.Of(DisplayText.Indent + glyphs.Text(message));
+            yield return TaskLine.Message(message, glyphs);
         }
 
         foreach (var line in Kept(task.Detail, task.DetailOmitted, "line", "lines", glyphs))
