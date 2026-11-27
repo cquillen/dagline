@@ -31,7 +31,16 @@ internal sealed class RunSteps
     private readonly Graph _graph;
     private readonly TimeSpan _gracePeriod;
     private readonly RollUp _rollUp;
+    // The ready tasks to try at the next walk, in declaration order. A ready task a full limit turned away waits in _heldBy under
+    // that limit instead, and is tried again only once a task gives the limit back: until then the limit stays full, so every
+    // walk would turn it away again, and on a large graph with small limits most of a walk was those tasks.
     private readonly SortedSet<int> _ready = [];
+    private readonly List<int>[] _heldBy;
+    private readonly List<int> _givenBack = [];
+
+    // Reused at every settle, so working out what follows from it allocates no collection of its own.
+    private readonly SortedSet<int> _dependents = [];
+    private readonly List<BuiltTask> _becomingReady = [];
     private readonly TaskInstance?[] _instances;
     private readonly Slots _slots;
     // Nothing changes a step once it is decided, so every report that produced no event answers with this one.
@@ -63,6 +72,7 @@ internal sealed class RunSteps
         _graph = graph;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
+        _heldBy = [.. graph.LimitNames.Select(_ => new List<int>())];
         _instances = InstancesAtTheStart(earlier, continuation);
 
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
@@ -87,7 +97,7 @@ internal sealed class RunSteps
         _milestones = _milestones with { Started = now };
         Begin();
         Publish(new RunStarted(now, source));
-        MakeReady(_graph.Tasks, now);
+        MakeReady(_graph.Tasks.Select(task => task.Position), now);
         AnnounceSettledGroups(_rollUp.TakeSettled(), now);
 
         // A second request needs nothing more here: once stopped from its start, the run has no task to stop waiting for.
@@ -127,9 +137,10 @@ internal sealed class RunSteps
     /// and a report on a task that is not running gives no step.
     /// </summary>
     /// <param name="task">The task that reports.</param>
-    /// <param name="report">The operation on the task's instance.</param>
-    public IReadOnlyList<Step> Report(BuiltTask task, Func<TaskInstance, TaskChange?> report)
-        => Reported(task, report(InstanceOf(task)));
+    /// <param name="argument">What the task reports, such as its count, passed on to <paramref name="report"/>.</param>
+    /// <param name="report">The operation on the task's instance, given <paramref name="argument"/>, so that it can be a static lambda.</param>
+    public IReadOnlyList<Step> Report<TArgument>(BuiltTask task, TArgument argument, Func<TaskInstance, TArgument, TaskChange?> report)
+        => Reported(task, report(InstanceOf(task), argument));
 
     /// <summary>
     /// A running task reports something about itself that may be an event, such as a warning or the begin of a wait, through its
@@ -354,6 +365,7 @@ internal sealed class RunSteps
     private void Settle(BuiltTask task, IReadOnlyList<TaskChange> changes)
     {
         _slots.GiveBack(task);
+        _givenBack.AddRange(task.HeldLimits);
         foreach (var change in changes)
         {
             Apply(task, change);
@@ -415,22 +427,39 @@ internal sealed class RunSteps
     private bool IsPending(BuiltTask task) => InstanceOf(task).Status is NodeStatus.Pending;
 
     /// <summary>
-    /// The tasks, in declaration order, that depend on one of the tasks that have just settled or on a group that settled with them.
+    /// The positions of the tasks, in declaration order, that depend on one of the tasks that have just settled or on a group that
+    /// settled with them.
     /// </summary>
-    private IEnumerable<BuiltTask> DependentsOf(IEnumerable<BuiltTask> settled, IReadOnlyList<BuiltGroup> settledGroups)
-        => settled
-            .Concat<BuiltNode>(settledGroups)
-            .SelectMany(node => node.Dependents)
-            .Distinct()
-            .Order()
-            .Select(_graph.TaskAt);
+    private SortedSet<int> DependentsOf(IReadOnlyList<BuiltTask> settled, IReadOnlyList<BuiltGroup> settledGroups)
+    {
+        _dependents.Clear();
+        foreach (var task in settled)
+        {
+            AddDependentsOf(task);
+        }
+
+        foreach (var group in settledGroups)
+        {
+            AddDependentsOf(group);
+        }
+
+        return _dependents;
+
+        void AddDependentsOf(BuiltNode node)
+        {
+            foreach (var dependent in node.Dependents)
+            {
+                _dependents.Add(dependent);
+            }
+        }
+    }
 
     /// <summary>
     /// Applies what follows from one change, causes before effects: the dependents of the <paramref name="settled"/> tasks, and of
     /// the groups the step settled, whose dependencies are now met become ready, the groups that the step settled are announced,
     /// and the ready tasks that fit start.
     /// </summary>
-    private void Advance(IEnumerable<BuiltTask> settled, DateTimeOffset now)
+    private void Advance(IReadOnlyList<BuiltTask> settled, DateTimeOffset now)
     {
         var settledGroups = _rollUp.TakeSettled();
         MakeReady(DependentsOf(settled, settledGroups), now);
@@ -451,14 +480,25 @@ internal sealed class RunSteps
     /// Makes ready each pending task among <paramref name="candidates"/> whose dependencies are all met. Only a pending task is
     /// considered: a dependent may be an earlier success, since nothing checks the graph against the journal.
     /// </summary>
-    private void MakeReady(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
+    private void MakeReady(IEnumerable<int> candidates, DateTimeOffset now)
     {
-        List<BuiltTask> ready = [.. candidates.Where(task => IsPending(task) && DependenciesAreMet(task))];
-        foreach (var task in ready)
+        // Every candidate is judged before any is made ready, as the statuses are before this change.
+        foreach (var position in candidates)
+        {
+            var task = _graph.TaskAt(position);
+            if (IsPending(task) && DependenciesAreMet(task))
+            {
+                _becomingReady.Add(task);
+            }
+        }
+
+        foreach (var task in _becomingReady)
         {
             Apply(task, InstanceOf(task).MakeReady(now));
             _ready.Add(task.Position);
         }
+
+        _becomingReady.Clear();
     }
 
     private bool DependenciesAreMet(BuiltTask task)
@@ -481,9 +521,15 @@ internal sealed class RunSteps
     /// and stays ready, so it never holds up the tasks behind it. The walk ends once the slots answer that the max running tasks is reached,
     /// since every task holds a slot of the max running tasks and none after that point could start.
     /// </summary>
+    /// <remarks>
+    /// A ready task held by a full limit is not tried until a task gives that limit back, which starts the same tasks in the same
+    /// order as trying it each time: no slot of a limit is freed during a walk, so a limit full when the task was turned away is
+    /// still full.
+    /// </remarks>
     private void StartWhatFits(DateTimeOffset now)
     {
-        var started = new List<int>();
+        TryAgainWhatWasHeldByLimitsGivenBack();
+        List<int> tried = [];
         foreach (var position in _ready)
         {
             var task = _graph.TaskAt(position);
@@ -493,17 +539,35 @@ internal sealed class RunSteps
                 break;
             }
 
+            tried.Add(position);
             if (answer is SlotsAnswer.Took)
             {
                 // Moved at once, not after the walk, so the snapshot with each start counts only the slots taken so far.
                 Apply(task, InstanceOf(task).Start(now));
                 _step!.Starts.Add(task);
-                started.Add(position);
+            }
+            else
+            {
+                _heldBy[_slots.FullLimitOf(task)].Add(position);
             }
         }
 
-        // The ready set cannot change while it is walked, so the tasks that started leave it here.
-        started.ForEach(position => _ready.Remove(position));
+        // The ready set cannot change while it is walked, so the tasks tried leave it here: started, or held by a full limit.
+        foreach (var position in tried)
+        {
+            _ready.Remove(position);
+        }
+    }
+
+    private void TryAgainWhatWasHeldByLimitsGivenBack()
+    {
+        foreach (var limit in _givenBack)
+        {
+            _ready.UnionWith(_heldBy[limit]);
+            _heldBy[limit].Clear();
+        }
+
+        _givenBack.Clear();
     }
 
     /// <summary>
@@ -534,8 +598,16 @@ internal sealed class RunSteps
     /// </summary>
     private void Apply(BuiltTask task, TaskChange change)
     {
-        _snapshots.Record(task.Position, change.Task);
-        _rollUp.TaskChanged(task, change);
+        if (change.Task is { } node)
+        {
+            _snapshots.Record(task.Position, node);
+        }
+        else
+        {
+            _snapshots.Record(task.Position, InstanceOf(task));
+        }
+
+        _rollUp.TaskChanged(task, change.Event, InstanceOf(task).WarningCount);
         if (change.Event is { } produced)
         {
             Publish(produced);

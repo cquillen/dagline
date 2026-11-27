@@ -121,26 +121,26 @@ internal sealed class Run : ISnapshotSource
     private void GracePeriodOver() => Give(static (steps, now) => steps.GracePeriodOver(now));
 
     /// <summary>Sets the status text of a task's progress.</summary>
-    public void SetStatusText(BuiltTask task, string? text) => Report(task, instance => instance.SetStatusText(text));
+    public void SetStatusText(BuiltTask task, string? text) => Report(task, text, static (instance, text) => instance.SetStatusText(text));
 
     /// <summary>Sets the count of a task's progress, and the total it counts towards.</summary>
-    public void SetCount(BuiltTask task, long current, long? total) => Report(task, instance => instance.SetCount(current, total));
+    public void SetCount(BuiltTask task, long current, long? total) => Report(task, (current, total), static (instance, count) => instance.SetCount(count.current, count.total));
 
     /// <summary>Adds a warning to a task. A warning that is kept is published.</summary>
     public void Warn(BuiltTask task, string warning)
         => Report(task, warning, static (instance, warning, now) => instance.Warn(warning, now));
 
     /// <summary>Sets the message of a task's outcome.</summary>
-    public void SetMessage(BuiltTask task, string message) => Report(task, instance => instance.SetMessage(message));
+    public void SetMessage(BuiltTask task, string message) => Report(task, message, static (instance, message) => instance.SetMessage(message));
 
     /// <summary>Adds detail lines to a task's outcome.</summary>
-    public void AddDetail(BuiltTask task, IEnumerable<string> texts) => Report(task, instance => instance.AddDetail(texts));
+    public void AddDetail(BuiltTask task, IEnumerable<string> texts) => Report(task, texts, static (instance, texts) => instance.AddDetail(texts));
 
     /// <summary>
     /// Records a reported failure: from then on the task settles failed as a reported failure, however its body ends.
     /// </summary>
     public void Fail(BuiltTask task, string message, IEnumerable<string> detail)
-        => Report(task, instance => instance.Fail(message, detail));
+        => Report(task, (message, detail), static (instance, failure) => instance.Fail(failure.message, failure.detail));
 
     /// <summary>
     /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
@@ -158,14 +158,15 @@ internal sealed class Run : ISnapshotSource
 
     /// <summary>
     /// Gives the steps a report that is never an event, such as progress, and carries out the step it caused, if any.
-    /// It reads no clock, so a task that reports often leaves the run's clock alone.
+    /// It reads no clock, so a task that reports often leaves the run's clock alone. What the task reports is passed on as
+    /// <paramref name="argument"/>, so that <paramref name="report"/> can be a static lambda and a report costs no closure.
     /// </summary>
-    private void Report(BuiltTask task, Func<TaskInstance, TaskChange?> report)
+    private void Report<TArgument>(BuiltTask task, TArgument argument, Func<TaskInstance, TArgument, TaskChange?> report)
     {
         // Not through Give: a task may report progress millions of times, and Give would cost each report a second closure.
         lock (_gate)
         {
-            CarryOut(_steps.Report(task, report));
+            CarryOut(_steps.Report(task, argument, report));
         }
     }
 

@@ -17,6 +17,12 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     private readonly int[] _inUse = new int[sizes.Limits.Length];
     private int _running;
 
+    /// <summary>
+    /// A number that changes each time a slot is taken or given back, so that a tally of the slots in use can be kept while it
+    /// stays the same.
+    /// </summary>
+    public int Version { get; private set; }
+
     /// <summary>How many numbers a tally of the slots in use takes: one for the max running tasks, then one for each limit.</summary>
     public int TallyLength => 1 + _inUse.Length;
 
@@ -74,6 +80,8 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
             _inUse[limit]++;
         }
 
+        Version++;
+
         return SlotsAnswer.Took;
     }
 
@@ -91,6 +99,21 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
         return false;
     }
 
+    /// <summary>The first limit the task holds that is full, which <see cref="Take"/> answered <see cref="SlotsAnswer.LimitFull"/> for.</summary>
+    /// <exception cref="InvalidOperationException">None of the limits the task holds is full.</exception>
+    public int FullLimitOf(BuiltTask task)
+    {
+        foreach (var limit in task.HeldLimits)
+        {
+            if (LimitUse.AreAllHeld(sizes.Limits[limit], _inUse[limit]))
+            {
+                return limit;
+            }
+        }
+
+        throw new InvalidOperationException($"No limit the task '{task.Path}' holds is full.");
+    }
+
     /// <summary>Gives back the slots a task took when it started.</summary>
     public void GiveBack(BuiltTask task)
     {
@@ -99,5 +122,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
         {
             _inUse[limit]--;
         }
+
+        Version++;
     }
 }
