@@ -24,6 +24,6 @@ internal static class CancellationSources
     /// </returns>
     public static CancellationTokenRegistration OnCancelled(this CancellationToken token, Action listener)
         => token.UnsafeRegister(
-            static heard => ThreadPool.UnsafeQueueUserWorkItem(static call => call(), (Action)heard!, preferLocal: false),
+            static heard => OnThePool.Call((Action)heard!),
             listener);
 }

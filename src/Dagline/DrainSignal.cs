@@ -98,8 +98,7 @@ public sealed class DrainSignal
 
     private sealed class Listener(DrainSignal signal, Action listener) : IDisposable
     {
-        // Queued, never called in place, so a listener neither runs on the requester's thread nor throws into it.
-        public void Call() => ThreadPool.UnsafeQueueUserWorkItem(static heard => heard(), listener, preferLocal: false);
+        public void Call() => OnThePool.Call(listener);
 
         public void Dispose() => signal.Remove(this);
     }
