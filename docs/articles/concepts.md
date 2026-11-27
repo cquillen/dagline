@@ -76,19 +76,21 @@ A **run** is one execution of a graph by one process. You start it with one call
 
 How much runs at once is bounded in two ways. The **max running tasks** is the most tasks that may be running at any moment. A **limit** is a named ceiling that the graph puts on some of its tasks, and each run gives it a size.
 
-A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, and **stopped** when the run was asked to stop and at least one task had not succeeded. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
+A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, and **stopped** when the run was drained or stopped and at least one task had not succeeded. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
 
 More in [Running and stopping](running-and-stopping.md). Definitions: [Runs](../../GLOSSARY.md#runs) and [Scheduling](../../GLOSSARY.md#scheduling).
 
-## Stopping a run
+## Ending a run early
 
-A **stop** is a request, usually from the operator, that the run start nothing new and that its running tasks end. Your app decides what asks for one, such as Ctrl+C, and passes the run a stop signal. From the moment a stop is applied nothing starts, and every running task sees its cancellation token signalled.
+A run can be ended early in two ways, and your app decides what asks for each, such as Ctrl+C.
 
-The run then waits a **grace period**, 30 seconds by default, for its running tasks to end cleanly. A second stop ends the wait at once.
+A **drain** is a request, usually from the operator, that the run start nothing new and let its running tasks finish as they would. Your app passes the run a drain signal and requests it. The running tasks are not told, and the run waits for them however long they take.
 
-A task that ends because of the stop, or that is still running when the wait ends, is **cancelled**. Cancelled is a settled status, and it never blocks: a task that requires a cancelled one simply stays pending. A task that finished its work in spite of the stop keeps its real status. Tasks the run never started are never reached: they stay pending or ready, so a later run can see what was left to do.
+A **stop** is a request, from the operator or from Dagline itself, that the run start nothing new and that its running tasks end now. Your app passes the run a cancellation token and cancels it. Every running task sees its own cancellation token signalled, and the run waits a **grace period**, 30 seconds by default, for them to end cleanly. Only the grace period running out ends that wait. A stop can follow a drain.
 
-More in [Stopping a run](running-and-stopping.md#stopping-a-run). Definitions: [Stop](../../GLOSSARY.md#runs), [Grace period](../../GLOSSARY.md#runs) and [Cancelled](../../GLOSSARY.md#status).
+A task that ends because of the stop, or that is still running when the grace period runs out, is **cancelled**. Cancelled is a settled status, and it never blocks: a task that requires a cancelled one simply stays pending. A task that finished its work in spite of the drain or the stop keeps its real status. Tasks the run never started are never reached: they stay pending or ready, so a later run can see what was left to do.
+
+More in [Ending a run early](running-and-stopping.md#ending-a-run-early). Definitions: [Drain](../../GLOSSARY.md#runs), [Stop](../../GLOSSARY.md#runs), [Grace period](../../GLOSSARY.md#runs) and [Cancelled](../../GLOSSARY.md#status).
 
 ## Waiting and working
 
@@ -96,7 +98,7 @@ Some tasks trigger work in an external system and then wait for it to finish. Su
 
 A running task that has told Dagline it is idle until an external system changes is **waiting**. One that is not is **working**. Waiting is never a status: the task is running throughout, keeps its slots, and counts the same towards its group and the run outcome. Only reporters treat it differently, so that a display can show idle tasks apart from working ones and a log can say how long a task waited.
 
-A task waits through a helper that checks the external system at once and then at a fixed interval, and that ends at once on a stop. More in [Waiting on external systems](waiting-on-external-systems.md). Definitions: [Waiting](../../GLOSSARY.md#runs) and [Working](../../GLOSSARY.md#runs).
+A task waits through a helper that checks the external system at once and then at a fixed interval, and that ends at once on a stop, though not on a drain. More in [Waiting on external systems](waiting-on-external-systems.md). Definitions: [Waiting](../../GLOSSARY.md#runs) and [Working](../../GLOSSARY.md#runs).
 
 ## Journals and checkpoints
 
@@ -129,6 +131,6 @@ Dagline ships a reporter that prints a run as timestamped lines of text, and you
 - [Running and stopping](running-and-stopping.md): starting a run, its options, its result and stopping it.
 - [Journals](journals.md): choosing a journal, what a continuing run keeps, and what is promised after a crash.
 - [Running part of the work](running-part-of-the-work.md): subsets, gates and one journal per subset.
-- [The terminal display](terminal-ui.md): what each pane shows, stopping with Ctrl+C, the summary, and when plain text is used instead.
+- [The terminal display](terminal-ui.md): what each pane shows, draining and stopping with Ctrl+C, the summary, and when plain text is used instead.
 - [Reporters](reporters.md): the plain-text reporter, and writing a reporter of your own.
 - [Glossary](../../GLOSSARY.md): the exact definition of every term.

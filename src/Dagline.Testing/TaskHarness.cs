@@ -110,7 +110,7 @@ public sealed class TaskHarness : IAsyncDisposable
         => RunWithAsync(_runClock, stopAtWait: null, cancellationToken);
 
     /// <summary>
-    /// Runs the task, requests a stop as soon as it begins waiting, as an operator would, and returns the outcome the run ends
+    /// Runs the task, stops the run as soon as it begins waiting, as an operator would, and returns the outcome the run ends
     /// with. This is how a first run is cut short, so that a later <see cref="RunAsync"/> can test how the task re-attaches.
     /// </summary>
     /// <param name="cancellationToken">

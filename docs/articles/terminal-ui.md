@@ -12,18 +12,18 @@ Add the package and give the run the reporter that <xref:Dagline.Spectre.Spectre
 using Dagline;
 using Dagline.Spectre;
 
-using var stop = ConsoleStop.Hook();
+using var console = ConsoleStop.Hook();
 
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = Journal.None,
     Reporters = [SpectreReporter.Create()],
-}, stop);
+}, console.Drain, console.Token);
 
 return result.Outcome.ToExitCode();
 ```
 
-There is nothing to configure: the layout is fixed, and the display needs nothing from your app beyond the run. It prints the summary itself, so your app prints nothing at the end of a run. <xref:Dagline.ConsoleStop>, from the core package, turns Ctrl+C and SIGTERM into a stop: see [Stopping](#stopping). [Getting started](getting-started.md) builds a whole app around these lines.
+There is nothing to configure: the layout is fixed, and the display needs nothing from your app beyond the run. It prints the summary itself, so your app prints nothing at the end of a run. <xref:Dagline.ConsoleStop>, from the core package, turns Ctrl+C and SIGTERM into a drain and a stop: see [Draining and stopping](#draining-and-stopping). [Getting started](getting-started.md) builds a whole app around these lines.
 
 Give one reporter to one run at a time.
 
@@ -59,7 +59,7 @@ Dagline  no journal                                                             
 ▲ validate/shard-3/totals  entity 48290 has no owner on record; default applied
 ```
 
-From top to bottom: the header, the stop banner once a stop has been asked for, the groups, then the working, waiting and problems panes. A pane with nothing to show takes no lines. Each status has a glyph and a colour, the same in the frame and the summary:
+From top to bottom: the header, the banner once a drain or a stop has been applied, the groups, then the working, waiting and problems panes. A pane with nothing to show takes no lines. Each status has a glyph and a colour, the same in the frame and the summary:
 
 | Glyph | Status |
 | --- | --- |
@@ -113,7 +113,7 @@ When the pane is cut, it shows whole entries, never a failure without its messag
 
 ### Sharing the space
 
-The header, the stop banner and the groups come first. The lines left are shared between the three panes below:
+The header, the banner and the groups come first. The lines left are shared between the three panes below:
 
 1. Each pane that has something to show gets two lines first, its title and one more, working first, then waiting, then problems.
 2. Problems then grow to a third of the lines left, and never past it.
@@ -128,36 +128,42 @@ Text that does not fit is cut with an ellipsis, `…`. A path keeps its start, a
 
 ### Small terminals
 
-Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a narrow split still shows how far the run has got. The stop banner is not shown then. Size never switches the display to plain text, and the size is read again for every frame, so a resized terminal gets a frame at its new size.
+Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a narrow split still shows how far the run has got. The banner is not shown then. Size never switches the display to plain text, and the size is read again for every frame, so a resized terminal gets a frame at its new size.
 
-## Stopping
+## Draining and stopping
 
-<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, gives a <xref:Dagline.StopSignal> hooked to the console's cancel key and to SIGTERM. Pass it to the run and dispose it when the run has ended, as `using var` does. The hook counts Ctrl+C and SIGTERM together:
+<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, hooks the console's cancel key and SIGTERM to a drain signal, <xref:Dagline.ConsoleStop.Drain>, and a cancellation token, <xref:Dagline.ConsoleStop.Token>. Pass both to the run and dispose the hook when the run has ended, as `using var` does:
 
-- **The first Ctrl+C or SIGTERM** requests a stop: the run starts nothing more and waits for its running tasks to end, for at most its [grace period](running-and-stopping.md#the-grace-period).
-- **The second**, of either kind, requests again, which ends that wait at once.
+- **The first Ctrl+C** requests the drain: the run starts nothing more and lets its running tasks finish, however long they take.
+- **The second Ctrl+C**, or **a SIGTERM** at any time, cancels the token, which stops the run: its running tasks are told to end, and it waits for them for at most its [grace period](running-and-stopping.md#the-grace-period).
 - Both are swallowed, so your process lives on, the run winds down and `RunAsync` returns its result.
-- **From the third on** nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
+- **After the stop** nothing more is requested and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Disposing unhooks both, and a Ctrl+C or SIGTERM after that is your app's own business again. The signal hooks nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. The two are counted by the hook itself, so a `Request` your app makes on the same signal does not use one up. The display does not depend on the hook: any stop signal shows the banner.
+Disposing unhooks both and disposes the token's source, and a Ctrl+C or SIGTERM after that is your app's own business again. The hook listens to nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. Ctrl+C presses are counted by the hook itself, so a `Request` your app makes on `Drain` does not make the next Ctrl+C a stop. The display does not depend on the hook: any drain signal and any token show the banner.
 
-### The stop banner
+### The banner
 
-Once a stop has been applied, one line appears under the header:
-
-```text
- STOPPING  waiting for 11 running tasks to end · 26s left · Ctrl+C again to stop waiting
-```
-
-It says how many running tasks the run is waiting for and the time left until the deadline, which counts down as the display redraws. With an unlimited grace period the time is left out. When Dagline itself stopped the run, because its [journal could not be written](running-and-stopping.md#when-a-journal-write-fails), the banner says so, so that you do not think you pressed something:
+Once a drain has been applied, one line appears under the header:
 
 ```text
- STOPPING  the journal could not be written · waiting for 3 running tasks to end · 26s left · Ctrl+C to stop waiting
+ DRAINING  letting 11 running tasks finish · Ctrl+C again to stop
 ```
 
-After a stop that Dagline asked for, your first request already ends the wait, so the banner says `Ctrl+C` and not `Ctrl+C again`.
+It says how many running tasks the run is letting finish. There is no time left to show, since a drain waits for as long as the tasks take, and the banner says what a second Ctrl+C does with `ConsoleStop`.
 
-On a terminal too narrow for the whole banner, what the run is waiting for is cut, and what Ctrl+C does is always kept at the end of the line.
+Once a stop has been applied, after a drain or not, the line says so instead:
+
+```text
+ STOPPING  waiting for 11 running tasks to end · 26s left
+```
+
+It says how many running tasks the run is waiting for and the time left until the deadline, which counts down as the display redraws. With an unlimited grace period the time is left out. Nothing but the grace period running out ends the wait, so the banner offers no key: an operator who cannot wait kills the process. When Dagline itself stopped the run, because its [journal could not be written](running-and-stopping.md#when-a-journal-write-fails), the banner says so, so that you do not think you pressed something:
+
+```text
+ STOPPING  the journal could not be written · waiting for 3 running tasks to end · 26s left
+```
+
+On a terminal too narrow for the whole banner, what the run is waiting for is cut. On the draining banner, what Ctrl+C does is always kept at the end of the line.
 
 ## The summary
 

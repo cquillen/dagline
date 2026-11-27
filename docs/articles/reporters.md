@@ -24,19 +24,20 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.WarningAdded> | When a running task adds a warning that is kept: the first 100 of each task. | The path of the task and the warning. |
 | <xref:Dagline.WaitingChanged> | When a running task begins waiting on an external system and when it stops: once each per wait, however many waiting scopes overlap. | The path of the task, whether it is now waiting, the text saying what it waits for, and when the wait began. |
 | <xref:Dagline.GroupSettled> | When the last task beneath a group settles, after that task's event and deepest group first. Never for a group with no tasks beneath it, and never for one made only of earlier successes, which is settled from the start. | The path of the group, its status, and its <xref:Dagline.TaskCounts>: the tasks beneath it per status, with the earlier successes among the succeeded counted apart. Not the warnings beneath it: read the group's `WarningCount` from the snapshot handed with the event. |
-| <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run. From then on nothing starts. | Who asked, `By`: the app through its `StopSignal`, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
-| <xref:Dagline.GraceEnded> | When the run stops waiting for its running tasks after a stop with some still running, at most once per run. Never when the last running task ended in time. | Why: the grace period was over, or a second stop. The tasks left behind follow, each cancelled. |
+| <xref:Dagline.DrainRequested> | When the run applies a drain, at most once per run, and never once a stop has been applied. From then on nothing starts, and the running tasks finish as they would. | Nothing beyond its time: a drain only comes from the app. |
+| <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run, after `DrainRequested` when a drain came first. From then on nothing starts. | Who asked, `By`: the app by cancelling the run's token, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
+| <xref:Dagline.GraceEnded> | When the grace period runs out after a stop with tasks still running, at most once per run. Never when the last running task ended in time. | Nothing beyond its time: only the grace period running out ends the wait. The tasks left behind follow, each cancelled. |
 | <xref:Dagline.RunEnded> | Last, once per run. | Exactly one of the run outcome and an error: a run whose journal could no longer be written ends with a `JournalWriteException` in `Error` and a null `Outcome`. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
-Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
+Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.DrainState>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
 
 ### The order within one step
 
 A change and everything that follows from it at once are one step. The events of a step all have the same time and come in a fixed order, causes before effects:
 
-1. The change itself: the run starting, a task settling, a stop being applied, or the run stopping waiting with the tasks it leaves behind.
+1. The change itself: the run starting, a task settling, a drain or a stop being applied, or the grace period running out with the tasks it leaves behind.
 2. Every task that this blocks, pending to blocked.
 3. Every task whose dependencies are now all met, pending to ready.
 4. Every group that is now settled, deepest first.
@@ -44,9 +45,9 @@ A change and everything that follows from it at once are one step. The events of
 
 Each list is in declaration order. The steps of a run never overlap, so the events of one are never mixed with those of another.
 
-Once a stop has been applied, the last group is always empty: nothing starts.
+Once a drain or a stop has been applied, the last group is always empty: nothing starts.
 
-A warning is a step of its own, and so is a stop being applied, and so is a task beginning or ending a wait. A stop applied before any task has started gives `RunStarted`, the tasks that become ready, `StopRequested`, then `RunEnded`. When the run stops waiting with tasks still running, `GraceEnded` comes first, then each task it leaves behind, cancelled, in declaration order. A task that settles while it is still waiting ends its wait in the step in which it settles: the `WaitingChanged` that ends it comes immediately before that task's `TaskStatusChanged`, so a settled task is never waiting.
+A warning is a step of its own, and so is a drain or a stop being applied, and so is a task beginning or ending a wait. A drain or a stop applied before any task has started gives `RunStarted`, the tasks that become ready, `DrainRequested` or `StopRequested` (both, the drain first, when both were made), then `RunEnded`. When the grace period runs out with tasks still running, `GraceEnded` comes first, then each task it leaves behind, cancelled, in declaration order. A task that settles while it is still waiting ends its wait in the step in which it settles: the `WaitingChanged` that ends it comes immediately before that task's `TaskStatusChanged`, so a settled task is never waiting.
 
 ### Waiting is a marker
 
@@ -105,8 +106,8 @@ var line = $"{counts.Settled}/{counts.Total} settled, {counts.Working} working, 
 A snapshot also answers the questions a summary asks, each in declaration order, so every reporter's summary agrees:
 
 - <xref:Dagline.Snapshot.Failed> lists the failed tasks. Each has its <xref:Dagline.NodeSnapshot.Failure> kind, its message and its detail lines.
-- <xref:Dagline.Snapshot.Cancelled> lists the cancelled tasks: those that were running when the run was stopped and ended because of it, or were left behind when the run stopped waiting. Each keeps its message, detail lines, warnings and the progress it had reported.
-- <xref:Dagline.Snapshot.NeverReached> lists the tasks a stopped run never started, which stay pending or ready. It is empty until the run has ended.
+- <xref:Dagline.Snapshot.Cancelled> lists the cancelled tasks: those that were running when the run was stopped and ended because of it, or were left behind when the grace period ran out. Each keeps its message, detail lines, warnings and the progress it had reported.
+- <xref:Dagline.Snapshot.NeverReached> lists the tasks a drained or stopped run never started, which stay pending or ready. It is empty until the run has ended.
 - <xref:Dagline.Snapshot.WarningCount> counts every warning added, and <xref:Dagline.Snapshot.WithWarnings> lists the tasks that have any. Each task keeps its first 100 warnings in <xref:Dagline.NodeSnapshot.Warnings> and counts the rest in <xref:Dagline.NodeSnapshot.WarningsOmitted>.
 - <xref:Dagline.Snapshot.Blocked> has one <xref:Dagline.BlockedTasks> for each failed task that blocked anything: the tasks it blocked and the *roots*, the highest nodes whose every task it blocked. Name the roots and count the tasks, and a failure that blocked a thousand tasks beneath one group is one short line. <xref:Dagline.Snapshot.TryGetBlocked*> finds the entry for one failed task by its path, and gives `false` for a task that blocked nothing.
 - <xref:Dagline.Snapshot.Waiting> and <xref:Dagline.Snapshot.Working> list the running tasks that are waiting on an external system and those that are working. Together they are every running task, and no task is in both.
@@ -129,7 +130,7 @@ A task that ends a run without having run is in one of three lists, and each has
 | List | Status | Why the task did not run | When it applies |
 | --- | --- | --- | --- |
 | <xref:Dagline.Snapshot.Blocked> | blocked | A task it *requires*, or one beneath a group it requires, failed. | In any run with a failure, stopped or not. Blocked is settled, so a group made only of blocked and other settled tasks settles. |
-| <xref:Dagline.Snapshot.NeverReached> | pending or ready | The run was stopped before the task could start: it was ready, or still waiting on a dependency, such as one on a task the stop cancelled. | Only once a stopped run has ended. Empty while the run is going and for a run that was not stopped. These tasks are not settled. |
+| <xref:Dagline.Snapshot.NeverReached> | pending or ready | The run was drained or stopped before the task could start: it was ready, or still waiting on a dependency, such as one on a task the stop cancelled. | Only once a drained or stopped run has ended. Empty while the run is going and for a run that was neither drained nor stopped. These tasks are not settled. |
 | <xref:Dagline.Snapshot.EarlierSuccesses> | succeeded | An earlier run of the journal succeeded with it, so this run kept that success. | Only in a run that continues a journal. |
 
 `NeverReached` is not the tasks a failure blocked: a failure never leaves a task pending, it blocks it. A task that runs *after* a failed task is not blocked either: it runs.
@@ -188,9 +189,9 @@ A run whose journal can no longer be written is stopped by Dagline: `StopRequest
 - **The snapshot matches the event.** The snapshot handed with an event is the run exactly as of that event, even when the reporter is handed the event long after it happened.
 - **The run never waits for a reporter while tasks are running.** Each reporter has a queue of its own. A slow reporter falls behind, and neither the tasks nor the other reporters are held up by it. The queue has no size limit, and the number of events in a run is in proportion to its tasks, so that is all a reporter that falls behind can cost in memory.
 - **A reporter that throws is dropped.** It receives no further call, and the tasks, the run outcome and the other reporters are unaffected. The error is returned with the result of the run and is never thrown at your app: see [When a reporter fails](#when-a-reporter-fails).
-- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound, but a stop ends it: see [A stop ends the wait for reporters](#a-stop-ends-the-wait-for-reporters). With no stop request, a call to a reporter that never completes keeps `RunAsync` from returning.
+- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound, but cancelling the run's token ends it when the run applied no stop: see [Cancelling the token ends the wait for reporters](#cancelling-the-token-ends-the-wait-for-reporters). Otherwise a call to a reporter that never completes keeps `RunAsync` from returning.
 
-The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is cancelled only when a stop ends the wait for a reporter that is still busy.
+The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is cancelled only when the run's token ends the wait for a reporter that is still busy.
 
 ## Writing a reporter
 
@@ -252,16 +253,18 @@ Each entry names the reporter, the event it was handling and the exception. This
 
 The run outcome says how the work went and is not changed by a reporter's failure. Whether a run whose display broke should exit with an error is your app's decision.
 
-### A stop ends the wait for reporters
+### Cancelling the token ends the wait for reporters
 
-A stuck reporter cannot hang your process. Once the run has ended, any request on its <xref:Dagline.StopSignal> ends the wait for reporters: the first request, when every task had already ended, or a later one, when the run had already been stopped. A reporter still busy at that moment is dropped like one that threw:
+A stuck reporter need not hang your process. When every task has ended and the run is waiting for its reporters, cancelling the token passed to `RunAsync` ends that wait. A reporter still busy at that moment is dropped like one that threw:
 
 - the `CancellationToken` passed to its `OnEventAsync` is cancelled. Each reporter has a token of its own, never cancelled otherwise, so a reporter that awaits slow output can pass it on. It is already cancelled when `RunAsync` returns, but a callback you register on it runs on the thread pool and the run does not wait for it;
 - its remaining events are discarded, and it gets no further call;
 - `ReporterErrors` has a `ReporterError` naming it, the event it was handling and an `OperationCanceledException`;
 - `RunAsync` returns without waiting for its call to come back, even a call that blocks its thread and never returns a task. Whatever that call does later is ignored.
 
-A reporter that had already handled every event is unaffected and is not on the list. A request made once the tasks have ended never changes the run outcome. A request made just as the run ends is never lost: either the run applies it as a stop, or it ends the wait for reporters. A run given no signal waits for its reporters with no time bound.
+A reporter that had already handled every event is unaffected and is not on the list. A cancellation once the tasks have ended never changes the run outcome. One made just as the run ends is never lost: either the run applies it as a stop, or it ends the wait for reporters.
+
+Only a token cancelled after every task has ended does this. A token cancelled earlier is applied as a stop, and drops no reporter. Once a stop has been applied, by your app or by Dagline, nothing more can drop a hung reporter: the operator kills the process, which the journal survives. A drain never drops a reporter, and a run given no token waits for its reporters with no time bound.
 
 ## Progress on a timer: the snapshot source
 
@@ -320,6 +323,7 @@ What to know about the source:
 - **Reading never waits for a task or a reporter**, and is safe from any thread.
 - **Progress is here and nowhere else.** A running task's <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total> are as the task last reported them. Once the task has settled they stay as it left them.
 - **So is how long a task has waited.** While a task waits, <xref:Dagline.NodeSnapshot.WaitingSince> is when the wait began and <xref:Dagline.NodeSnapshot.WaitingText> what it waits for. Both are null while the task is working and once it has settled: the marker is live only.
+- **So is a drain.** <xref:Dagline.Snapshot.Drain> is null until a drain is applied. From the snapshot handed with `DrainRequested` on, it is a <xref:Dagline.DrainState> with the time it was applied. It stays null when a drain is requested once a stop has been applied, since such a drain changes nothing.
 - **So is the time left after a stop.** <xref:Dagline.Snapshot.Stop> is null until a stop is applied. From the snapshot handed with `StopRequested` on, it is a <xref:Dagline.StopState>: when the stop was applied, the grace period, the `Deadline` by which the run stops waiting at the latest, or null when the grace period is unlimited, and `By`, who asked for the stop. Since `Current` may be ahead of the events, a display reads `By` from the snapshot rather than waiting for `StopRequested`. A display can count down to the deadline on its own timer, with no event for each second.
 - **After the run has ended** `Current` is the final snapshot: the same one that is handed with `RunEnded` and returned on <xref:Dagline.RunResult.Snapshot>.
 
@@ -431,13 +435,13 @@ Every line about an event begins with the time of the event, read from the run's
 | `failed <path> in <duration>: <message>` | A task fails with a reported failure. Its detail lines follow, indented. |
 | `failed <path> in <duration> (unexpected): <message>` | A task fails with an unexpected failure. Its detail lines follow, indented: the type of the exception and its stack trace. |
 | `blocked <n> tasks by <path>` | A failure blocked tasks. The path is that of the failed task. |
-| `cancelled <path> in <duration>: <message>` | A task is cancelled: it ended because of a stop, or was still running when the run stopped waiting. |
+| `cancelled <path> in <duration>: <message>` | A task is cancelled: it ended because of a stop, or was still running when the grace period ran out. |
 | `warning <path>: <warning>` | A task adds a warning that is kept. |
 | `waiting <path>: <text>` | A task begins waiting on an external system. With no text it reads `waiting <path>`. |
 | `waited <path> for <duration>` | A task stops waiting. The duration is the whole wait. |
+| `drain requested: letting <n> running tasks finish` | The run applies a drain. Nothing starts from then on, and the running tasks finish as they would. |
 | `stop requested: waiting up to <duration> for <n> running tasks` | The run applies a stop. With an unlimited grace period it reads `stop requested: waiting for <n> running tasks`. A stop that Dagline asked for, because the journal could no longer be written, begins `stop requested by Dagline, journal write failed:` and goes on the same way. |
 | `stopped waiting: grace period over, <n> tasks still running` | The grace period is over with tasks still running. A cancelled line for each follows. |
-| `stopped waiting: second stop, <n> tasks still running` | A second stop ends the wait with tasks still running. A cancelled line for each follows. |
 | `group <path> <status>: <counts>` | The last task beneath a group settles. |
 | `tasks: <counts>` | Nothing has been printed for a minute. |
 | `run ended: <run outcome> in <duration>` | The run ends. The summary follows. |
