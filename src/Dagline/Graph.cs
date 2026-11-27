@@ -30,7 +30,9 @@ public sealed class Graph : IReadOnlyList<Node>
         var positions = nodes.Index().ToDictionary(node => node.Item, node => node.Index);
         List<TaskNode> tasks = [.. nodes.OfType<TaskNode>()];
         var dependencies = new TaskDependencies(tasks, positions, declared);
-        var tasksBeneath = tasks.SelectMany(task => task.Ancestors()).CountBy(group => (Node)group).ToDictionary();
+        var tasksBeneath = tasks
+            .SelectMany(task => task.Ancestors().Select(group => (Group: (Node)group, Task: positions[task])))
+            .ToLookup(beneath => beneath.Group, beneath => beneath.Task);
 
         LimitNames = [.. nodes.SelectMany(node => node.Limits).Distinct()];
         var limitPositions = LimitNames.Index().ToDictionary(limit => limit.Item, limit => limit.Index);
@@ -63,7 +65,7 @@ public sealed class Graph : IReadOnlyList<Node>
                     limitsNamed,
                     dependencies.DependentsOf(node),
                     Depth: node.Ancestors().Count(),
-                    TaskCount: tasksBeneath.GetValueOrDefault(node));
+                    Tasks: [.. tasksBeneath[node]]);
         }
     }
 

@@ -108,7 +108,7 @@ internal sealed class RunSteps
     /// </summary>
     public IReadOnlyList<Step> BodyEnded(BuiltTask task, TaskOutcome ended, DateTimeOffset now)
     {
-        var changes = InstanceOf(task).Settle(ended, runHasStopped: HasStopped, now);
+        var changes = InstanceOf(task).Settle(HasStopped ? ended.OnceStopped() : ended, now);
         if (changes.Count == 0)
         {
             return [];
@@ -341,7 +341,7 @@ internal sealed class RunSteps
         List<BuiltTask> leftBehind = [.. _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Running)];
         foreach (var task in leftBehind)
         {
-            Settle(task, InstanceOf(task).Settle(TaskOutcome.LeftBehind, runHasStopped: true, now));
+            Settle(task, InstanceOf(task).LeaveBehind(now));
         }
 
         Advance(leftBehind, now);
