@@ -18,7 +18,10 @@ public sealed record JournalInfo
     /// </summary>
     public string Id { get; }
 
-    /// <summary>The description the journal was created with, or <see langword="null"/> when it has none.</summary>
+    /// <summary>
+    /// The description the journal was created with, on one line: each line break in it is a space. <see langword="null"/> when it
+    /// has none.
+    /// </summary>
     public string? Description { get; }
 
     /// <summary>

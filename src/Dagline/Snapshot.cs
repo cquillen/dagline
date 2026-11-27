@@ -22,6 +22,8 @@ public sealed class Snapshot
     private IReadOnlyList<BlockedTasks>? _blocked;
     private FrozenDictionary<NodePath, BlockedTasks>? _blockedByCause;
     private IReadOnlyList<NodeSnapshot>? _withWarnings;
+    private IReadOnlyList<NodeSnapshot>? _withWarningsInThisRun;
+    private IReadOnlyList<NodeSnapshot>? _earlierSuccessesWithWarnings;
 
     internal Snapshot(
         DateTimeOffset started,
@@ -213,6 +215,26 @@ public sealed class Snapshot
     /// </remarks>
     public IReadOnlyList<NodeSnapshot> WithWarnings
         => TasksWith(ref _withWarnings, task => task.Warnings.Count > 0);
+
+    /// <summary>
+    /// The tasks of <see cref="WithWarnings"/> that added their warnings in this run: every one but the earlier successes, in
+    /// declaration order.
+    /// </summary>
+    /// <remarks>
+    /// A task that runs in this run starts with no warnings, so all of its warnings are this run's. A summary that lists
+    /// warnings lists these, as an earlier run's summary listed those of <see cref="EarlierSuccessesWithWarnings"/>.
+    /// The list is worked out on the first read and kept.
+    /// </remarks>
+    public IReadOnlyList<NodeSnapshot> WithWarningsInThisRun
+        => TasksWith(ref _withWarningsInThisRun, task => task.Warnings.Count > 0 && !task.IsEarlierSuccess);
+
+    /// <summary>
+    /// The earlier successes that have warnings, in declaration order: each keeps the warnings of the run it succeeded in, which
+    /// that run's summary listed. Together with <see cref="WithWarningsInThisRun"/> they are <see cref="WithWarnings"/>.
+    /// </summary>
+    /// <remarks>The list is worked out on the first read and kept.</remarks>
+    public IReadOnlyList<NodeSnapshot> EarlierSuccessesWithWarnings
+        => TasksWith(ref _earlierSuccessesWithWarnings, task => task.Warnings.Count > 0 && task.IsEarlierSuccess);
 
     /// <summary>The node with the given path.</summary>
     /// <param name="path">The path of a node of the graph.</param>

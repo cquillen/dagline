@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Dagline.TestSupport;
 
@@ -31,6 +32,15 @@ internal readonly record struct JournalLine(string Kind, string? Path)
         var root = entry.RootElement;
         var path = root.TryGetProperty("path", out var element) ? element.GetString() : null;
         return new JournalLine(root.GetProperty("entry").GetString()!, path);
+    }
+
+    /// <summary>The header line <paramref name="headerLine"/> with its description set to <paramref name="description"/>.</summary>
+    /// <exception cref="JsonException">The line is not a JSON object.</exception>
+    public static string WithDescription(string headerLine, string description)
+    {
+        var header = JsonNode.Parse(headerLine)!.AsObject();
+        header["description"] = description;
+        return header.ToJsonString();
     }
 
     /// <summary>

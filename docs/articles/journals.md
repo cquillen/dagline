@@ -23,7 +23,7 @@ A choice only describes what the run will do. Nothing touches the disk until <xr
 
 <xref:Dagline.Journal.New*> takes a directory and an optional description. The run creates the directory if it is missing, and the journal is one file in it. Its id is generated from the UTC time on the run's clock, a hyphen and six random lowercase hex digits, as in `20261111T041200Z-a3f9c2`, so ids sort by age, can be typed, and never collide between operators. The file is `<id>.journal`.
 
-The description is free text that tells journals in the same directory apart, such as the part of the work this one covers. It is fixed when the journal is created. An empty one counts as none.
+The description is free text that tells journals in the same directory apart, such as the part of the work this one covers. It is fixed when the journal is created, and kept on one line: each line break in it becomes a space, also when a journal written by an earlier version holds one. An empty one counts as none.
 
 The id of a new journal is known once the run has started: every snapshot carries it in <xref:Dagline.Snapshot.Journal>, with the description and the run's number, counting from 1.
 

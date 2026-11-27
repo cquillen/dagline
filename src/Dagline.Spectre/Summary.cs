@@ -78,13 +78,13 @@ internal static class Summary
             return [];
         }
 
-        var earlier = snapshot.WithWarnings.Where(task => task.IsEarlierSuccess).ToList();
+        var earlier = snapshot.EarlierSuccessesWithWarnings;
         var title = $"Warnings ({DisplayText.Number(snapshot.WarningCount)} on {DisplayText.Count(snapshot.WithWarnings.Count, "task", "tasks")})";
 
         return
         [
             StyledLine.Of(title, Palette.Bold),
-            .. snapshot.WithWarnings.Where(task => !task.IsEarlierSuccess).SelectMany(task => (IEnumerable<StyledLine>)
+            .. snapshot.WithWarningsInThisRun.SelectMany(task => (IEnumerable<StyledLine>)
             [
                 StatusMark.Warning(glyphs).Before(task.Path)
                     .Add(DisplayText.Between + DisplayText.Number(task.WarningCount), Palette.Warning),

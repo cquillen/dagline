@@ -27,7 +27,10 @@ public sealed class JournalSummary
     /// <summary>When the journal was created, in UTC on the clock of its first run.</summary>
     public DateTimeOffset Created { get; }
 
-    /// <summary>The description the journal was created with, or <see langword="null"/> when it has none.</summary>
+    /// <summary>
+    /// The description the journal was created with, on one line: each line break in it is a space. <see langword="null"/> when it
+    /// has none.
+    /// </summary>
     public string? Description { get; }
 
     /// <summary>How many runs the journal records as started, the latest included.</summary>

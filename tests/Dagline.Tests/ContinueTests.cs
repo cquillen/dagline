@@ -24,6 +24,29 @@ public class ContinueTests
     }
 
     [Test]
+    public async Task A_description_is_kept_on_one_line_also_when_the_journal_holds_one_with_line_breaks()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var graph = builder.Build();
+
+        var given = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path, "all\r\nshards") });
+        var written = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+
+        // As a journal written before descriptions were kept on one line may hold one.
+        JournalHeader.SetDescription(Path.Combine(temporary.Path, $"{written.Snapshot.Journal!.Id}.journal"), "all\nshards");
+        var continued = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Path, written.Snapshot.Journal.Id) });
+        var listed = (await Journals.ListAsync(temporary.Path)).Journals.Single(journal => journal.Id == written.Snapshot.Journal.Id);
+
+        given.Snapshot.Journal!.Description.ShouldBe("all shards");
+        continued.Snapshot.Journal!.Description.ShouldBe("all shards");
+        listed.Description.ShouldBe("all shards");
+    }
+
+    [Test]
     public async Task A_new_journal_with_an_empty_description_has_none()
     {
         using var temporary = new TemporaryDirectory();
@@ -77,6 +100,10 @@ public class ContinueTests
         kept.Message.ShouldBe("loaded 3 files");
         kept.Detail.ShouldBe(["file-1", "file-2", "file-3"]);
         kept.Warnings.ShouldBe(["file-2 was empty"]);
+        second.Snapshot.EarlierSuccessesWithWarnings.ShouldBe([kept]);
+        second.Snapshot.WithWarningsInThisRun.ShouldBeEmpty();
+        first.Snapshot.WithWarningsInThisRun.ShouldBe([first.Snapshot[load.Path]]);
+        first.Snapshot.EarlierSuccessesWithWarnings.ShouldBeEmpty();
         kept.Settled.ShouldBe(_created);
         kept.Started.ShouldBeNull();
         reporter.Snapshots[0][load.Path].ShouldBe(kept);

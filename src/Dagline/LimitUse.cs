@@ -5,8 +5,8 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// A task takes a slot when it starts and gives it back when it settles, so <see cref="InUse"/> counts running tasks
-/// and never ready ones. A limit is full when the two numbers are equal: a ready task that holds it is then passed over
-/// until a task gives a slot back.
+/// and never ready ones. A limit is full, as <see cref="IsFull"/> says, when the two numbers are equal: a ready task that holds
+/// it is then passed over until a task gives a slot back.
 /// </remarks>
 public sealed record LimitUse
 {
@@ -23,4 +23,13 @@ public sealed record LimitUse
     /// How many of the slots are held, one by each running task that holds the limit. From zero to <see cref="Size"/>.
     /// </summary>
     public int InUse { get; }
+
+    /// <summary>
+    /// Whether every slot is held: <see cref="InUse"/> has reached <see cref="Size"/>. A ready task that holds a full limit does not
+    /// start until a task that holds it settles.
+    /// </summary>
+    public bool IsFull => AreAllHeld(Size, InUse);
+
+    /// <summary>The rule <see cref="IsFull"/> answers, for the run's slots, which keep raw numbers.</summary>
+    internal static bool AreAllHeld(int size, int inUse) => inUse >= size;
 }
