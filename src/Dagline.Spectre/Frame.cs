@@ -15,7 +15,7 @@ internal static class Frame
     public const int LeastHeight = 15;
 
     /// <summary>
-    /// The frame for the run as <paramref name="snapshot"/> shows it: the header, the stop banner, the groups, then the working,
+    /// The frame for the run as <paramref name="snapshot"/> shows it: the header, the drain or stop banner, the groups, then the working,
     /// waiting and problems panes in the lines left, shared as <see cref="PaneRows.Share"/> says. In a console smaller than
     /// <see cref="LeastWidth"/> by <see cref="LeastHeight"/> it is the header alone.
     /// </summary>

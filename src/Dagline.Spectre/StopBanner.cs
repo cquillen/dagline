@@ -13,7 +13,8 @@ internal static class StopBanner
 
     /// <summary>
     /// The banner, or none before a drain or a stop has been applied. A stop that follows a drain replaces it. When the banner is
-    /// wider than <paramref name="width"/>, what the run is waiting for gives way, so what Ctrl+C does is always kept.
+    /// wider than <paramref name="width"/>, what the run is waiting for gives way, so that on the draining banner what Ctrl+C
+    /// does is always kept.
     /// </summary>
     /// <param name="snapshot">The run, whose drain and stop the banner shows, and whose stop says who asked for it.</param>
     /// <param name="width">The width of the console.</param>

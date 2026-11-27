@@ -148,7 +148,7 @@ internal abstract class JournalRecorder
             return true;
         }
 
-        /// <summary>The entries a change records, if any. Becoming ready, a report, a group and a stop are never recorded.</summary>
+        /// <summary>The entries a change records, if any. Becoming ready, a report, a group, a drain and a stop are never recorded.</summary>
         private void AddEntriesOf(RunEvent change)
         {
             switch (change)

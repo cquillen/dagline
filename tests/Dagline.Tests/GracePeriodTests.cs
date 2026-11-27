@@ -154,20 +154,23 @@ public class GracePeriodTests
             await watched.Handled("stop requested");
             drain.Request();
             await stop.CancelAsync();
-            load.Release();
+            await clock.AdvanceUntilAsync(run, _step);
             var result = await run;
+            load.Release();
 
-            result.Outcome.ShouldBe(RunOutcome.Complete);
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
             reporter.Lines.ShouldBe(
             [
                 "run started",
                 "load: pending -> ready",
                 "load: ready -> running",
                 "stop requested",
-                "load: running -> succeeded",
-                "run ended: complete",
+                "stopped waiting: grace period over",
+                "load: running -> cancelled",
+                "run ended: stopped",
             ]);
-            result.Snapshot[loadTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
+            reporter.Events.OfType<GraceEnded>().Single().At.ShouldBe(_runStart.AddSeconds(30));
+            result.Snapshot[loadTask.Path].Message.ShouldBe(_leftBehind);
         }
     }
 

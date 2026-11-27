@@ -5,7 +5,7 @@ namespace Dagline.Tests;
 public class StopAndEndEventTests
 {
     [Test]
-    public async Task A_stop_requested_through_the_apps_signal_says_the_app_asked()
+    public async Task A_stop_made_by_cancelling_the_apps_token_says_the_app_asked()
     {
         var reporter = new RecordingReporter();
         using var stop = new CancellationTokenSource();

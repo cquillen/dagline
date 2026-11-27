@@ -1,10 +1,12 @@
 using Dagline.TestSupport;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Dagline.Tests;
 
 public class DrainTests
 {
     private const int _repeats = 50;
+    private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
     [Test]
     public void A_new_signal_has_not_been_requested_and_a_request_is_kept()
@@ -105,6 +107,40 @@ public class DrainTests
             var result = await run;
 
             result.Snapshot[loadTask.Path].Status.ShouldBe(NodeStatus.Failed);
+        }
+    }
+
+    [Test]
+    [NotInParallel(DiskHeavy.Key)]
+    public async Task A_drained_run_on_a_journal_is_listed_stopped_and_a_continuing_run_keeps_its_successes_and_runs_the_rest()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            using var temporary = new TemporaryDirectory();
+            var load = new PausedBody();
+            var builder = new GraphBuilder();
+            var loadTask = builder.Task("load", load.Body);
+            var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(loadTask);
+            var graph = builder.Build();
+            var drain = new DrainSignal();
+            var watched = new WatchedReporter(new RecordingReporter());
+
+            var run = Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path), Reporters = [watched] }, drain);
+            await load.Started;
+            drain.Request();
+            await watched.Handled("drain requested");
+            load.Release();
+            var first = await run;
+            var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
+            var next = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, listed.Id) });
+
+            first.Outcome.ShouldBe(RunOutcome.Stopped);
+            first.Snapshot.NeverReached.Select(task => task.Path).ShouldBe([publish.Path]);
+            listed.Ending.ShouldBe(JournalEnding.Stopped);
+            listed.Counts[NodeStatus.Succeeded].ShouldBe(1);
+            next.Outcome.ShouldBe(RunOutcome.Complete);
+            next.Snapshot[loadTask.Path].IsEarlierSuccess.ShouldBeTrue();
+            next.Snapshot[publish.Path].Status.ShouldBe(NodeStatus.Succeeded);
         }
     }
 
@@ -222,6 +258,7 @@ public class DrainTests
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
+            var clock = new FakeTimeProvider(_runStart);
             var load = new PausedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
@@ -230,17 +267,23 @@ public class DrainTests
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain, stop.Token);
+            var run = Runner.RunAsync(
+                builder.Build(),
+                new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [watched] },
+                drain,
+                stop.Token);
             await load.Started;
             await stop.CancelAsync();
             await watched.Handled("stop requested");
             drain.Request();
-            load.Release();
+            await clock.AdvanceUntilAsync(run, TimeSpan.FromSeconds(1));
             var result = await run;
+            load.Release();
 
             reporter.Lines.ShouldNotContain("drain requested");
+            reporter.Events.OfType<GraceEnded>().ShouldHaveSingleItem().At.ShouldBe(_runStart.AddSeconds(30));
             result.Snapshot.Drain.ShouldBeNull();
-            result.Outcome.ShouldBe(RunOutcome.Complete);
+            result.Outcome.ShouldBe(RunOutcome.Stopped);
         }
     }
 

@@ -28,6 +28,6 @@ public enum NodeStatus
     /// <summary>The task will not run in this run, because a node it requires failed or is itself blocked.</summary>
     Blocked,
 
-    /// <summary>The task was running when the run was stopped.</summary>
+    /// <summary>The task was running when the run was stopped, and ended because of the stop or was let go of.</summary>
     Cancelled,
 }

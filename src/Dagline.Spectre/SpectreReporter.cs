@@ -35,7 +35,7 @@ public static class SpectreReporter
     /// apart from those that are working and the earlier successes in brackets after the succeeded, then the warnings, and at the
     /// right the running tasks over the max running tasks, labelled <c>cap</c>, how many limits are full out of how many, and how
     /// many ready tasks are held.
-    /// A count of zero is left out. Under the header come a stop banner once a stop has been applied, a row per group, the tasks
+    /// A count of zero is left out. Under the header come a banner once a drain or a stop has been applied, a row per group, the tasks
     /// that are working, the tasks that are waiting on external systems, and the problems so far, sharing the lines left. Below
     /// 60 columns or 15 rows the frame is the header alone. The terminal display article of the documentation describes every pane.
     /// </para>
@@ -65,8 +65,9 @@ public static class SpectreReporter
     /// <see cref="RunResult.ReporterErrors"/>; when that happens on a frame of the timer, it is thrown from the next event.
     /// </para>
     /// <para>
-    /// The display also restores the terminal when the token it was handed is cancelled, because a stop ended the run's wait for
-    /// reporters while it was still busy. A process that is killed leaves the terminal as it was.
+    /// The display also restores the terminal when the token it was handed is cancelled, because the run's own token, cancelled
+    /// after every task had ended, ended the run's wait for reporters while it was still busy. A process that is killed leaves the
+    /// terminal as it was.
     /// </para>
     /// </remarks>
     public static IReporter Create(SpectreOptions? options = null) => new AutoReporter(options ?? new SpectreOptions());
