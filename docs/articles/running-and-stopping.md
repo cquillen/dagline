@@ -67,7 +67,7 @@ Every time in a run is read from this clock: the time on each event, each task's
 builder.Task("prepare", context => Task.Delay(TimeSpan.FromSeconds(30), context.TimeProvider));
 ```
 
-In a test, pass a fake clock such as `FakeTimeProvider` from the `Microsoft.Extensions.TimeProvider.Testing` package.
+In a test, pass a fake clock such as `FakeTimeProvider` from the `Microsoft.Extensions.TimeProvider.Testing` package. The grace period is already running on that clock when a reporter hears <xref:Dagline.StopRequested>, so a test that waits for that event and then advances the clock by the grace period sees it end exactly then.
 
 ### Reporters
 

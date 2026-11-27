@@ -19,12 +19,13 @@ namespace Dagline;
 /// <para>
 /// Each step is carried out under the lock, in this order: the step is handed to the recorder, which writes its journal entries and,
 /// if the step ends the run, closes the journal; the tasks' token is signalled, if the step asks; if the step ends the run, the
-/// registration on the signal and the timer are released; the events are published in order, each with its snapshot, which is
-/// taken then and made the current snapshot before the event is handed to reporters; the bodies of the tasks the step starts are
-/// started; the grace-period timer is started, if the step asks; and if the step ends the run, which it does in a step that starts
+/// registration on the signal and the timer are released; the grace-period timer is started, if the step asks; the events are
+/// published in order, each with its snapshot, which is taken then and made the current snapshot before the event is handed to
+/// reporters; the bodies of the tasks the step starts are started; and if the step ends the run, which it does in a step that starts
 /// nothing, then for a run stopped by a failed write its <see cref="RunEnded"/> is published last, with the final snapshot, the
 /// wait for reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
-/// So the token is signalled before the run can end, and the wait for reporters listens before the run's end is set.
+/// So the token is signalled before the run can end, the grace period is running before any reporter hears of the stop, and the
+/// wait for reporters listens before the run's end is set.
 /// </para>
 /// <para>
 /// Each input that can settle a task or apply a stop is followed, under the same lock and with the same time, by the journal write
@@ -300,12 +301,8 @@ internal sealed class Run : ISnapshotSource
             _gracePeriodTimer?.Dispose();
         }
 
-        Publish(step);
-        foreach (var task in step.Starts)
-        {
-            _ = Task.Run(() => RunBodyAsync(task));
-        }
-
+        // Started before the step's events are published, so that a reporter that hears of the stop finds the grace period
+        // already running: a test that then moves a fake clock on moves it from the stop, and not from some later instant.
         if (step.GracePeriodTimer is { } gracePeriod)
         {
             _gracePeriodTimer = _timeProvider.CreateTimer(
@@ -313,6 +310,12 @@ internal sealed class Run : ISnapshotSource
                 this,
                 gracePeriod,
                 Timeout.InfiniteTimeSpan);
+        }
+
+        Publish(step);
+        foreach (var task in step.Starts)
+        {
+            _ = Task.Run(() => RunBodyAsync(task));
         }
 
         if (step.Ends is { Outcome: { } outcome } reached)
