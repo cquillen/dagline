@@ -5,9 +5,11 @@ namespace Dagline.Testing;
 /// never fires while it is, so a task that delays before its wait reaches the wait and is still waiting when a stop arrives.
 /// </summary>
 /// <remarks>
-/// Whether the task is waiting is decided when a timer is made, again on every change, and again before each repeat of a
-/// periodic timer, so no timer fires while the task is waiting, whenever it was made; only a firing already under way
-/// as the wait begins still runs. A timer decided while the task was waiting never fires, even after the wait ends. Time, its zone and the guard are the shared instant clock's.
+/// One clock serves one run, and asks that run whether the task is waiting. It asks when a timer is made, again on every
+/// change and before each repeat of a periodic timer, and again just before every callback. A timer decided while the task
+/// was waiting never fires, even after the wait ends, and a firing that finds the task waiting runs no callback, so a
+/// callback runs while the task waits only if its firing had already found the task not waiting when the wait began. Time,
+/// its zone and the guard are the shared instant clock's.
 /// </remarks>
 internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isWaiting) : TimeProvider
 {
@@ -22,14 +24,14 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
         ArgumentNullException.ThrowIfNull(callback);
-        InstantClock.ThrowIfOutOfRange(dueTime, period);
         var timer = new UntilWaitingTimer(time, isWaiting, callback, state);
         timer.Change(dueTime, period);
         return timer;
     }
 
     // Every firing of the instant timer underneath is one-shot: this timer schedules each repeat itself, so that it decides
-    // again before each one. The waiting state is always read outside the gate, since the live snapshot takes the run's lock.
+    // again before each one. The waiting state is read outside the gate, since the live snapshot takes the run's lock, so each
+    // decision holds a ticket taken under the gate and applies only if no later change or disposal has taken a newer one.
     private sealed class UntilWaitingTimer : ITimer
     {
         private readonly Lock _gate = new();
@@ -38,8 +40,7 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
         private readonly object? _state;
         private readonly ITimer _instant;
         private TimeSpan _period;
-        private long _schedule;
-        private bool _repeating;
+        private long _ticket;
         private bool _disposed;
 
         public UntilWaitingTimer(InstantClock time, Func<bool> isWaiting, TimerCallback callback, object? state)
@@ -53,7 +54,7 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
             InstantClock.ThrowIfOutOfRange(dueTime, period);
-            var fires = dueTime != Timeout.InfiniteTimeSpan && !_isWaiting();
+            long ticket;
             lock (_gate)
             {
                 if (_disposed)
@@ -61,11 +62,12 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
                     return false;
                 }
 
-                _schedule++;
+                ticket = ++_ticket;
                 _period = period;
-                _repeating = false;
-                return _instant.Change(fires ? dueTime : Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
             }
+
+            Schedule(ticket, dueTime);
+            return true;
         }
 
         public void Dispose()
@@ -73,7 +75,7 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
             lock (_gate)
             {
                 _disposed = true;
-                _schedule++;
+                _ticket++;
             }
 
             _instant.Dispose();
@@ -85,36 +87,38 @@ internal sealed class InstantUntilWaitingClock(InstantClock time, Func<bool> isW
             return ValueTask.CompletedTask;
         }
 
-        private void Fire()
+        private void Schedule(long ticket, TimeSpan dueTime)
         {
-            long schedule;
-            TimeSpan period;
-            bool repeating;
+            var due = dueTime != Timeout.InfiniteTimeSpan && !_isWaiting() ? dueTime : Timeout.InfiniteTimeSpan;
             lock (_gate)
             {
-                schedule = _schedule;
+                if (ticket == _ticket)
+                {
+                    _instant.Change(due, Timeout.InfiniteTimeSpan);
+                }
+            }
+        }
+
+        private void Fire()
+        {
+            long ticket;
+            TimeSpan period;
+            lock (_gate)
+            {
+                ticket = _ticket;
                 period = _period;
-                repeating = _repeating;
             }
 
-            if (repeating && _isWaiting())
+            // The firing was decided when it was scheduled, but the task may have begun waiting since.
+            if (_isWaiting())
             {
                 return;
             }
 
             _callback(_state);
-            if (period == Timeout.InfiniteTimeSpan || period == TimeSpan.Zero || _isWaiting())
+            if (period != Timeout.InfiniteTimeSpan && period != TimeSpan.Zero)
             {
-                return;
-            }
-
-            lock (_gate)
-            {
-                if (schedule == _schedule && !_disposed)
-                {
-                    _repeating = true;
-                    _instant.Change(period, Timeout.InfiniteTimeSpan);
-                }
+                Schedule(ticket, period);
             }
         }
     }
