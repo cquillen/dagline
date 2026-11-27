@@ -15,6 +15,9 @@ internal static class DisplayText
     /// <summary>A whole number with its thousands grouped, as in <c>3,173</c>, in the invariant culture.</summary>
     public static string Number(long number) => number.ToString("N0", CultureInfo.InvariantCulture);
 
+    /// <summary>The journal a run is on and the run's number in it, as in <c>journal nightly · run 3</c>.</summary>
+    public static string Journal(JournalInfo journal, Glyphs glyphs) => $"journal {journal.Id} {glyphs.Separator} run {Number(journal.Run)}";
+
     /// <summary>A number and the word it counts, as in <c>1 task</c> and <c>3,173 tasks</c>.</summary>
     public static string Count(long number, string one, string many) => $"{Number(number)} {(number == 1 ? one : many)}";
 

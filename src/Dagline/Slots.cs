@@ -63,7 +63,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
             return SlotsAnswer.MaxRunningTasksReached;
         }
 
-        if (task.HeldLimits.Any(limit => _inUse[limit] == sizes.Limits[limit]))
+        if (AnyIsFull(task.HeldLimits))
         {
             return SlotsAnswer.LimitFull;
         }
@@ -75,6 +75,20 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
         }
 
         return SlotsAnswer.Took;
+    }
+
+    // A loop, not LINQ: the ready tasks are tried after every settle, and a lambda over the slots would be allocated on each try.
+    private bool AnyIsFull(ImmutableArray<int> limits)
+    {
+        foreach (var limit in limits)
+        {
+            if (_inUse[limit] == sizes.Limits[limit])
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Gives back the slots a task took when it started.</summary>

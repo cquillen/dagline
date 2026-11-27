@@ -40,14 +40,15 @@ internal static class Frame
         ];
         var groups = GroupsPane.Lines(snapshot, width, height - top.Count, glyphs);
         var left = height - top.Count - groups.Count;
+        var column = TaskLine.PathColumn(snapshot, width);
         var rows = PaneRows.Share(left, PanesIn(new(left, left, left)).Count());
         var (working, waiting, problems) = PanesIn(rows);
         return Cut([.. top, .. groups, .. working, .. waiting, .. problems], width, height, glyphs);
 
         // Asked for every line that is left, each pane says how many it would take.
         Panes PanesIn(PaneRows rows) => new(
-            WorkingPane.Lines(snapshot, width, now, glyphs, rows.Working),
-            WaitingPane.Lines(snapshot, width, now, glyphs, rows.Waiting),
+            WorkingPane.Lines(snapshot, width, column, now, glyphs, rows.Working),
+            WaitingPane.Lines(snapshot, width, column, now, glyphs, rows.Waiting),
             ProblemsPane.Lines(snapshot, heard.LatestWarnings, width, glyphs, rows.Problems));
     }
 

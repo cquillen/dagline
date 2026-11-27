@@ -27,9 +27,6 @@ internal sealed class StyledLine
     /// <summary>How many terminal cells the line takes.</summary>
     public int Width { get; }
 
-    /// <summary>The text of the line without its styles.</summary>
-    public string Text => string.Concat(Spans.Select(span => span.Text));
-
     public static StyledLine Of(string text, Style? style = null) => Empty.Add(text, style);
 
     public StyledLine Add(string text, Style? style = null)
@@ -79,8 +76,7 @@ internal sealed class StyledLine
             return left.Fit(width, ellipsis);
         }
 
-        var fitted = left.Fit(room, ellipsis);
-        return fitted.Add(new string(' ', width - fitted.Width - right.Width)).Add(right);
+        return FitThenPin(left, right, width, room, ellipsis);
     }
 
     /// <summary>
@@ -96,6 +92,12 @@ internal sealed class StyledLine
             return (right.Width == 0 ? left : right).Fit(width, ellipsis);
         }
 
+        return FitThenPin(left, right, width, room, ellipsis);
+    }
+
+    /// <summary><paramref name="left"/> fitted to <paramref name="room"/> cells, then <paramref name="right"/> at the end of the line.</summary>
+    private static StyledLine FitThenPin(StyledLine left, StyledLine right, int width, int room, string ellipsis)
+    {
         var fitted = left.Fit(room, ellipsis);
         return fitted.Add(new string(' ', width - fitted.Width - right.Width)).Add(right);
     }

@@ -77,22 +77,12 @@ internal static class GroupsPane
     {
         var totals = StyledLine.Of(
             $"{DisplayText.Number(node.Counts[NodeStatus.Succeeded])}/{DisplayText.Number(node.Counts.Total)}");
-        var failed = node.Counts[NodeStatus.Failed];
-        if (failed > 0)
-        {
-            var mark = StatusMark.For(NodeStatus.Failed, glyphs);
-            totals = totals.Add($" {mark.Glyph}{DisplayText.Number(failed)}", mark.Style);
-        }
-
-        var warnings = node.WarningCount;
-        if (warnings > 0)
-        {
-            var mark = StatusMark.Warning(glyphs);
-            totals = totals.Add($" {mark.Glyph}{DisplayText.Number(warnings)}", mark.Style);
-        }
-
-        return totals;
+        return Counted(Counted(totals, StatusMark.For(NodeStatus.Failed, glyphs), node.Counts[NodeStatus.Failed]),
+            StatusMark.Warning(glyphs), node.WarningCount);
     }
+
+    private static StyledLine Counted(StyledLine line, Mark mark, int count)
+        => count == 0 ? line : line.Add($" {mark.Glyph}{DisplayText.Number(count)}", mark.Style);
 
     /// <summary>What the rows need to know of each node's family, read once from a snapshot: its children.</summary>
     private sealed class Family

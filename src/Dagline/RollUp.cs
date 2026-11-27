@@ -62,7 +62,7 @@ internal sealed class RollUp
         {
             var node = atTheStart[task.Position]!;
             _warningsOf[task.Position] = node.WarningCount;
-            if (node.Status is not NodeStatus.Succeeded)
+            if (!node.IsEarlierSuccess)
             {
                 continue;
             }
@@ -83,9 +83,6 @@ internal sealed class RollUp
             _groupCounts[group.Position] = new StatusCounts(pending: group.TaskCount - earlier, earlierSuccesses: earlier);
         }
     }
-
-    /// <summary>The groups that have settled since <see cref="TakeSettled"/> was last asked, in the order they settled.</summary>
-    public IReadOnlyList<BuiltGroup> Settled => _settled;
 
     /// <summary>How many of the run's tasks have <paramref name="status"/> now.</summary>
     public int InRun(NodeStatus status) => _run[status];

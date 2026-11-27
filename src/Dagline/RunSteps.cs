@@ -40,8 +40,6 @@ internal sealed class RunSteps
 
     private readonly List<Step> _decided = [];
     private readonly SnapshotTaker _snapshots;
-    private readonly JournalFold? _earlier;
-    private readonly Continuation _continuation;
 
     private StepUnderWay? _step;
     private RunMilestones _milestones = new(Started: default, Stop: null, Ended: null, Outcome: null);
@@ -60,11 +58,9 @@ internal sealed class RunSteps
     public RunSteps(Graph graph, RunSettings settings, JournalFold? earlier, Continuation continuation)
     {
         _graph = graph;
-        _earlier = earlier;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
-        _continuation = continuation;
-        _instances = InstancesAtTheStart();
+        _instances = InstancesAtTheStart(earlier, continuation);
 
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
@@ -73,7 +69,7 @@ internal sealed class RunSteps
         }
 
         _rollUp = new RollUp(graph, atTheStart);
-        _snapshots = SnapshotsAtTheStart(atTheStart);
+        _snapshots = SnapshotsAtTheStart(atTheStart, earlier, continuation);
     }
 
     /// <summary>
@@ -89,7 +85,7 @@ internal sealed class RunSteps
         Begin();
         Publish(new RunStarted(now, source));
         MakeReady(_graph.Tasks, now);
-        AnnounceSettledGroups(now);
+        AnnounceSettledGroups(_rollUp.TakeSettled(), now);
 
         // A second request needs nothing more here: once stopped from its start, the run has no task to stop waiting for.
         _requestsApplied = stopRequests;
@@ -118,7 +114,7 @@ internal sealed class RunSteps
         Begin();
         Settle(task, changes);
         var blocked = InstanceOf(task).Status is NodeStatus.Failed ? Block(task, now) : [];
-        Advance(DependentsOf([task, .. blocked]), now);
+        Advance([task, .. blocked], now);
         return Decided();
     }
 
@@ -165,8 +161,7 @@ internal sealed class RunSteps
 
         if (change.Event is null)
         {
-            _snapshots.Record(task.Position, change.Task);
-            _rollUp.TaskChanged(task, change);
+            Apply(task, change);
             return _changedOnlyTheSnapshot;
         }
 
@@ -197,12 +192,7 @@ internal sealed class RunSteps
             return Decided();
         }
 
-        if (!HasStopped)
-        {
-            Begin();
-            ApplyStop(StopRequester.App, now);
-            BoundTheGracePeriod(now);
-        }
+        StopUnlessStopped(StopRequester.App, now);
 
         if (requests >= 2)
         {
@@ -227,14 +217,19 @@ internal sealed class RunSteps
         }
 
         _journalWriteFailed = true;
+        StopUnlessStopped(StopRequester.Dagline, now);
+        return Decided();
+    }
+
+    /// <summary>Unless a stop has been applied, applies one by <paramref name="by"/> in a step of its own and bounds the grace period.</summary>
+    private void StopUnlessStopped(StopRequester by, DateTimeOffset now)
+    {
         if (!HasStopped)
         {
             Begin();
-            ApplyStop(StopRequester.Dagline, now);
+            ApplyStop(by, now);
             BoundTheGracePeriod(now);
         }
-
-        return Decided();
     }
 
     /// <summary>
@@ -351,7 +346,7 @@ internal sealed class RunSteps
             Settle(task, InstanceOf(task).Settle(TaskOutcome.LeftBehind, runHasStopped: true, now));
         }
 
-        Advance(DependentsOf(leftBehind), now);
+        Advance(leftBehind, now);
     }
 
     /// <summary>
@@ -424,23 +419,24 @@ internal sealed class RunSteps
     /// <summary>
     /// The tasks, in declaration order, that depend on one of the tasks that have just settled or on a group that settled with them.
     /// </summary>
-    private IEnumerable<BuiltTask> DependentsOf(IEnumerable<BuiltTask> settled)
+    private IEnumerable<BuiltTask> DependentsOf(IEnumerable<BuiltTask> settled, IReadOnlyList<BuiltGroup> settledGroups)
         => settled
-            .Concat<BuiltNode>(_rollUp.Settled)
+            .Concat<BuiltNode>(settledGroups)
             .SelectMany(node => node.Dependents)
             .Distinct()
             .Order()
             .Select(_graph.TaskAt);
 
     /// <summary>
-    /// Applies what follows from one change, causes before effects: the tasks among <paramref name="candidates"/>
-    /// whose dependencies are now met become ready, the groups that the step settled are announced,
+    /// Applies what follows from one change, causes before effects: the dependents of the <paramref name="settled"/> tasks, and of
+    /// the groups the step settled, whose dependencies are now met become ready, the groups that the step settled are announced,
     /// and the ready tasks that fit start.
     /// </summary>
-    private void Advance(IEnumerable<BuiltTask> candidates, DateTimeOffset now)
+    private void Advance(IEnumerable<BuiltTask> settled, DateTimeOffset now)
     {
-        MakeReady(candidates, now);
-        AnnounceSettledGroups(now);
+        var settledGroups = _rollUp.TakeSettled();
+        MakeReady(DependentsOf(settled, settledGroups), now);
+        AnnounceSettledGroups(settledGroups, now);
         StartWhatFitsUnlessStopped(now);
     }
 
@@ -474,9 +470,9 @@ internal sealed class RunSteps
     /// Publishes one event for each group the current step settled, in the order the roll-up gives them, each with the group's
     /// status and counts.
     /// </summary>
-    private void AnnounceSettledGroups(DateTimeOffset now)
+    private void AnnounceSettledGroups(IReadOnlyList<BuiltGroup> settledGroups, DateTimeOffset now)
     {
-        foreach (var group in _rollUp.TakeSettled())
+        foreach (var group in settledGroups)
         {
             Publish(new GroupSettled(now, group.Path, _rollUp.StatusOf(group.Position), _rollUp.CountsOf(group)));
         }
@@ -552,14 +548,14 @@ internal sealed class RunSteps
     /// Every task's instance at the start of the run, indexed by position among the nodes: an earlier success for a task the journal
     /// holds as one, and otherwise a pending task with the checkpoint the journal holds for its path, if any.
     /// </summary>
-    private TaskInstance?[] InstancesAtTheStart()
+    private TaskInstance?[] InstancesAtTheStart(JournalFold? earlier, Continuation continuation)
     {
         var instances = new TaskInstance?[_graph.Nodes.Length];
         foreach (var task in _graph.Tasks)
         {
-            instances[task.Position] = _continuation.EarlierSuccessOf(task) is { } recorded
+            instances[task.Position] = continuation.EarlierSuccessOf(task) is { } recorded
                 ? TaskInstance.EarlierSuccess(task, recorded)
-                : new TaskInstance(task, _earlier?.CheckpointAt(task.Path) ?? "");
+                : new TaskInstance(task, earlier?.CheckpointAt(task.Path) ?? "");
         }
 
         return instances;
@@ -570,16 +566,18 @@ internal sealed class RunSteps
     /// as the run continues it.
     /// </summary>
     /// <param name="tasksAtTheStart">Each task as it is at the start, indexed by position among the nodes, so a group's place is empty.</param>
-    private SnapshotTaker SnapshotsAtTheStart(NodeSnapshot?[] tasksAtTheStart)
+    /// <param name="earlier">The journal the run is on, as it was folded when opened, or <see langword="null"/> for a run with no journal.</param>
+    /// <param name="continuation">What the run takes from the journal.</param>
+    private SnapshotTaker SnapshotsAtTheStart(NodeSnapshot?[] tasksAtTheStart, JournalFold? earlier, Continuation continuation)
         => new(
             _graph.Nodes.Select(node => tasksAtTheStart[node.Position] ?? _rollUp.SnapshotOf((BuiltGroup)node)),
             _graph.Positions,
             _slots,
-            new SnapshotJournal(_earlier?.NextRun)
+            new SnapshotJournal(earlier?.NextRun)
             {
-                SetAside = [.. _continuation.SetAside.Select(task => task.Path)],
-                JournalPathsNotInGraph = _continuation.PathsNotInGraph,
-                JournalPathsNotInGraphUnsucceeded = _continuation.PathsNotInGraphUnsucceeded,
+                SetAside = [.. continuation.SetAside.Select(task => task.Path)],
+                JournalPathsNotInGraph = continuation.PathsNotInGraph,
+                JournalPathsNotInGraphUnsucceeded = continuation.PathsNotInGraphUnsucceeded,
             });
 
     // Indexed by position among the nodes, so a group's place is empty.

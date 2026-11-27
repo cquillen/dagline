@@ -15,10 +15,11 @@ internal static class WorkingPane
     /// </summary>
     /// <param name="snapshot">The run.</param>
     /// <param name="width">The width of the console.</param>
+    /// <param name="column">The cells the path column takes, as <see cref="TaskLine.PathColumn"/> gives them for the frame.</param>
     /// <param name="now">The time on the display's clock, which the times running run to.</param>
     /// <param name="glyphs">The glyphs to draw with.</param>
     /// <param name="rows">How many lines the pane may take.</param>
-    public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, DateTimeOffset now, Glyphs glyphs, int rows)
+    public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, int column, DateTimeOffset now, Glyphs glyphs, int rows)
     {
         var running = snapshot.Counts[NodeStatus.Running];
         var working = snapshot.Working;
@@ -36,7 +37,6 @@ internal static class WorkingPane
 
         var fits = working.Count <= rows - 1;
         IReadOnlyList<NodeSnapshot> shown = fits ? working : [.. working.Take(rows - 2)];
-        var column = TaskLine.PathColumn(snapshot, width);
         var countCells = shown.Select(node => CountText(node).Length).DefaultIfEmpty(0).Max();
         List<StyledLine> lines =
         [

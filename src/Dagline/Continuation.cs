@@ -20,7 +20,8 @@ internal sealed class Continuation
 {
     private readonly TaskSettledEntry?[] _kept;
 
-    private Continuation(Graph graph, JournalFold? earlier)
+    /// <summary>What a run of <paramref name="graph"/> takes from <paramref name="earlier"/>, or nothing for a run with no journal.</summary>
+    public Continuation(Graph graph, JournalFold? earlier)
     {
         _kept = new TaskSettledEntry?[graph.Nodes.Length];
         if (earlier is null)
@@ -63,9 +64,6 @@ internal sealed class Continuation
     /// aside in an earlier run.
     /// </summary>
     public int PathsNotInGraphUnsucceeded { get; }
-
-    /// <summary>What a run of <paramref name="graph"/> takes from <paramref name="earlier"/>, or nothing for a run with no journal.</summary>
-    public static Continuation Of(Graph graph, JournalFold? earlier) => new(graph, earlier);
 
     /// <summary>The earlier success of <paramref name="task"/>, or <see langword="null"/> when it begins this run pending.</summary>
     public TaskSettledEntry? EarlierSuccessOf(BuiltTask task) => _kept[task.Position];

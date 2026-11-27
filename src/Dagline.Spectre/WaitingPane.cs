@@ -16,10 +16,11 @@ internal static class WaitingPane
     /// </summary>
     /// <param name="snapshot">The run.</param>
     /// <param name="width">The width of the console.</param>
+    /// <param name="column">The cells the path column takes, as <see cref="TaskLine.PathColumn"/> gives them for the frame.</param>
     /// <param name="now">The time on the display's clock, which the times waited run to.</param>
     /// <param name="glyphs">The glyphs to draw with.</param>
     /// <param name="rows">How many lines the pane may take.</param>
-    public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, DateTimeOffset now, Glyphs glyphs, int rows)
+    public static IReadOnlyList<StyledLine> Lines(Snapshot snapshot, int width, int column, DateTimeOffset now, Glyphs glyphs, int rows)
     {
         // OrderBy is stable, so tasks that began waiting at the same instant stay in declaration order.
         var waiting = snapshot.Waiting.OrderBy(node => node.WaitingSince).ToList();
@@ -33,7 +34,6 @@ internal static class WaitingPane
         var shown = fits ? waiting : waiting.Take(room - 1).ToList();
         var title = StyledLine.Of($"Waiting on external systems ({DisplayText.Number(waiting.Count)})", Palette.Bold)
             .Add($" longest {DisplayText.Duration(Waited(waiting[0], now))}", Palette.Dim);
-        var column = TaskLine.PathColumn(snapshot, width);
         List<StyledLine> lines = [PaneTitle.Line(title, width, glyphs), .. shown.Select(node => Line(node, column, width, now, glyphs))];
         if (!fits)
         {
