@@ -164,50 +164,56 @@ public class DrainTests
     [Test]
     public async Task A_signal_drained_in_one_run_drains_a_later_run_from_its_start()
     {
-        var builder = new GraphBuilder();
-        var load = new PausedBody();
-        builder.Task("load", load.Body);
-        var graph = builder.Build();
-        var drain = new DrainSignal();
-        var watched = new WatchedReporter(new RecordingReporter());
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var builder = new GraphBuilder();
+            var load = new PausedBody();
+            builder.Task("load", load.Body);
+            var graph = builder.Build();
+            var drain = new DrainSignal();
+            var watched = new WatchedReporter(new RecordingReporter());
 
-        var first = Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
-        await load.Started;
-        drain.Request();
-        await watched.Handled("drain requested");
-        load.Release();
-        (await first).Outcome.ShouldBe(RunOutcome.Complete);
+            var first = Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
+            await load.Started;
+            drain.Request();
+            await watched.Handled("drain requested");
+            load.Release();
+            (await first).Outcome.ShouldBe(RunOutcome.Complete);
 
-        var reporter = new RecordingReporter();
-        var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [reporter] }, drain);
+            var reporter = new RecordingReporter();
+            var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [reporter] }, drain);
 
-        second.Outcome.ShouldBe(RunOutcome.Stopped);
-        reporter.Lines.ShouldBe(["run started", "load: pending -> ready", "drain requested", "run ended: stopped"]);
+            second.Outcome.ShouldBe(RunOutcome.Stopped);
+            reporter.Lines.ShouldBe(["run started", "load: pending -> ready", "drain requested", "run ended: stopped"]);
+        }
     }
 
     [Test]
     public async Task The_snapshot_carries_the_drain_from_the_drain_requested_event_on()
     {
-        var load = new PausedBody();
-        var builder = new GraphBuilder();
-        builder.Task("load", load.Body);
-        var drain = new DrainSignal();
-        var reporter = new RecordingReporter();
-        var watched = new WatchedReporter(reporter);
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var load = new PausedBody();
+            var builder = new GraphBuilder();
+            builder.Task("load", load.Body);
+            var drain = new DrainSignal();
+            var reporter = new RecordingReporter();
+            var watched = new WatchedReporter(reporter);
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
-        await load.Started;
-        drain.Request();
-        await watched.Handled("drain requested");
-        load.Release();
-        var result = await run;
+            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
+            await load.Started;
+            drain.Request();
+            await watched.Handled("drain requested");
+            load.Release();
+            var result = await run;
 
-        var events = reporter.Events;
-        var snapshots = reporter.Snapshots;
-        var drainAt = events.ToList().FindIndex(runEvent => runEvent is DrainRequested);
-        snapshots.Take(drainAt).ShouldAllBe(snapshot => snapshot.Drain == null);
-        snapshots.Skip(drainAt).ShouldAllBe(snapshot => snapshot.Drain != null && snapshot.Drain.RequestedAt == events[drainAt].At);
-        result.Snapshot.Drain.ShouldBe(snapshots[drainAt].Drain);
+            var events = reporter.Events;
+            var snapshots = reporter.Snapshots;
+            var drainAt = events.ToList().FindIndex(runEvent => runEvent is DrainRequested);
+            snapshots.Take(drainAt).ShouldAllBe(snapshot => snapshot.Drain == null);
+            snapshots.Skip(drainAt).ShouldAllBe(snapshot => snapshot.Drain != null && snapshot.Drain.RequestedAt == events[drainAt].At);
+            result.Snapshot.Drain.ShouldBe(snapshots[drainAt].Drain);
+        }
     }
 
     [Test]
