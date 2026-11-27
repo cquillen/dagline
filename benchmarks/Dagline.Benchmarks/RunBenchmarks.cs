@@ -16,6 +16,9 @@ public class RunBenchmarks
     private const int ProgressReports = 200_000;
     private const int WarningsPerTask = 250;
     private const int WaitsPerTask = 4;
+    private const int Shards = 10;
+    private const int TenantsPerShard = 150;
+    private const int ShardLimitSize = 2;
 
     private static readonly string[] _statusTexts = Texts("working on item", 1_000);
     private static readonly string[] _warnings = Texts("warning about item", WarningsPerTask);
@@ -25,6 +28,9 @@ public class RunBenchmarks
     private Graph _progress = null!;
     private Graph _warningsBeyondKept = null!;
     private Graph _waiting = null!;
+    private Graph _heldByLimits = null!;
+    private Graph _onAJournal = null!;
+    private string _journals = null!;
 
     [GlobalSetup]
     public async Task BuildGraphs()
@@ -41,11 +47,31 @@ public class RunBenchmarks
         // 1,024 tasks, 3 groups deep, each beginning and ending waiting 4 times.
         _waiting = Nested([4, 4, 4], tasksPerGroup: 16, chained: false, WaitAndEndWaiting);
 
+        // 1,500 tasks in 10 shards, each shard's tasks holding a limit of 2, so nearly every ready task is held by a full limit.
+        _heldByLimits = Sharded(Shards, TenantsPerShard, limited: true);
+
+        // 160 tasks on a journal file, so each settle is flushed to the disk.
+        _onAJournal = Sharded(shards: 4, tenantsPerShard: 40, limited: false);
+        _journals = Directory.CreateTempSubdirectory("dagline-benchmarks-").FullName;
+
         await Check(_largeGraph, expectedWarnings: 0).ConfigureAwait(false);
+        await Check(_heldByLimits, expectedWarnings: 0).ConfigureAwait(false);
+        await Check(_onAJournal, expectedWarnings: 0, OnAJournal()).ConfigureAwait(false);
         await Check(_progress, expectedWarnings: 0).ConfigureAwait(false);
         await Check(_warningsBeyondKept, expectedWarnings: 256 * WarningsPerTask).ConfigureAwait(false);
         await Check(_waiting, expectedWarnings: 0).ConfigureAwait(false);
     }
+
+    [GlobalCleanup]
+    public void DeleteJournals() => Directory.Delete(_journals, recursive: true);
+
+    /// <summary>1,500 tasks in 10 shards, each shard's tasks holding a limit of 2 slots.</summary>
+    [Benchmark]
+    public Task<RunOutcome> HeldByLimits() => Run(_heldByLimits);
+
+    /// <summary>160 tasks on a new journal file, each settle flushed to the disk.</summary>
+    [Benchmark]
+    public Task<RunOutcome> OnAJournalFile() => Run(_onAJournal, OnAJournal());
 
     /// <summary>2,048 tasks beneath groups nested 4 deep, each reporting a little and succeeding.</summary>
     [Benchmark]
@@ -63,9 +89,9 @@ public class RunBenchmarks
     [Benchmark]
     public Task<RunOutcome> BeginAndEndWaiting() => Run(_waiting);
 
-    private static async Task<RunOutcome> Run(Graph graph)
+    private static async Task<RunOutcome> Run(Graph graph, RunOptions? options = null)
     {
-        var result = await Runner.RunAsync(graph, Options()).ConfigureAwait(false);
+        var result = await Runner.RunAsync(graph, options ?? Options()).ConfigureAwait(false);
 
         return result.Outcome;
     }
@@ -73,13 +99,16 @@ public class RunBenchmarks
     private static RunOptions Options() => new()
     {
         Journal = Journal.None,
+        Limits = Enumerable.Range(1, Shards).ToDictionary(shard => $"shard-{shard}", _ => ShardLimitSize),
         Reporters = [new PlainTextReporter(TextWriter.Null)],
     };
 
+    private RunOptions OnAJournal() => Options() with { Journal = Journal.New(_journals) };
+
     // A scenario that does not do what it says would measure nothing, so each is run once and checked before it is measured.
-    private static async Task Check(Graph graph, int expectedWarnings)
+    private static async Task Check(Graph graph, int expectedWarnings, RunOptions? options = null)
     {
-        var result = await Runner.RunAsync(graph, Options()).ConfigureAwait(false);
+        var result = await Runner.RunAsync(graph, options ?? Options()).ConfigureAwait(false);
 
         if (result.Outcome is not RunOutcome.Complete || result.ReporterErrors.Count > 0)
         {
@@ -90,6 +119,26 @@ public class RunBenchmarks
         {
             throw new InvalidOperationException($"The scenario gave {result.Snapshot.WarningCount} warnings, not {expectedWarnings}.");
         }
+    }
+
+    private static Graph Sharded(int shards, int tenantsPerShard, bool limited)
+    {
+        var builder = new GraphBuilder();
+        for (var shard = 1; shard <= shards; shard++)
+        {
+            var group = builder.Group($"shard-{shard}");
+            if (limited)
+            {
+                group.Limit($"shard-{shard}");
+            }
+
+            for (var tenant = 1; tenant <= tenantsPerShard; tenant++)
+            {
+                group.Task($"tenant-{tenant}", ReportAndSucceed);
+            }
+        }
+
+        return builder.Build();
     }
 
     private static Graph Nested(int[] groupsPerLevel, int tasksPerGroup, bool chained, TaskBody body)
