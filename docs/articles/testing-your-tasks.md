@@ -56,7 +56,7 @@ public async Task The_export_says_what_it_is_waiting_for()
 }
 ```
 
-A run of the harness is a real run through `Runner.RunAsync`: a graph of one task at the root, a journal in a new directory the harness creates under the system's temporary directory, named `dagline-harness-` and random characters (on Unix only you can open it), and a reporter of the harness's own that watches it. The body sees exactly what it would see in your app, so a test proves what a real run will do. Nothing runs and nothing touches the disk until the first run. Disposing the harness deletes the directory. Disposing it twice is harmless, and a run after disposal throws `ObjectDisposedException`.
+A run of the harness is a real run through `Runner.RunAsync`: a graph of one task at the root, a journal in a new directory the harness creates under the system's temporary directory, named `dagline-harness-` and random characters (on Unix only you can open it), and reporters of the harness's own that watch it. The body sees exactly what it would see in your app, so a test proves what a real run will do. Nothing runs and nothing touches the disk until the first run. Disposing the harness deletes the directory. Disposing it twice is harmless, and a run after disposal throws `ObjectDisposedException`.
 
 An exception the body throws never comes out of the harness: it is the task's unexpected failure and comes back as an outcome, the way a run sees it. An exception from the run itself, such as a journal that cannot be written, comes out of the call unchanged.
 
@@ -155,7 +155,17 @@ A task that settles without ever waiting returns its own outcome from the call, 
 
 The harness stops the run by cancelling a token source of its own, which it passes as the run's token, when its reporter sees the first wait begin.
 
-With no clock passed, this call runs on a clock on which no delay ever ends, so the task is still waiting when the stop arrives. That clock is internal to the harness. Every delay on it never ends, not only the wait's, so a body that delays on `context.TimeProvider` before it begins waiting never reaches the wait: the stop is never made and the call does not return, unless the token you pass is cancelled. Pass a clock to `For` for such a body. A clock you pass to `For` is used as is here too. With an `InstantClock` passed, the call is a race by nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is the one returned.
+With no clock passed, this call runs on a clock internal to the harness on which delays end at once until the task waits, and never while it waits:
+
+- While the task is not waiting, a delay or timer on `context.TimeProvider` ends at once, as on an `InstantClock`. So a body that delays before it waits, with a back-off before a first attempt, a settling pause after a trigger or a short retry loop around the trigger, reaches its wait.
+- While the task is waiting, through `WaitUntilAsync` or in a hand-written loop inside a `BeginWaiting` scope, no delay or timer fires, so the task is still waiting when the stop arrives. A delay made while the task waits never ends, even after the wait does.
+- Once the wait has ended, such as in cleanup after the stop, a new delay ends at once again.
+
+The clock decides each delay from the run as it is now, through the live snapshot, not from the events a reporter has been handed, which can lag. It decides when the delay or timer is made, again whenever a timer is changed and before each repeat of a periodic timer, and again just before every callback. So a timer fires while the task is waiting only if its firing had already found the task not waiting when the wait began: that callback still runs. Each call makes a clock of its own that asks only its own run, so a timer kept from one call into a later one is decided by the run it was made in. A task is marked as waiting as its waiting scope opens, before the wait makes its first delay, so there is no race between the two.
+
+The clock shares its time and its guard with the `InstantClock` that `RunAsync` uses for the life of the harness. Fake time carries from this call to a later `RunAsync`, and a body that delays in a loop and never waits ends with `ClockGuardException` instead of hanging.
+
+A clock you pass to `For` is used as is here too. With an `InstantClock` passed, the call is a race by nature: the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is the one returned.
 
 Every run of the harness has an unlimited grace period, so the run never lets go of the task. A body that ignores the stop keeps the call from returning, and your test framework's timeout is what fails the test.
 
