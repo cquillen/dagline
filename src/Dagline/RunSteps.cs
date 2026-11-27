@@ -318,6 +318,9 @@ internal sealed class RunSteps
     /// </summary>
     public Snapshot TakeSnapshot() => _snapshots.Take(ChangeSinceLastEvent());
 
+    /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
+    public int SlotTries => _slots.Tries;
+
     private bool HasStopped => _milestones.Stop is not null;
 
     // A drain or a stop: either one starts nothing more, ends the run once nothing is running, and makes its outcome stopped.

@@ -23,6 +23,12 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     /// </summary>
     public int Version { get; private set; }
 
+    /// <summary>
+    /// How many times <see cref="Take"/> has been called, whatever it answered: the work of starting tasks, which a test reads to
+    /// check that a run's tries grow with its number of tasks and not with their square.
+    /// </summary>
+    public int Tries { get; private set; }
+
     /// <summary>How many numbers a tally of the slots in use takes: one for the max running tasks, then one for each limit.</summary>
     public int TallyLength => 1 + _inUse.Length;
 
@@ -64,6 +70,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
     /// </summary>
     public SlotsAnswer Take(BuiltTask task)
     {
+        Tries++;
         if (IsAtMaxRunningTasks)
         {
             return SlotsAnswer.MaxRunningTasksReached;
