@@ -25,6 +25,24 @@ public class TaskHarnessStopTests
     }
 
     [Test]
+    public async Task With_no_clock_passed_a_delay_before_the_wait_ends_at_once_and_the_task_is_stopped_at_its_wait()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            await using var harness = TaskHarness.For(async context =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), context.TimeProvider, context.CancellationToken);
+                await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(false), "the export to finish");
+            });
+
+            var outcome = await harness.RunUntilWaitingThenStopAsync();
+
+            outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            outcome.Waited.ShouldBeTrue();
+        }
+    }
+
+    [Test]
     public async Task A_task_that_handles_the_stop_itself_comes_back_with_the_outcome_it_chose()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)

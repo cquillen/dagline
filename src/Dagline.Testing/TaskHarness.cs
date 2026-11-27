@@ -42,10 +42,12 @@ public sealed class TaskHarness : IAsyncDisposable
     private readonly NodePath _task;
     private readonly TimeProvider _runClock;
     private readonly TimeProvider _stopClock;
+    private readonly InstantClock? _guardedClock;
     private readonly string _seed;
     private string _checkpoint;
     private string? _directory;
     private string? _journalId;
+    private RunWatcher? _watcher;
     private bool _disposed;
 
     private TaskHarness(TaskBody body, TimeProvider? timeProvider, string checkpoint)
@@ -55,8 +57,10 @@ public sealed class TaskHarness : IAsyncDisposable
         var builder = new GraphBuilder();
         _task = builder.Task("task", context => RunBodyAsync(body, context)).Path;
         _graph = builder.Build();
-        _runClock = timeProvider ?? new InstantClock();
-        _stopClock = timeProvider ?? new NeverEndingClock();
+        var instant = new InstantClock();
+        _runClock = timeProvider ?? instant;
+        _stopClock = timeProvider ?? new InstantUntilWaitingClock(instant, IsTaskWaiting);
+        _guardedClock = _runClock as InstantClock;
     }
 
     /// <summary>Wraps <paramref name="body"/> in a harness. Nothing runs and nothing touches the disk until the first run.</summary>
@@ -174,7 +178,7 @@ public sealed class TaskHarness : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         _directory ??= CreateDirectory();
 
-        var watcher = new WaitWatcher(stopAtWait);
+        var watcher = _watcher = new RunWatcher(stopAtWait);
         var options = new RunOptions
         {
             Journal = _journalId is null ? Journal.New(_directory) : Journal.Continue(_directory, _journalId),
@@ -193,7 +197,7 @@ public sealed class TaskHarness : IAsyncDisposable
             _journalId ??= watcher.JournalId;
         }
 
-        (clock as InstantClock)?.ThrowIfPastGuard();
+        _guardedClock?.ThrowIfPastGuard();
         var task = result.Snapshot[_task];
         // A success discards the checkpoint (ADR 0006). The public API shows no checkpoint after the run, so the rule is restated here.
         if (task.Status is NodeStatus.Succeeded)
@@ -208,6 +212,10 @@ public sealed class TaskHarness : IAsyncDisposable
     {
         try
         {
+            // The body is held until the harness's reporter holds the live snapshot, so the default clock of a run until waiting
+            // decides every delay the body makes from it. It takes no token: RunStarted reaches the reporter in every run.
+            await _watcher!.Started.ConfigureAwait(false);
+
             // Saving the seed is the one way to hand a checkpoint to a task on a new journal through the public API. It takes no
             // token, as a task's own save after a trigger should not: a stop under way must not lose the seed for every later run.
             if (_journalId is null && _seed.Length > 0)
@@ -223,10 +231,19 @@ public sealed class TaskHarness : IAsyncDisposable
         }
     }
 
+    private bool IsTaskWaiting() => _watcher?.Source?.Current[_task].IsWaiting is true;
+
     private static string CreateDirectory() => Directory.CreateTempSubdirectory("dagline-harness-").FullName;
 
-    private sealed class WaitWatcher(CancellationTokenSource? stopAtWait) : IReporter
+    private sealed class RunWatcher(CancellationTokenSource? stopAtWait) : IReporter
     {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private volatile ISnapshotSource? _source;
+
+        public Task Started => _started.Task;
+
+        public ISnapshotSource? Source => _source;
+
         public bool Waited { get; private set; }
 
         public string? WaitingText { get; private set; }
@@ -236,6 +253,12 @@ public sealed class TaskHarness : IAsyncDisposable
         public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
         {
             JournalId ??= snapshot.Journal?.Id;
+            if (runEvent is RunStarted started)
+            {
+                _source = started.Source;
+                _started.TrySetResult();
+            }
+
             if (runEvent is not WaitingChanged { Waiting: true } began)
             {
                 return ValueTask.CompletedTask;
