@@ -10,6 +10,16 @@ internal readonly record struct PaneRows(int Working, int Waiting, int Problems)
     public const int Least = 2;
 
     /// <summary>
+    /// The entries a pane of <paramref name="rows"/> lines lists under its title: all of them when they fit, and no more than
+    /// <paramref name="most"/>; otherwise as many as leave a line to say how many it left out.
+    /// </summary>
+    /// <param name="entries">Everything the pane could list, one line each.</param>
+    /// <param name="rows">The lines the pane may take, its title included.</param>
+    /// <param name="most">The most entries the pane ever lists.</param>
+    public static IReadOnlyList<T> Shown<T>(IReadOnlyList<T> entries, int rows, int most = int.MaxValue)
+        => entries.Count <= Math.Min(rows - 1, most) ? entries : [.. entries.Take(Math.Min(rows - 2, most))];
+
+    /// <summary>
     /// Shares <paramref name="lines"/> between the panes, none getting more than it <paramref name="wanted"/>. First each pane
     /// with something to show gets <see cref="Least"/> lines, working first; then problems grow to a third of the lines,
     /// waiting to all it wants (the pane itself lists at most five tasks), and working to all it wants. Problems never take more

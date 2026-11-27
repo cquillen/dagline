@@ -35,15 +35,14 @@ internal static class WorkingPane
             return [];
         }
 
-        var fits = working.Count <= rows - 1;
-        IReadOnlyList<NodeSnapshot> shown = fits ? working : [.. working.Take(rows - 2)];
+        var shown = PaneRows.Shown(working, rows);
         var countCells = shown.Select(node => CountText(node).Length).DefaultIfEmpty(0).Max();
         List<StyledLine> lines =
         [
             PaneTitle.Line(title, width, glyphs),
             .. shown.Select(node => Line(node, column, countCells, width, now, glyphs)),
         ];
-        if (!fits)
+        if (shown.Count < working.Count)
         {
             lines.Add(TaskLine.More($"and {DisplayText.Number(working.Count - shown.Count)} more working"));
         }
@@ -61,7 +60,7 @@ internal static class WorkingPane
 
         if (node.StatusText is { } status)
         {
-            line = line.Add((countCells > 0 ? DisplayText.Between : "") + glyphs.Text(DisplayText.OneLine(status)));
+            line = line.Add((countCells > 0 ? DisplayText.Between : "") + DisplayText.StatusText(status, glyphs));
         }
 
         return TaskLine.Finish(line, now - (node.Started ?? now), width, glyphs);
@@ -72,7 +71,7 @@ internal static class WorkingPane
     {
         if (node is not { Count: { } count, Total: { } total })
         {
-            return StyledLine.Of(new string(' ', _barCells));
+            return StyledLine.Empty.PadTo(_barCells);
         }
 
         // A total of zero or a count past the total fills the bar: Dagline does not compare the two.

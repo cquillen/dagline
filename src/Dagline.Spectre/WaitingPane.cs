@@ -29,13 +29,11 @@ internal static class WaitingPane
             return [];
         }
 
-        var room = Math.Min(rows - 1, MostTasks + 1);
-        var fits = waiting.Count <= Math.Min(room, MostTasks);
-        var shown = fits ? waiting : waiting.Take(room - 1).ToList();
+        var shown = PaneRows.Shown(waiting, rows, MostTasks);
         var title = StyledLine.Of($"Waiting on external systems ({DisplayText.Number(waiting.Count)})", Palette.Bold)
             .Add($" longest {DisplayText.Duration(Waited(waiting[0], now))}", Palette.Dim);
         List<StyledLine> lines = [PaneTitle.Line(title, width, glyphs), .. shown.Select(node => Line(node, column, width, now, glyphs))];
-        if (!fits)
+        if (shown.Count < waiting.Count)
         {
             var newest = DisplayText.Duration(Waited(waiting[^1], now));
             lines.Add(TaskLine.More($"and {DisplayText.Number(waiting.Count - shown.Count)} more, the newest waiting {newest}"));
@@ -49,7 +47,7 @@ internal static class WaitingPane
         var line = TaskLine.Start(StatusMark.Waiting(glyphs), node, column, glyphs);
         if (node.StatusText is { } status)
         {
-            line = line.Add(glyphs.Text(DisplayText.OneLine(status)));
+            line = line.Add(DisplayText.StatusText(status, glyphs));
         }
         else if (node.WaitingText is { } waitingText)
         {

@@ -35,6 +35,9 @@ internal static class DisplayText
     /// </remarks>
     public static string OneLine(string text) => text.ReplaceLineEndings(" ");
 
+    /// <summary>A task's status text as a line of a pane or the summary shows it: on one line, in the glyphs drawn with.</summary>
+    public static string StatusText(string text, Glyphs glyphs) => glyphs.Text(OneLine(text));
+
     /// <summary>
     /// Whole seconds under a minute, as in <c>45s</c>. Minutes and seconds under an hour, as in <c>20m 44s</c>. Hours and minutes
     /// from there, as in <c>1h 15m</c>. Always rounded down, and a duration below zero is written as zero.

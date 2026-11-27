@@ -18,13 +18,13 @@ internal static class StatusBar
         var tasks = counts.Total;
         (int Tasks, Style Style)[] shares =
         [
-            (counts.EarlierSuccesses, Palette.EarlierSuccess),
-            (counts[NodeStatus.Succeeded] - counts.EarlierSuccesses, Palette.Succeeded),
-            (counts[NodeStatus.Failed], Palette.Failed),
-            (counts[NodeStatus.Blocked], Palette.Blocked),
-            (counts[NodeStatus.Cancelled], Palette.Cancelled),
-            (counts.Working, Palette.Working),
-            (counts.Waiting, Palette.Waiting),
+            (counts.EarlierSuccesses, StatusMark.EarlierSuccess(glyphs).Style),
+            (counts[NodeStatus.Succeeded] - counts.EarlierSuccesses, StatusMark.For(NodeStatus.Succeeded, glyphs).Style),
+            (counts[NodeStatus.Failed], StatusMark.For(NodeStatus.Failed, glyphs).Style),
+            (counts[NodeStatus.Blocked], StatusMark.For(NodeStatus.Blocked, glyphs).Style),
+            (counts[NodeStatus.Cancelled], StatusMark.For(NodeStatus.Cancelled, glyphs).Style),
+            (counts.Working, StatusMark.For(NodeStatus.Running, glyphs).Style),
+            (counts.Waiting, StatusMark.Waiting(glyphs).Style),
         ];
 
         var bar = StyledLine.Empty;

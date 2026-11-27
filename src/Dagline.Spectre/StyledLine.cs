@@ -1,7 +1,6 @@
 using System.Collections.Immutable;
 using System.Text;
 using Spectre.Console;
-using Spectre.Console.Rendering;
 
 namespace Dagline.Spectre;
 
@@ -109,18 +108,19 @@ internal sealed class StyledLine
         var used = 0;
         foreach (var rune in text.EnumerateRunes())
         {
-            var runeCells = CellsOf(rune.ToString());
+            var runeText = rune.ToString();
+            var runeCells = CellsOf(runeText);
             if (used + runeCells > cells)
             {
                 break;
             }
 
-            cut.Append(rune.ToString());
+            cut.Append(runeText);
             used += runeCells;
         }
 
         return cut.ToString();
     }
 
-    private static int CellsOf(string text) => new Segment(text).CellCount();
+    private static int CellsOf(string text) => text.GetCellWidth();
 }

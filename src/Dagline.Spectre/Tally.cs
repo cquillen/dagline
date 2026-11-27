@@ -29,11 +29,8 @@ internal static class Tally
                 line = line.Add(DisplayText.Between);
             }
 
-            line = line.Add($"{part.Mark.Glyph} {DisplayText.Number(part.Count)}", part.Mark.Style);
-            if (word)
-            {
-                line = line.Add(" " + (part.Count == 1 ? part.One : part.Many), part.Mark.Style);
-            }
+            var count = word ? DisplayText.Count(part.Count, part.One, part.Many) : DisplayText.Number(part.Count);
+            line = line.Add($"{part.Mark.Glyph} {count}", part.Mark.Style);
 
             if (part.Earlier > 0)
             {

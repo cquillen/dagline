@@ -30,15 +30,14 @@ internal static class GroupsPane
             rows = [.. snapshot.Nodes.Where(node => node.Path.Parent is null)];
         }
 
-        var fits = rows.Count + 1 <= height;
-        var shown = fits ? rows : rows.Take(Math.Max(0, height - 2)).ToList();
+        var shown = PaneRows.Shown(rows, height);
         var nameWidth = shown.Select(node => Name(node, glyphs).Width).DefaultIfEmpty(0).Max();
         List<StyledLine> lines =
         [
             PaneTitle.Line(StyledLine.Of("Groups", Palette.Bold), width, glyphs),
             .. shown.Select(node => Row(node, family, nameWidth, width, glyphs)),
         ];
-        if (!fits)
+        if (shown.Count < rows.Count)
         {
             lines.Add(TaskLine.More("and " + DisplayText.Count(rows.Count - shown.Count, "more row", "more rows")));
         }
@@ -49,7 +48,8 @@ internal static class GroupsPane
     private static StyledLine Row(NodeSnapshot node, Family family, int nameWidth, int width, Glyphs glyphs)
     {
         var name = Name(node, glyphs);
-        var start = Mark(node, glyphs).Add(" ").Add(name).Add(new string(' ', nameWidth - name.Width + 1));
+        var mark = Mark(node, glyphs).Add(" ");
+        var start = mark.Add(name).PadTo(mark.Width + nameWidth + 1);
         var end = Totals(node, glyphs);
         var children = family.ChildrenOf(node);
         if (children.Count == 0)
