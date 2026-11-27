@@ -62,7 +62,7 @@ internal sealed class SnapshotTaker(
     /// The slots in use are copied, so the change keeps them as they are now, unless no slot has been taken or given back since
     /// the last change, which it then shares a copy with.
     /// </summary>
-    /// <param name="milestones">When the run started, the stop it has applied, and when and how it ended.</param>
+    /// <param name="milestones">When the run started, the drain and the stop it has applied, and when and how it ended.</param>
     /// <param name="runCounts">The run's counts as they are now.</param>
     public SnapshotChange Close(RunMilestones milestones, TaskCounts runCounts)
     {
@@ -104,11 +104,12 @@ internal sealed class SnapshotTaker(
             _slotsTaken = slotsTaken;
         }
 
-        var (started, stop, ended, outcome) = change.Milestones;
+        var (started, drain, stop, ended, outcome) = change.Milestones;
         return new Snapshot(
             started,
             ended,
             outcome,
+            drain,
             stop,
             _nodes,
             positions,

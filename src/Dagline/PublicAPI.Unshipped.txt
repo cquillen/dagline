@@ -1,4 +1,40 @@
 #nullable enable
+*REMOVED*Dagline.GraceEndReason
+*REMOVED*Dagline.GraceEndReason.GracePeriodOver = 1 -> Dagline.GraceEndReason
+*REMOVED*Dagline.GraceEndReason.SecondStop = 0 -> Dagline.GraceEndReason
+*REMOVED*Dagline.GraceEnded.Reason.get -> Dagline.GraceEndReason
+*REMOVED*Dagline.StopSignal
+*REMOVED*Dagline.StopSignal.IsRequested.get -> bool
+*REMOVED*Dagline.StopSignal.Request() -> void
+*REMOVED*Dagline.StopSignal.Requests.get -> int
+*REMOVED*Dagline.StopSignal.StopSignal() -> void
+*REMOVED*static Dagline.Runner.RunAsync(Dagline.Graph! graph, Dagline.RunOptions! options, Dagline.StopSignal? stop = null) -> System.Threading.Tasks.Task<Dagline.RunResult!>!
+Dagline.ConsoleStop.Drain.get -> Dagline.DrainSignal!
+Dagline.ConsoleStop.Token.get -> System.Threading.CancellationToken
+Dagline.DrainRequested
+Dagline.DrainRequested.Equals(Dagline.DrainRequested? other) -> bool
+Dagline.DrainSignal
+Dagline.DrainSignal.DrainSignal() -> void
+Dagline.DrainSignal.IsRequested.get -> bool
+Dagline.DrainSignal.Request() -> void
+Dagline.DrainState
+Dagline.DrainState.Equals(Dagline.DrainState? other) -> bool
+Dagline.DrainState.<Clone>$() -> Dagline.DrainState!
+Dagline.DrainState.RequestedAt.get -> System.DateTimeOffset
 Dagline.LimitUse.IsFull.get -> bool
+Dagline.Snapshot.Drain.get -> Dagline.DrainState?
 Dagline.Snapshot.EarlierSuccessesWithWarnings.get -> System.Collections.Generic.IReadOnlyList<Dagline.NodeSnapshot!>!
 Dagline.Snapshot.WithWarningsInThisRun.get -> System.Collections.Generic.IReadOnlyList<Dagline.NodeSnapshot!>!
+override Dagline.DrainRequested.<Clone>$() -> Dagline.DrainRequested!
+override Dagline.DrainRequested.Equals(object? obj) -> bool
+override Dagline.DrainRequested.GetHashCode() -> int
+override Dagline.DrainRequested.ToString() -> string!
+override Dagline.DrainState.Equals(object? obj) -> bool
+override Dagline.DrainState.GetHashCode() -> int
+override Dagline.DrainState.ToString() -> string!
+override sealed Dagline.DrainRequested.Equals(Dagline.RunEvent? other) -> bool
+static Dagline.DrainRequested.operator !=(Dagline.DrainRequested? left, Dagline.DrainRequested? right) -> bool
+static Dagline.DrainRequested.operator ==(Dagline.DrainRequested? left, Dagline.DrainRequested? right) -> bool
+static Dagline.DrainState.operator !=(Dagline.DrainState? left, Dagline.DrainState? right) -> bool
+static Dagline.DrainState.operator ==(Dagline.DrainState? left, Dagline.DrainState? right) -> bool
+static Dagline.Runner.RunAsync(Dagline.Graph! graph, Dagline.RunOptions! options, Dagline.DrainSignal? drain = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.RunResult!>!

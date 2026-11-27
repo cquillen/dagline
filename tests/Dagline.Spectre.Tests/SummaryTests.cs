@@ -145,11 +145,11 @@ public class SummaryTests
         var builder = new GraphBuilder();
         var first = builder.Task("a", a.Body);
         builder.Task("b", _ => Task.CompletedTask).Requires(first);
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20, stop: stop);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20, stop: stop.Token);
         await a.Started;
-        stop.Request();
+        await stop.CancelAsync();
         await display.Handled("stop requested");
         a.Release();
         var summary = await display.EndAsync();
@@ -227,24 +227,26 @@ public class SummaryTests
             builder.Task("slow", slow.Body);
             builder.Task("publish", _ => Task.CompletedTask).Requires(loadTask);
             builder.Task("report", _ => Task.CompletedTask).After(loadTask);
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
 
-            await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 20, stop: stop);
+            await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 20, stop: stop.Token);
             await load.Started;
             await store.Started;
             await slow.Started;
             display.Clock.Advance(TimeSpan.FromSeconds(2));
-            stop.Request();
+            await stop.CancelAsync();
             await display.Handled("load: running -> cancelled");
             await display.Handled("store: running -> cancelled");
-            stop.Request();
+
+            // The grace-period timer was started before the stop was published, so this ends the grace period.
+            display.Clock.Advance(TimeSpan.FromSeconds(30));
             var summary = await display.EndAsync();
             slow.Release();
 
             summary.ShouldBe(
             [
                 new string('─', 100),
-                "Run stopped  2s",
+                "Run stopped  32s",
                 "○ 1 ready  · 1 pending  ■ 3 cancelled",
                 "2 tasks were not reached",
                 "",

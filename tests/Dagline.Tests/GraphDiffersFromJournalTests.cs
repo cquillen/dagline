@@ -73,7 +73,7 @@ public class GraphDiffersFromJournalTests
     {
         using var temporary = new TemporaryDirectory();
         var fail = true;
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var succeedsOnceStopped = new StoppedBody(onStop: _ => { });
         var builder = new GraphBuilder();
         var check = builder.Task("check", context =>
@@ -83,7 +83,7 @@ public class GraphDiffersFromJournalTests
                 throw context.Fail("bad data");
             }
 
-            stop.Request();
+            stop.Cancel();
             return succeedsOnceStopped.Body(context);
         });
         builder.Task("summary", _ => Task.CompletedTask).After(check);
@@ -93,7 +93,7 @@ public class GraphDiffersFromJournalTests
         var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
         var id = first.Snapshot.Journal!.Id;
         fail = false;
-        var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) }, stop);
+        var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) }, cancellationToken: stop.Token);
 
         var smaller = new GraphBuilder();
         smaller.Task("check", _ => Task.CompletedTask);

@@ -38,10 +38,11 @@ internal static class PlainTextLines
         WarningAdded added => [At(runEvent.At, $"warning {added.Path}: {added.Warning}")],
         WaitingChanged { Waiting: true } began => [At(runEvent.At, Began(began))],
         WaitingChanged ended => [At(runEvent.At, $"waited {ended.Path} for {DurationText.Of(ended.At - ended.Since)}")],
+        DrainRequested => [At(runEvent.At, $"drain requested: letting {CountsText.Tasks(Running(snapshot), "running")} finish")],
         StopRequested requested => [At(runEvent.At, Requested(requested, Running(snapshot)))],
-        GraceEnded stopped =>
+        GraceEnded =>
         [
-            At(runEvent.At, $"stopped waiting: {Why(stopped.Reason)}, {CountsText.Tasks(Running(snapshot))} still running"),
+            At(runEvent.At, $"stopped waiting: grace period over, {CountsText.Tasks(Running(snapshot))} still running"),
         ],
         GroupSettled settled =>
         [
@@ -130,12 +131,6 @@ internal static class PlainTextLines
             : $"{heading}: waiting up to {DurationText.Of(requested.GracePeriod)} for {CountsText.Tasks(running, "running")}";
     }
 
-    private static string Why(GraceEndReason reason) => reason switch
-    {
-        GraceEndReason.SecondStop => "second stop",
-        GraceEndReason.GracePeriodOver => "grace period over",
-        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null),
-    };
 
     private static string Settled(NodeSnapshot task)
     {

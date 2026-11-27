@@ -160,16 +160,16 @@ public class SnapshotAnswerTests
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
-            var stop = new StopSignal();
+            using var stop = new CancellationTokenSource();
             var builder = new GraphBuilder();
             builder.Task("load", async context =>
             {
-                stop.Request();
+                await stop.CancelAsync();
                 await Task.Delay(Timeout.InfiniteTimeSpan, context.CancellationToken);
             });
             var reporter = new RecordingReporter();
 
-            var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, stop);
+            var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: stop.Token);
 
             var requested = reporter.Events.ToList().FindIndex(runEvent => runEvent is StopRequested);
             reporter.Snapshots[requested].Stop!.By.ShouldBe(StopRequester.App);

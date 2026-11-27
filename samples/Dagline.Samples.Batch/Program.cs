@@ -144,8 +144,9 @@ else
     Console.WriteLine($"Continuing journal {unfinished.Id} for {description} (runs so far: {unfinished.Runs}).");
 }
 
-// Ctrl+C or SIGTERM: the first stops the run, the second stops waiting for the running tasks to end, the third kills.
-using var stop = ConsoleStop.Hook();
+// The first Ctrl+C drains the run: nothing new starts and the running tasks finish. A second Ctrl+C, or a SIGTERM, stops it:
+// the running tasks are told to end, and the run waits for them for its grace period. One more kills the process.
+using var console = ConsoleStop.Hook();
 
 RunResult result;
 try
@@ -160,7 +161,7 @@ try
             Display = plain ? DisplayMode.Never : DisplayMode.Auto,
             Ascii = ascii,
         })],
-    }, stop);
+    }, console.Drain, console.Token);
 }
 catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalAccessException or JournalFormatException)
 {
@@ -172,7 +173,7 @@ catch (JournalWriteException exception)
     return 70;
 }
 
-// 0 when every task succeeded, 1 when one did not, 2 when the run was stopped.
+// 0 when every task succeeded, 1 when one did not, 2 when the run was drained or stopped.
 return result.Outcome.ToExitCode();
 
 // Each shard's job and its job task share one name, which the faults and the scheduler's Forget use as well.

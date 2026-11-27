@@ -103,7 +103,7 @@ public class ProblemsTests
         var first = new PausedBody();
         var second = new PausedBody();
         var keep = new PausedBody();
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var builder = new GraphBuilder();
         var broken = builder.Task("broken", context => throw context.Fail("no input"));
         builder.Task("after", _ => Task.CompletedTask).Requires(broken);
@@ -112,12 +112,12 @@ public class ProblemsTests
         builder.Task("keep", keep.Body);
         var options = new RunOptions { Journal = Journal.None, GracePeriod = Timeout.InfiniteTimeSpan };
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 40, options, stop);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 40, options, stop: stop.Token);
         await first.Started;
         await second.Started;
         await keep.Started;
         await display.Handled("after: pending -> blocked");
-        stop.Request();
+        await stop.CancelAsync();
         await display.Handled("stop requested");
         display.Clock.Advance(TimeSpan.FromSeconds(1));
         first.Throw(new OperationCanceledException());

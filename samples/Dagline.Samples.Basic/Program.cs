@@ -36,15 +36,16 @@ var journal = open is null
     ? Journal.New(directory, "basic sample")
     : Journal.Continue(directory, open.Id);
 
-// Ctrl+C or SIGTERM: the first stops the run, the second stops waiting for the running tasks to end.
-using var stop = ConsoleStop.Hook();
+// The first Ctrl+C drains the run: nothing new starts and the running tasks finish. A second Ctrl+C, or a SIGTERM, stops it:
+// the running tasks are told to end, and the run waits for them for its grace period.
+using var console = ConsoleStop.Hook();
 
 // The run: the display on a terminal, or plain text when output is redirected.
 var result = await Runner.RunAsync(graph, new RunOptions
 {
     Journal = journal,
     Reporters = [SpectreReporter.Create()],
-}, stop);
+}, console.Drain, console.Token);
 
-// The process exits with 0 when every task succeeded, 1 when one did not, and 2 when the run was stopped.
+// The process exits with 0 when every task succeeded, 1 when one did not, and 2 when the run was drained or stopped.
 return result.Outcome.ToExitCode();

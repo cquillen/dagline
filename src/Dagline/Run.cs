@@ -9,8 +9,8 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The run owns the lock, the current snapshot, the grace-period timer, the registration on the stop signal, the source of the token
-/// every task sees, the task bodies, delivery to reporters and the end result. Its <see cref="JournalRecorder"/> owns the journal.
+/// The run owns the lock, the current snapshot, the grace-period timer, the registrations on the drain signal and on the app's
+/// token, the source of the token every task sees, the task bodies, delivery to reporters and the end result. Its <see cref="JournalRecorder"/> owns the journal.
 /// It reads the clock at most once each time it takes the lock, and passes that time on: to the steps for each input, except for a
 /// report that is never an event, which needs no time; and for a checkpoint change, the recorder reads it for the entry and hands it
 /// back when the write failed, so that the input ends with that time, and a run with no journal reads none. No consumer code runs
@@ -19,13 +19,13 @@ namespace Dagline;
 /// <para>
 /// Each step is carried out under the lock, in this order: the step is handed to the recorder, which writes its journal entries and,
 /// if the step ends the run, closes the journal; the tasks' token is signalled, if the step asks; if the step ends the run, the
-/// registration on the signal and the timer are released; the grace-period timer is started, if the step asks; the events are
-/// published in order, each with its snapshot, which is taken then and made the current snapshot before the event is handed to
-/// reporters; the bodies of the tasks the step starts are started; and if the step ends the run, which it does in a step that starts
-/// nothing, then for a run stopped by a failed write its <see cref="RunEnded"/> is published last, with the final snapshot, the
-/// wait for reporters listens for stop requests beyond those applied, delivery is completed and the end result is set.
-/// So the token is signalled before the run can end, the grace period is running before any reporter hears of the stop, and the
-/// wait for reporters listens before the run's end is set.
+/// registrations on the drain signal and the app's token and the timer are released; the grace-period timer is started, if the
+/// step asks; the events are published in order, each with its snapshot, which is taken then and made the current snapshot before
+/// the event is handed to reporters; the bodies of the tasks the step starts are started; and if the step ends the run, which it
+/// does in a step that starts nothing, then for a run stopped by a failed write its <see cref="RunEnded"/> is published last, with
+/// the final snapshot, the wait for reporters listens to the app's token unless the run applied a stop, delivery is completed and
+/// the end result is set. So the tasks' token is signalled before the run can end, the grace period is running before any
+/// reporter hears of the stop, and the wait for reporters listens before the run's end is set.
 /// </para>
 /// <para>
 /// Each input that can settle a task or apply a stop is followed, under the same lock and with the same time, by the journal write
@@ -45,26 +45,30 @@ internal sealed class Run : ISnapshotSource
     private readonly ReporterDelivery _delivery;
     private readonly RunSteps _steps;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly StopSignal? _signal;
+    private readonly DrainSignal? _drain;
+    private readonly CancellationToken _stop;
     private readonly CancellationTokenSource _stopping = new();
     private readonly JournalRecorder _recorder;
 
-    private IDisposable? _hearsTheSignal;
+    private IDisposable? _hearsTheDrain;
+    private CancellationTokenRegistration _hearsTheStop;
     private ITimer? _gracePeriodTimer;
     private volatile Snapshot? _current;
 
     /// <param name="graph">The graph to run.</param>
     /// <param name="settings">The settings of the run.</param>
     /// <param name="delivery">Delivery of the run's events to its reporters.</param>
-    /// <param name="signal">The signal through which the app stops the run, if it can.</param>
+    /// <param name="drain">The signal through which the app drains the run, if it can.</param>
     /// <param name="journal">
     /// The journal the run is on, already held, opened and read, or <see langword="null"/> for none. The run's recorder owns it from
     /// here, and closes it and lets go of its lock in the step that ends the run, so that a later run can continue it as soon as this
     /// one has ended.
     /// </param>
-    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, StopSignal? signal, JournalFile? journal)
+    /// <param name="stop">The app's token, whose cancellation stops the run.</param>
+    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, DrainSignal? drain, JournalFile? journal, CancellationToken stop)
     {
-        _signal = signal;
+        _drain = drain;
+        _stop = stop;
         _graph = graph;
         _timeProvider = settings.TimeProvider;
         _delivery = delivery;
@@ -82,42 +86,43 @@ internal sealed class Run : ISnapshotSource
     public Task<RunOutcome> Ended => _ended.Task;
 
     /// <summary>
-    /// Starts the run: the tasks with no dependency become ready and those that fit start. A signal already requested
-    /// is applied once the tasks have become ready and before any starts, so the run starts nothing.
+    /// Starts the run: the tasks with no dependency become ready and those that fit start. A drain already requested and a token
+    /// already cancelled are read under the lock and applied once the tasks have become ready and before any starts, so the run
+    /// starts nothing.
     /// </summary>
     public void Start()
     {
-        Give((steps, now) => steps.Start(now, _signal?.Requests ?? 0, this));
-        HearTheSignal();
+        Give((steps, now) => steps.Start(now, _drain?.IsRequested ?? false, _stop.IsCancellationRequested, this));
+        HearTheDrainAndTheStop();
     }
 
     /// <summary>
-    /// Listens to the run's signal until the run ends. It registers once the run has started, outside the lock,
-    /// since a signal already requested calls back at once: a request made in between is heard then,
-    /// and one already applied changes nothing.
+    /// Listens to the run's drain signal and the app's token until the run ends. It registers once the run has started, outside
+    /// the lock, since a signal already requested and a token already cancelled each call back at once, on the thread pool: a
+    /// request made in between is heard then, and one already applied changes nothing.
     /// </summary>
-    private void HearTheSignal()
+    private void HearTheDrainAndTheStop()
     {
-        if (_signal is null)
-        {
-            return;
-        }
-
-        var hearing = _signal.OnRequest(Hear);
+        var drain = _drain?.OnRequest(HearDrain);
+        var stop = _stop.OnCancelled(HearStop);
         lock (_gate)
         {
             if (!_ended.Task.IsCompleted)
             {
-                _hearsTheSignal = hearing;
+                _hearsTheDrain = drain;
+                _hearsTheStop = stop;
                 return;
             }
         }
 
-        // The run ended before it could listen, so nothing else will let the signal forget it.
-        hearing.Dispose();
+        // The run ended before it could listen, so nothing else will let the signal and the token forget it.
+        drain?.Dispose();
+        stop.Unregister();
     }
 
-    private void Hear() => Give((steps, now) => steps.StopHeard(_signal!.Requests, now));
+    private void HearDrain() => Give(static (steps, now) => steps.DrainHeard(now));
+
+    private void HearStop() => Give(static (steps, now) => steps.StopHeard(now));
 
     private void GracePeriodOver() => Give(static (steps, now) => steps.GracePeriodOver(now));
 
@@ -296,8 +301,9 @@ internal sealed class Run : ISnapshotSource
 
         if (step.Ends is not null)
         {
-            // Neither Dispose waits for a callback that is running, which may be waiting for this lock.
-            _hearsTheSignal?.Dispose();
+            // None of these waits for a callback that is running, which may be waiting for this lock.
+            _hearsTheDrain?.Dispose();
+            _hearsTheStop.Unregister();
             _gracePeriodTimer?.Dispose();
         }
 
@@ -315,7 +321,7 @@ internal sealed class Run : ISnapshotSource
         Publish(step);
         foreach (var task in step.Starts)
         {
-            _ = Task.Run(() => RunBodyAsync(task));
+            _ = Task.Run(() => RunBodyAsync(task, _stopping.Token));
         }
 
         if (step.Ends is { Outcome: { } outcome } reached)
@@ -332,13 +338,18 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Has the wait for reporters listen for stop requests beyond those the run applied, and completes delivery. It is called only
-    /// once the run's <see cref="RunEnded"/> is queued, as <see cref="ReporterDelivery.ListenBeyond"/> requires: a request heard
-    /// while a reporter has handled every event but <see cref="RunEnded"/> is still to come would leave that reporter to be waited for.
+    /// Has the wait for reporters listen to the app's token, unless the run applied a stop, and completes delivery. It is called only
+    /// once the run's <see cref="RunEnded"/> is queued, as <see cref="ReporterDelivery.ListenToTheStop"/> requires: a cancellation
+    /// heard while a reporter has handled every event but <see cref="RunEnded"/> is still to come would leave that reporter to be
+    /// waited for.
     /// </summary>
     private void CompleteDelivery(RunEnd end)
     {
-        _delivery.ListenBeyond(end.RequestsApplied);
+        if (!end.StopApplied)
+        {
+            _delivery.ListenToTheStop(_stop);
+        }
+
         _delivery.Complete();
     }
 
@@ -389,10 +400,15 @@ internal sealed class Run : ISnapshotSource
         return endedWith;
     }
 
-    // No token: a run is stopped through its signal, and a task body takes none.
-    private async Task RunBodyAsync(BuiltTask task)
+    /// <summary>Runs the body of a task, then has the task settle as its body ended.</summary>
+    /// <param name="task">The task.</param>
+    /// <param name="cancellationToken">
+    /// The token every task sees, which a step of the run signals when it applies a stop. It is never the app's token itself, which
+    /// the run hears as an input like any other, so that a task never sees a stop the run has not applied.
+    /// </param>
+    private async Task RunBodyAsync(BuiltTask task, CancellationToken cancellationToken)
     {
-        var outcome = await InvokeBodyAsync(task).ConfigureAwait(false);
+        var outcome = await InvokeBodyAsync(task, cancellationToken).ConfigureAwait(false);
         Give((steps, now) => steps.BodyEnded(task, outcome, now));
     }
 
@@ -402,11 +418,11 @@ internal sealed class Run : ISnapshotSource
     /// or its cancellation when it is a cancellation exception and the run has been stopped by the time the task settles.
     /// The exception is read here, outside the lock and before the task settles, because its members are consumer code too.
     /// </summary>
-    private async Task<TaskOutcome> InvokeBodyAsync(BuiltTask task)
+    private async Task<TaskOutcome> InvokeBodyAsync(BuiltTask task, CancellationToken cancellationToken)
     {
         try
         {
-            await task.Body(new TaskContext(this, task, _timeProvider, _stopping.Token)).ConfigureAwait(false);
+            await task.Body(new TaskContext(this, task, _timeProvider, cancellationToken)).ConfigureAwait(false);
             return TaskOutcome.Succeeded;
         }
         catch (Exception escaped)

@@ -9,7 +9,7 @@ public enum JournalEnding
     /// <summary>The latest run ended <see cref="RunOutcome.Incomplete"/>: a task failed or was blocked.</summary>
     Incomplete,
 
-    /// <summary>The latest run ended <see cref="RunOutcome.Stopped"/>: it was asked to stop before every task succeeded.</summary>
+    /// <summary>The latest run ended <see cref="RunOutcome.Stopped"/>: it was drained or stopped before every task succeeded.</summary>
     Stopped,
 
     /// <summary>A run holds the journal at the moment it was listed. Continuing or deleting it now throws <see cref="JournalInUseException"/>.</summary>

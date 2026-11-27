@@ -140,7 +140,7 @@ public class FailureTests
         var report = builder.Task("report", _ => Task.CompletedTask).After(load);
         var reporter = new RecordingReporter();
 
-        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] })
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, cancellationToken: cancellationToken)
             .WaitAsync(cancellationToken);
 
         result.Outcome.ShouldBe(RunOutcome.Incomplete);
@@ -170,7 +170,7 @@ public class FailureTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", _ => throw new ExceptionWithNoReadableStackTrace("entity 7 has no owner"));
 
-        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }).WaitAsync(cancellationToken);
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, cancellationToken: cancellationToken).WaitAsync(cancellationToken);
 
         result.Outcome.ShouldBe(RunOutcome.Incomplete);
         var failed = result.Snapshot[load.Path];
@@ -186,7 +186,7 @@ public class FailureTests
         var builder = new GraphBuilder();
         var load = builder.Task("load", _ => throw new ExceptionWithNoMessage());
 
-        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }).WaitAsync(cancellationToken);
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, cancellationToken: cancellationToken).WaitAsync(cancellationToken);
 
         result.Outcome.ShouldBe(RunOutcome.Incomplete);
         var failed = result.Snapshot[load.Path];

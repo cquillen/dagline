@@ -29,6 +29,7 @@ public sealed class Snapshot
         DateTimeOffset started,
         DateTimeOffset? ended,
         RunOutcome? outcome,
+        DrainState? drain,
         StopState? stop,
         ChunkedList<NodeSnapshot> nodes,
         FrozenDictionary<NodePath, int> positions,
@@ -40,6 +41,7 @@ public sealed class Snapshot
         Started = started;
         Ended = ended;
         Outcome = outcome;
+        Drain = drain;
         Stop = stop;
         Nodes = nodes;
         _positions = positions;
@@ -60,6 +62,13 @@ public sealed class Snapshot
 
     /// <summary>How the run ended, or <see langword="null"/> while it has not.</summary>
     public RunOutcome? Outcome { get; }
+
+    /// <summary>
+    /// The drain the run has applied, or <see langword="null"/> while none has been. It is set in the snapshot handed with
+    /// <see cref="DrainRequested"/> and in every later one, and carries the time of that event. A drain requested once a stop
+    /// has been applied is not applied, and leaves this <see langword="null"/>.
+    /// </summary>
+    public DrainState? Drain { get; }
 
     /// <summary>
     /// The stop the run has applied, or <see langword="null"/> while none has been. It is set in the snapshot handed with

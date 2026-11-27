@@ -30,14 +30,14 @@ shard.Task("store", async context =>
 
 var graph = builder.Build();
 
-using var stop = ConsoleStop.Hook();
+using var console = ConsoleStop.Hook();
 
-var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, stop);
+var result = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None }, console.Drain, console.Token);
 
 return result.Outcome.ToExitCode();
 ```
 
-`store` requires `load`, so it starts only once `load` has succeeded. `ConsoleStop.Hook()` turns Ctrl+C and SIGTERM into a stop, and `ToExitCode()` maps the run outcome to 0 (complete), 1 (incomplete) or 2 (stopped). A [journal](https://cquillen.github.io/dagline/articles/journals.html) in place of `Journal.None` lets a later run carry on where a stopped one left off.
+`store` requires `load`, so it starts only once `load` has succeeded. `ConsoleStop.Hook()` turns the first Ctrl+C into a drain, which lets the running tasks finish, and a second Ctrl+C or a SIGTERM into a stop, which cancels the run's token, and `ToExitCode()` maps the run outcome to 0 (complete), 1 (incomplete) or 2 (drained or stopped). A [journal](https://cquillen.github.io/dagline/articles/journals.html) in place of `Journal.None` lets a later run carry on where a stopped one left off.
 
 ## Learn more
 

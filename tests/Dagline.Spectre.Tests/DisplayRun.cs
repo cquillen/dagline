@@ -65,20 +65,22 @@ internal sealed class DisplayRun : IAsyncDisposable
     /// <param name="options">
     /// Options for the run, such as a journal or a max running tasks. Their clock and reporters are replaced. The default runs with no journal.
     /// </param>
-    /// <param name="stop">A stop signal for the run, if the test stops it.</param>
+    /// <param name="drain">A drain signal for the run, if the test drains it.</param>
     /// <param name="holdBefore">
     /// An event, as <see cref="EventLine.Describe"/> writes it, that the display is not handed until <see cref="ReleaseHeld"/>,
     /// nor any event after it: the run moves on while the display falls behind.
     /// </param>
     /// <param name="ascii">Whether the display draws with the glyph set that uses only ASCII.</param>
+    /// <param name="stop">The run's token, if the test stops it.</param>
     public static async Task<DisplayRun> StartAsync(
         Graph graph,
         int width,
         int height,
         RunOptions? options = null,
-        StopSignal? stop = null,
+        DrainSignal? drain = null,
         string? holdBefore = null,
-        bool ascii = false)
+        bool ascii = false,
+        CancellationToken stop = default)
     {
         var clock = new FakeTimeProvider(RunStart);
         var console = new TestConsole().Size(new Size(width, height)).EmitAnsiSequences();
@@ -87,7 +89,7 @@ internal sealed class DisplayRun : IAsyncDisposable
         var reporter = new WatchedReporter(held ?? display);
         var runOptions = (options ?? new RunOptions { Journal = Journal.None }) with { TimeProvider = clock, Reporters = [reporter] };
 
-        var run = Runner.RunAsync(graph, runOptions, stop);
+        var run = Runner.RunAsync(graph, runOptions, drain, stop);
         await reporter.Handled("run started");
         return new DisplayRun(clock, console, reporter, held, run);
     }

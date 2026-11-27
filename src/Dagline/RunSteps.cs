@@ -7,7 +7,7 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It owns the task instances, the ready set, the slots, the stop and the end rule. It tells <see cref="RollUp"/> of every change
+/// It owns the task instances, the ready set, the slots, the drain, the stop and the end rule. It tells <see cref="RollUp"/> of every change
 /// to a task, and asks it for the run's counts, a group's status and counts, and the groups that settled, so that it can announce
 /// them. It builds no journal entry: <see cref="JournalRecorder"/> builds them from the events of each step, and all this type
 /// learns of the journal is that a write to it failed, through <see cref="JournalWriteFailed"/>. It holds no lock, no disposable
@@ -54,8 +54,7 @@ internal sealed class RunSteps
     private readonly SnapshotTaker _snapshots;
 
     private StepUnderWay? _step;
-    private RunMilestones _milestones = new(Started: default, Stop: null, Ended: null, Outcome: null);
-    private int _requestsApplied;
+    private RunMilestones _milestones = new(Started: default, Drain: null, Stop: null, Ended: null, Outcome: null);
     private bool _journalWriteFailed;
 
     /// <param name="graph">The graph the run runs.</param>
@@ -86,13 +85,15 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// The run starts: the tasks with no dependency become ready and those that fit start. When stop requests have already been made,
-    /// the stop is a step of its own, after the tasks have become ready and before any starts, so the run starts nothing and ends.
+    /// The run starts: the tasks with no dependency become ready and those that fit start. A drain already requested, and a stop
+    /// already requested, are each a step of their own, the drain first, after the tasks have become ready and before any starts,
+    /// so the run starts nothing and ends. No task is running, so the stop bounds no grace period.
     /// </summary>
     /// <param name="now">When the run starts.</param>
-    /// <param name="stopRequests">How many requests the run's signal has had so far.</param>
+    /// <param name="drained">Whether the run's drain signal is already requested.</param>
+    /// <param name="stopped">Whether the run's token is already cancelled.</param>
     /// <param name="source">The run as reporters read it, which <see cref="RunStarted"/> carries.</param>
-    public IReadOnlyList<Step> Start(DateTimeOffset now, int stopRequests, ISnapshotSource source)
+    public IReadOnlyList<Step> Start(DateTimeOffset now, bool drained, bool stopped, ISnapshotSource source)
     {
         _milestones = _milestones with { Started = now };
         Begin();
@@ -100,15 +101,18 @@ internal sealed class RunSteps
         MakeReady(_graph.Tasks.Select(task => task.Position), now);
         AnnounceSettledGroups(_rollUp.TakeSettled(), now);
 
-        // A second request needs nothing more here: once stopped from its start, the run has no task to stop waiting for.
-        _requestsApplied = stopRequests;
-        if (stopRequests > 0)
+        if (drained)
+        {
+            DrainUnlessStopped(now);
+        }
+
+        if (stopped)
         {
             Begin();
             ApplyStop(StopRequester.App, now);
         }
 
-        StartWhatFitsUnlessStopped(now);
+        StartWhatFitsUnlessEndingEarly(now);
         return Decided();
     }
 
@@ -118,6 +122,7 @@ internal sealed class RunSteps
     /// </summary>
     public IReadOnlyList<Step> BodyEnded(BuiltTask task, TaskOutcome ended, DateTimeOffset now)
     {
+        // Only a stop tells the tasks, so only after a stop is a cancellation exception a cancellation: during a drain it is a failure.
         var changes = InstanceOf(task).Settle(HasStopped ? ended.OnceStopped() : ended, now);
         if (changes.Count == 0)
         {
@@ -185,30 +190,43 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// The run's signal has had <paramref name="requests"/> requests. The first is a stop: from its step on nothing starts,
-    /// and the run ends once nothing is running. The second also lets go of the running tasks, and so does any new request once
-    /// Dagline has stopped the run itself, as the stop's facts say.
-    /// Since it reads the count, requests are applied in order and once, however many calls it takes to hear them.
-    /// A request already applied, or heard after the run has ended, gives no step: the wait for reporters hears it.
+    /// The run's drain signal has been requested: from the drain's step on nothing starts, and the run ends once nothing is running.
+    /// The running tasks are not told. A drain already applied, one heard once a stop has been applied, or one heard after the run
+    /// has ended, gives no step.
     /// </summary>
-    public IReadOnlyList<Step> StopHeard(int requests, DateTimeOffset now)
+    public IReadOnlyList<Step> DrainHeard(DateTimeOffset now)
     {
-        if (HasEnded)
+        if (!HasEnded)
         {
-            return [];
-        }
-
-        var heardNew = requests > _requestsApplied;
-        var stoppedByDagline = _milestones.Stop?.By is StopRequester.Dagline;
-        _requestsApplied = requests;
-        StopUnlessStopped(StopRequester.App, now);
-
-        if (requests >= 2 || (heardNew && stoppedByDagline))
-        {
-            LetGo(GraceEndReason.SecondStop, now);
+            DrainUnlessStopped(now);
         }
 
         return Decided();
+    }
+
+    /// <summary>
+    /// The run's token has been cancelled: a stop by the app, unless a stop has been applied already, by the app or by Dagline, whose
+    /// grace period it leaves as it is. Heard after the run has ended, it gives no step: the wait for reporters hears it.
+    /// </summary>
+    public IReadOnlyList<Step> StopHeard(DateTimeOffset now)
+    {
+        if (!HasEnded)
+        {
+            StopUnlessStopped(StopRequester.App, now);
+        }
+
+        return Decided();
+    }
+
+    /// <summary>Unless a drain or a stop has been applied, applies a drain in a step of its own: from this step on nothing starts.</summary>
+    private void DrainUnlessStopped(DateTimeOffset now)
+    {
+        if (_milestones.Drain is null && !HasStopped)
+        {
+            Begin();
+            _milestones = _milestones with { Drain = new DrainState(now) };
+            Publish(new DrainRequested(now));
+        }
     }
 
     /// <summary>
@@ -242,12 +260,13 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// The end of each input that can settle a task or apply a stop: the run ends, in a step of its own, when no task is running and,
-    /// unless a stop has been applied, none is ready. Given after the run has ended, or while it has work left, it gives no step.
+    /// The end of each input that can settle a task or apply a drain or a stop: the run ends, in a step of its own, when no task is
+    /// running and, unless a drain or a stop has been applied, none is ready. Given after the run has ended, or while it has work
+    /// left, it gives no step.
     /// </summary>
     public IReadOnlyList<Step> EndIfDone(DateTimeOffset now)
     {
-        if (!HasEnded && NothingIsRunning && (HasStopped || _rollUp.InRun(NodeStatus.Ready) == 0))
+        if (!HasEnded && NothingIsRunning && (IsEndingEarly || _rollUp.InRun(NodeStatus.Ready) == 0))
         {
             End(now);
         }
@@ -258,7 +277,7 @@ internal sealed class RunSteps
     /// <summary>The grace period is over: the run lets go of the tasks still running, if it has not ended.</summary>
     public IReadOnlyList<Step> GracePeriodOver(DateTimeOffset now)
     {
-        LetGo(GraceEndReason.GracePeriodOver, now);
+        LetGo(now);
         return Decided();
     }
 
@@ -299,13 +318,16 @@ internal sealed class RunSteps
 
     private bool HasStopped => _milestones.Stop is not null;
 
+    // A drain or a stop: either one starts nothing more, ends the run once nothing is running, and makes its outcome stopped.
+    private bool IsEndingEarly => HasStopped || _milestones.Drain is not null;
+
     // From the end time, not the outcome: a run that ends with an error has none.
     private bool HasEnded => _milestones.Ended is not null;
 
     private bool NothingIsRunning => _rollUp.InRun(NodeStatus.Running) == 0;
 
     /// <summary>
-    /// Applies the first request: from this step on nothing starts. The step signals the token every task sees,
+    /// Applies a stop: from this step on nothing starts. The step signals the token every task sees,
     /// so it is signalled before the run can end and <see cref="Runner.RunAsync"/> return.
     /// </summary>
     private void ApplyStop(StopRequester by, DateTimeOffset now)
@@ -328,7 +350,7 @@ internal sealed class RunSteps
 
         if (_gracePeriod == TimeSpan.Zero)
         {
-            LetGo(GraceEndReason.GracePeriodOver, now);
+            LetGo(now);
             return;
         }
 
@@ -336,11 +358,11 @@ internal sealed class RunSteps
     }
 
     /// <summary>
-    /// Ends the wait for the running tasks after a stop, if the run is still waiting for any. In a step of its own it publishes
+    /// Ends the wait for the running tasks once the grace period is over, if the run is still waiting for any. In a step of its own it publishes
     /// <see cref="GraceEnded"/>, then records each running task as cancelled in declaration order and lets go of it.
     /// What follows is applied once for all of them, as after any task settles. Nothing is left running, so the end input that follows ends the run.
     /// </summary>
-    private void LetGo(GraceEndReason reason, DateTimeOffset now)
+    private void LetGo(DateTimeOffset now)
     {
         if (HasEnded || NothingIsRunning)
         {
@@ -348,7 +370,7 @@ internal sealed class RunSteps
         }
 
         Begin();
-        Publish(new GraceEnded(now, reason));
+        Publish(new GraceEnded(now));
         List<BuiltTask> leftBehind = [.. _graph.Tasks.Where(task => InstanceOf(task).Status is NodeStatus.Running)];
         foreach (var task in leftBehind)
         {
@@ -464,13 +486,13 @@ internal sealed class RunSteps
         var settledGroups = _rollUp.TakeSettled();
         MakeReady(DependentsOf(settled, settledGroups), now);
         AnnounceSettledGroups(settledGroups, now);
-        StartWhatFitsUnlessStopped(now);
+        StartWhatFitsUnlessEndingEarly(now);
     }
 
-    /// <summary>Starts the ready tasks that fit, unless a stop has been applied.</summary>
-    private void StartWhatFitsUnlessStopped(DateTimeOffset now)
+    /// <summary>Starts the ready tasks that fit, unless a drain or a stop has been applied.</summary>
+    private void StartWhatFitsUnlessEndingEarly(DateTimeOffset now)
     {
-        if (!HasStopped)
+        if (!IsEndingEarly)
         {
             StartWhatFits(now);
         }
@@ -580,15 +602,15 @@ internal sealed class RunSteps
         if (_journalWriteFailed)
         {
             _milestones = _milestones with { Ended = now };
-            _step!.Ends = new RunEnd(null, _requestsApplied);
+            _step!.Ends = new RunEnd(null, HasStopped);
             return;
         }
 
         var outcome = _rollUp.InRun(NodeStatus.Succeeded) == _graph.Tasks.Length ? RunOutcome.Complete
-            : HasStopped ? RunOutcome.Stopped
+            : IsEndingEarly ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
         _milestones = _milestones with { Ended = now, Outcome = outcome };
-        _step!.Ends = new RunEnd(outcome, _requestsApplied);
+        _step!.Ends = new RunEnd(outcome, HasStopped);
         Publish(new RunEnded(now, outcome));
     }
 

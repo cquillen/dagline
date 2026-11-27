@@ -4,40 +4,41 @@ namespace Dagline.Tests;
 public class ConsoleStopTests
 {
     [Test]
-    public void Hook_returns_a_signal_that_is_not_requested()
+    public void Hook_returns_a_drain_that_is_not_requested_and_a_token_that_is_not_cancelled()
     {
-        using var stop = ConsoleStop.Hook();
+        using var console = ConsoleStop.Hook();
 
-        stop.IsRequested.ShouldBeFalse();
-        stop.Requests.ShouldBe(0);
+        console.Drain.IsRequested.ShouldBeFalse();
+        console.Token.CanBeCanceled.ShouldBeTrue();
+        console.Token.IsCancellationRequested.ShouldBeFalse();
     }
 
     [Test]
-    public async Task Request_on_the_hooked_signal_stops_a_run_as_on_any_stop_signal()
+    public async Task Its_drain_requested_from_code_drains_a_run_as_any_drain_signal_does()
     {
         var builder = new GraphBuilder();
         builder.Task("work", _ => Task.CompletedTask);
-        using var stop = ConsoleStop.Hook();
+        using var console = ConsoleStop.Hook();
 
-        stop.Request();
-        stop.Request();
-        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, stop);
+        console.Drain.Request();
+        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, console.Drain, console.Token);
 
-        stop.IsRequested.ShouldBeTrue();
-        stop.Requests.ShouldBe(2);
         result.Outcome.ShouldBe(RunOutcome.Stopped);
+        result.Snapshot.Drain.ShouldNotBeNull();
+        result.Snapshot.Stop.ShouldBeNull();
         result.Snapshot.NeverReached.Count.ShouldBe(1);
     }
 
     [Test]
-    public void Disposing_twice_is_harmless_and_leaves_the_signal_usable()
+    public void Disposing_twice_is_harmless_and_leaves_the_drain_and_the_token_usable()
     {
-        var stop = ConsoleStop.Hook();
+        var console = ConsoleStop.Hook();
 
-        stop.Dispose();
-        stop.Dispose();
-        stop.Request();
+        console.Dispose();
+        console.Dispose();
+        console.Drain.Request();
 
-        stop.Requests.ShouldBe(1);
+        console.Drain.IsRequested.ShouldBeTrue();
+        console.Token.IsCancellationRequested.ShouldBeFalse();
     }
 }

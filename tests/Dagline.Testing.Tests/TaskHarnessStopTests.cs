@@ -54,6 +54,79 @@ public class TaskHarnessStopTests
     }
 
     [Test]
+    public async Task Cancelling_the_token_passed_to_a_run_stops_it_and_a_body_that_honours_its_token_returns_the_outcome_it_chose()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var harness = TaskHarness.For(async context =>
+            {
+                started.TrySetResult();
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, context.TimeProvider, context.CancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw context.Fail("stopped before the export finished");
+                }
+            });
+            using var stop = new CancellationTokenSource();
+
+            var running = harness.RunAsync(stop.Token);
+            await started.Task;
+            await stop.CancelAsync();
+            var outcome = await running;
+
+            outcome.Status.ShouldBe(NodeStatus.Failed);
+            outcome.Failure.ShouldBe(FailureKind.Reported);
+            outcome.Message.ShouldBe("stopped before the export finished");
+        }
+    }
+
+    [Test]
+    public async Task Cancelling_the_callers_token_stops_a_run_until_waiting_before_the_task_has_begun_waiting()
+    {
+        for (var repeat = 0; repeat < _repeats; repeat++)
+        {
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var harness = TaskHarness.For(async context =>
+            {
+                started.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, context.TimeProvider, context.CancellationToken);
+                await context.WaitUntilAsync(TimeSpan.FromMinutes(5), _ => Task.FromResult(false));
+            });
+            using var stop = new CancellationTokenSource();
+
+            var running = harness.RunUntilWaitingThenStopAsync(stop.Token);
+            await started.Task;
+            await stop.CancelAsync();
+            var outcome = await running;
+
+            outcome.Status.ShouldBe(NodeStatus.Cancelled);
+            outcome.Waited.ShouldBeFalse();
+        }
+    }
+
+    [Test]
+    public async Task A_token_already_cancelled_runs_no_body_and_returns_the_task_as_it_was_left()
+    {
+        var bodyRan = false;
+        await using var harness = TaskHarness.For(_ =>
+        {
+            bodyRan = true;
+            return Task.CompletedTask;
+        });
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
+
+        var outcome = await harness.RunAsync(stop.Token);
+
+        outcome.Status.ShouldBe(NodeStatus.Ready);
+        bodyRan.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task A_task_that_settles_without_waiting_comes_back_with_its_own_outcome()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)

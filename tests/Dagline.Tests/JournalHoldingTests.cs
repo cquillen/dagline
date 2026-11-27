@@ -56,7 +56,7 @@ public class JournalHoldingTests
     public async Task A_run_lets_go_of_its_journal_when_it_ends_however_it_ends(RunOutcome outcome)
     {
         using var temporary = new TemporaryDirectory();
-        var stop = new StopSignal();
+        using var stop = new CancellationTokenSource();
         var builder = new GraphBuilder();
         builder.Task("load", _ => outcome switch
         {
@@ -66,10 +66,10 @@ public class JournalHoldingTests
         var graph = builder.Build();
         if (outcome is RunOutcome.Stopped)
         {
-            stop.Request();
+            await stop.CancelAsync();
         }
 
-        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, stop);
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, cancellationToken: stop.Token);
         first.Outcome.ShouldBe(outcome);
         var id = first.Snapshot.Journal!.Id;
 
