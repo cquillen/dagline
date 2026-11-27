@@ -39,15 +39,15 @@ internal sealed class ReporterDelivery
     /// that ends this wait. Listening only once the last event is queued means a cancellation is never heard while every reporter
     /// has handled every event so far but one more is still to come.
     /// </summary>
-    /// <param name="stop">The app's token.</param>
-    public void ListenToTheStop(CancellationToken stop)
+    /// <param name="appToken">The app's token, which <see cref="Runner.RunAsync"/> was given.</param>
+    public void ListenToTheStop(CancellationToken appToken)
     {
-        if (!stop.CanBeCanceled)
+        if (!appToken.CanBeCanceled)
         {
             return;
         }
 
-        var listening = stop.OnCancelled(DropTheBusyReporters);
+        var listening = appToken.OnCancelled(DropTheBusyReporters);
 
         // The token outlives the run, so the registration goes once every reporter is done, lest the token keep them.
         _ = Delivered.ContinueWith(

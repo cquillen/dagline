@@ -36,7 +36,7 @@ namespace Dagline;
 [SuppressMessage(
     "Reliability",
     "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The stopping source has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token.")]
+    Justification = "The source of the tasks' token has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token.")]
 internal sealed class Run : ISnapshotSource
 {
     private readonly Lock _gate = new();
@@ -46,8 +46,8 @@ internal sealed class Run : ISnapshotSource
     private readonly RunSteps _steps;
     private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DrainSignal? _drain;
-    private readonly CancellationToken _stop;
-    private readonly CancellationTokenSource _stopping = new();
+    private readonly CancellationToken _appToken;
+    private readonly CancellationTokenSource _tasksTokenSource = new();
     private readonly JournalRecorder _recorder;
 
     private IDisposable? _hearsTheDrain;
@@ -64,11 +64,11 @@ internal sealed class Run : ISnapshotSource
     /// here, and closes it and lets go of its lock in the step that ends the run, so that a later run can continue it as soon as this
     /// one has ended.
     /// </param>
-    /// <param name="stop">The app's token, whose cancellation stops the run.</param>
-    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, DrainSignal? drain, JournalFile? journal, CancellationToken stop)
+    /// <param name="appToken">The app's token, which <see cref="Runner.RunAsync"/> was given, and whose cancellation stops the run.</param>
+    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, DrainSignal? drain, JournalFile? journal, CancellationToken appToken)
     {
         _drain = drain;
-        _stop = stop;
+        _appToken = appToken;
         _graph = graph;
         _timeProvider = settings.TimeProvider;
         _delivery = delivery;
@@ -92,7 +92,7 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     public void Start()
     {
-        Give((steps, now) => steps.Start(now, _drain?.IsRequested ?? false, _stop.IsCancellationRequested, this));
+        Give((steps, now) => steps.Start(now, _drain?.IsRequested ?? false, _appToken.IsCancellationRequested, this));
         HearTheDrainAndTheStop();
     }
 
@@ -103,21 +103,21 @@ internal sealed class Run : ISnapshotSource
     /// </summary>
     private void HearTheDrainAndTheStop()
     {
-        var drain = _drain?.OnRequest(HearDrain);
-        var stop = _stop.OnCancelled(HearStop);
+        var hearsTheDrain = _drain?.OnRequest(HearDrain);
+        var hearsTheStop = _appToken.OnCancelled(HearStop);
         lock (_gate)
         {
             if (!_ended.Task.IsCompleted)
             {
-                _hearsTheDrain = drain;
-                _hearsTheStop = stop;
+                _hearsTheDrain = hearsTheDrain;
+                _hearsTheStop = hearsTheStop;
                 return;
             }
         }
 
         // The run ended before it could listen, so nothing else will let the signal and the token forget it.
-        drain?.Dispose();
-        stop.Unregister();
+        hearsTheDrain?.Dispose();
+        hearsTheStop.Unregister();
     }
 
     private void HearDrain() => Give(static (steps, now) => steps.DrainHeard(now));
@@ -321,7 +321,7 @@ internal sealed class Run : ISnapshotSource
         Publish(step);
         foreach (var task in step.Starts)
         {
-            _ = Task.Run(() => RunBodyAsync(task, _stopping.Token));
+            _ = Task.Run(() => RunBodyAsync(task, _tasksTokenSource.Token));
         }
 
         if (step.Ends is { Outcome: { } outcome } reached)
@@ -347,7 +347,7 @@ internal sealed class Run : ISnapshotSource
     {
         if (!end.StopApplied)
         {
-            _delivery.ListenToTheStop(_stop);
+            _delivery.ListenToTheStop(_appToken);
         }
 
         _delivery.Complete();
@@ -360,7 +360,7 @@ internal sealed class Run : ISnapshotSource
     private void SignalTheTasks()
     {
         // A callback a task body registered on its token may throw. That is the body's affair, and the stop goes on.
-        _stopping.CancelLettingCallbackFaultsGo();
+        _tasksTokenSource.CancelLettingCallbackFaultsGo();
     }
 
     /// <summary>

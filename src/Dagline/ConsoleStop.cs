@@ -49,7 +49,7 @@ namespace Dagline;
 /// </example>
 public sealed class ConsoleStop : IDisposable
 {
-    private readonly CancellationTokenSource _stop = new();
+    private readonly CancellationTokenSource _tokenSource = new();
     private readonly Lock _gate = new();
 
     private int _presses;
@@ -58,7 +58,7 @@ public sealed class ConsoleStop : IDisposable
 
     private ConsoleStop()
     {
-        Token = _stop.Token;
+        Token = _tokenSource.Token;
     }
 
     /// <summary>The drain signal that the first Ctrl+C requests. Pass it to <see cref="Runner.RunAsync"/>.</summary>
@@ -109,7 +109,7 @@ public sealed class ConsoleStop : IDisposable
         Console.CancelKeyPress -= OnCancelKeyPress;
 #pragma warning restore RS0030
         _terminate?.Dispose();
-        _stop.Dispose();
+        _tokenSource.Dispose();
     }
 
     private static PosixSignalRegistration? TryHookTerminate(Action<PosixSignalContext> handler)
@@ -168,7 +168,7 @@ public sealed class ConsoleStop : IDisposable
     }
 
     // Read under the gate, so that a press racing Dispose never cancels a source that is disposed.
-    private bool IsListening => !_disposed && !_stop.IsCancellationRequested;
+    private bool IsListening => !_disposed && !_tokenSource.IsCancellationRequested;
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs pressed)
     {
@@ -187,5 +187,5 @@ public sealed class ConsoleStop : IDisposable
     }
 
     // Not inline: the callbacks registered on the token run on the thread pool, never on the console's handler thread.
-    private void CancelTheToken() => _stop.CancelLettingCallbackFaultsGo();
+    private void CancelTheToken() => _tokenSource.CancelLettingCallbackFaultsGo();
 }
