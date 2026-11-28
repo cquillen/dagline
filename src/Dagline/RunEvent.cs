@@ -331,29 +331,30 @@ public sealed record GraceEnded : RunEvent
 
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <remarks>
-/// It carries exactly one of <see cref="Outcome"/> and <see cref="Error"/>. An ordinary run, stopped or not, ends with its run outcome.
-/// A run whose journal could no longer be written ends with a <see cref="JournalWriteException"/> and no run outcome, and
-/// <see cref="Runner.RunAsync"/> throws that same exception once reporters have handled every event.
+/// It always carries the run's <see cref="Outcome"/>, the same as <see cref="RunResult.Outcome"/>. A run whose journal could no
+/// longer be written before it had ended has the outcome <see cref="RunOutcome.Unrecorded"/>, and <see cref="JournalError"/> gives
+/// the file system's failure. A run whose journal failed only on the entry for its end keeps the outcome it reached, with
+/// <see cref="JournalError"/> beside it: the journal lists that run as <see cref="JournalEnding.Died"/>. The journal is closed, and
+/// let go of, before this event is published.
 /// </remarks>
 public sealed record RunEnded : RunEvent
 {
-    internal RunEnded(DateTimeOffset at, RunOutcome outcome)
+    internal RunEnded(DateTimeOffset at, RunOutcome outcome, Exception? journalError)
         : base(at)
     {
         Outcome = outcome;
+        JournalError = journalError;
     }
 
-    internal RunEnded(DateTimeOffset at, Exception error)
-        : base(at)
-    {
-        Error = error;
-    }
+    /// <summary>How the run ended.</summary>
+    public RunOutcome Outcome { get; }
 
-    /// <summary>How the run ended, or <see langword="null"/> when it ended with an error.</summary>
-    public RunOutcome? Outcome { get; }
-
-    /// <summary>The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</summary>
-    public Exception? Error { get; }
+    /// <summary>
+    /// The file system's failure that stopped the run's journal, the same as <see cref="RunResult.JournalError"/>: an
+    /// <see cref="IOException"/>, or an <see cref="UnauthorizedAccessException"/> when the process may no longer write the file.
+    /// <see langword="null"/> when every write landed, and always <see langword="null"/> for a run with no journal.
+    /// </summary>
+    public Exception? JournalError { get; }
 
     private protected override void ClosedToOutsideDerivation()
     {

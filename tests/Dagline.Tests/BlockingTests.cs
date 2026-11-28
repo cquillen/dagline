@@ -193,7 +193,7 @@ public class BlockingTests
         result.Outcome.ShouldBe(RunOutcome.Incomplete);
         result.Snapshot.Outcome.ShouldBe(RunOutcome.Incomplete);
         var ended = reporter.Events[^1].ShouldBeOfType<RunEnded>();
-        (ended.At, ended.Outcome, ended.Error).ShouldBe((result.Snapshot.Ended!.Value, RunOutcome.Incomplete, null));
+        (ended.At, ended.Outcome, ended.JournalError).ShouldBe((result.Snapshot.Ended!.Value, RunOutcome.Incomplete, null));
         result.Snapshot[verifyTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
         result.Snapshot[archive.Path].Status.ShouldBe(NodeStatus.Succeeded);
         result.Snapshot[loadSettledTask.Path].Status.ShouldBe(NodeStatus.Succeeded);

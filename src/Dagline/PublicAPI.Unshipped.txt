@@ -49,3 +49,9 @@ static Dagline.Runner.RunAsync(Dagline.Graph! graph, Dagline.RunOptions! options
 static Dagline.Runner.Start(Dagline.Graph! graph, Dagline.RunOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Dagline.Run!
 Dagline.RunOptions.ReporterWait.get -> System.TimeSpan
 Dagline.RunOptions.ReporterWait.init -> void
+*REMOVED*Dagline.RunEnded.Error.get -> System.Exception?
+*REMOVED*Dagline.RunEnded.Outcome.get -> Dagline.RunOutcome?
+Dagline.RunEnded.JournalError.get -> System.Exception?
+Dagline.RunEnded.Outcome.get -> Dagline.RunOutcome
+Dagline.RunOutcome.Unrecorded = 3 -> Dagline.RunOutcome
+Dagline.RunResult.JournalError.get -> System.Exception?

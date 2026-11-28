@@ -76,7 +76,7 @@ A **run** is one execution of a graph by one process. You start it with one call
 
 How much runs at once is bounded in two ways. The **max running tasks** is the most tasks that may be running at any moment. A **limit** is a named ceiling that the graph puts on some of its tasks, and each run gives it a size.
 
-A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, and **stopped** when the run was drained or stopped and at least one task had not succeeded. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
+A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, **stopped** when the run was drained or stopped and at least one task had not succeeded, and **unrecorded** when its journal could no longer be written before it had ended, which takes precedence over the other three. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
 
 More in [Running and stopping](running-and-stopping.md). Definitions: [Runs](../../GLOSSARY.md#runs) and [Scheduling](../../GLOSSARY.md#scheduling).
 
