@@ -209,7 +209,7 @@ A snapshot shows a limit on the node it was named on, as <xref:Dagline.NodeSnaps
 
 A limit of size 3 has three slots. A task takes one slot of each of its limits when it starts and gives them back when it settles. It holds them for all of that time, including while it waits on another system.
 
-A ready task starts only when every one of its limits has a free slot. It takes all its slots at once or takes none, so it never holds one slot while it waits for another. A ready task that does not fit is *held*: it stays ready, the tasks behind it are still tried, and it is tried again whenever a task settles.
+A ready task starts only when every one of its limits has a free slot. It takes all its slots at once or takes none, so it never holds one slot while it waits for another. A ready task that does not fit is *held*: it stays ready, the tasks behind it are still tried, and once a full limit has turned it away it is tried again only after a task gives that limit back.
 
 ## Declaration order
 

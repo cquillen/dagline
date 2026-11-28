@@ -7,7 +7,7 @@ namespace Dagline.Tests;
 public class SlotTryTests
 {
     [Test]
-    public void Tasks_behind_one_small_limit_cost_at_most_two_slot_tries_each()
+    public void Tasks_behind_one_small_limit_cost_at_most_two_slot_tries_each_plus_the_max_running_tasks()
     {
         const int taskCount = 2_000;
         var builder = new GraphBuilder();

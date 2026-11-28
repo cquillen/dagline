@@ -393,7 +393,7 @@ internal sealed class RunSteps
         _slots.GiveBack(task);
         foreach (var limit in task.HeldLimits)
         {
-            _held.Release(limit);
+            _held.LimitGivenBack(limit);
         }
         foreach (var change in changes)
         {
@@ -552,8 +552,8 @@ internal sealed class RunSteps
     /// </summary>
     /// <remarks>
     /// A ready task a full limit turned away is held, and tried again only once a limit it holds has been given back and every
-    /// limit it holds has room, merged by position with the other ready tasks, as <see cref="HeldTasks"/> says. That starts the same tasks in the same order as trying it each
-    /// time: a task one of whose limits is full would be turned away again.
+    /// limit it holds has room, merged by position with the other ready tasks, as <see cref="HeldTasks"/> says. That starts the
+    /// same tasks in the same order as trying it each time: a task one of whose limits is full would be turned away again.
     /// </remarks>
     private void StartWhatFits(DateTimeOffset now)
     {

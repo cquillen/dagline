@@ -7,16 +7,16 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// Held tasks are kept together by the set of limits they hold, in declaration order, since tasks that hold the same limits
-/// fit or do not fit together. Each set that holds a task waits under one full limit, queued by the position of its first
-/// task. A limit is releasing from a task giving back one of its slots until a walk finds it full again, and while it is, its
-/// queue offers its first set's first task, merged with the other releasing limits' by position. A set offered while a second
-/// limit of it is full moves to that limit's queue, and the set behind it is offered next. Only a task whose limits all have
-/// room is handed out to be tried, so a held task is tried only when no limit can turn it away. A walk cut short by the max
-/// running tasks leaves its limits releasing, so the sets it never reached are offered at the next walk, whichever limits the
-/// settle before it gives back.
+/// fit or do not fit together. Each set of limits that holds a task waits under one full limit, ordered among the others
+/// waiting there by the position of its first task. A limit counts as given back from when a task gives back one of its slots
+/// until a walk finds it full again, and while it does, the first task of the first set waiting under it is offered, merged by
+/// position with those of the other limits given back. A set offered while a second limit of it is full moves to wait under
+/// that limit, and the set behind it is offered next. Only a task whose limits all have room is handed out to be tried, so a
+/// held task is tried only when no limit can turn it away. A walk cut short by the max running tasks leaves its limits counted
+/// as given back, so the sets it never reached are offered at the next walk, whichever limits the settle before it gives back.
 /// </para>
 /// <para>
-/// Releasing every task held by a limit at each give-back made each walk try nearly all of them to start one, so a run's slot
+/// Trying again every task held by a limit each time it was given back made each walk try nearly all of them to start one, so a run's slot
 /// tries grew with the square of its tasks. Keeping held tasks under a limit one by one, rather than by their set of limits,
 /// moved a task holding two full limits from one to the other at every settle of either, at the cost of a try each time.
 /// </para>
@@ -27,17 +27,17 @@ namespace Dagline;
 internal sealed class HeldTasks
 {
     private readonly Slots _slots;
-    private readonly int[] _setOf;
+    private readonly int[] _limitSetOf;
     private readonly int[][] _limitsOf;
     private readonly SortedSet<int>[] _tasksOf;
 
     // For each limit, the sets waiting under it, by the position of each set's first task.
-    private readonly SortedSet<(int Position, int Set)>[] _waitingUnder;
+    private readonly SortedSet<(int Position, int LimitSet)>[] _waitingUnder;
     private readonly int[] _waitsUnder;
-    private readonly bool[] _isReleasing;
-    private readonly List<int> _releasing = [];
+    private readonly bool[] _isGivenBack;
+    private readonly List<int> _givenBack = [];
 
-    // The releasing limits, by the position of their first waiting task. Filled at the start of each walk and reused.
+    // The limits given back, by the position of their first waiting task. Filled at the start of each walk and reused.
     private readonly PriorityQueue<int, int> _offered = new();
 
     /// <param name="graph">The graph the run runs.</param>
@@ -45,28 +45,28 @@ internal sealed class HeldTasks
     public HeldTasks(Graph graph, Slots slots)
     {
         _slots = slots;
-        _setOf = new int[graph.Nodes.Length];
-        Dictionary<string, int> sets = [];
+        _limitSetOf = new int[graph.Nodes.Length];
+        Dictionary<string, int> limitSets = [];
         List<int[]> limitsOf = [];
         foreach (var task in graph.Tasks)
         {
             int[] limits = [.. task.HeldLimits.Distinct().Order()];
             var key = string.Join(',', limits);
-            if (!sets.TryGetValue(key, out var set))
+            if (!limitSets.TryGetValue(key, out var limitSet))
             {
-                set = limitsOf.Count;
-                sets.Add(key, set);
+                limitSet = limitsOf.Count;
+                limitSets.Add(key, limitSet);
                 limitsOf.Add(limits);
             }
 
-            _setOf[task.Position] = set;
+            _limitSetOf[task.Position] = limitSet;
         }
 
         _limitsOf = [.. limitsOf];
         _tasksOf = [.. _limitsOf.Select(_ => new SortedSet<int>())];
         _waitsUnder = new int[_limitsOf.Length];
-        _waitingUnder = [.. graph.LimitNames.Select(_ => new SortedSet<(int Position, int Set)>())];
-        _isReleasing = new bool[graph.LimitNames.Length];
+        _waitingUnder = [.. graph.LimitNames.Select(_ => new SortedSet<(int Position, int LimitSet)>())];
+        _isGivenBack = new bool[graph.LimitNames.Length];
     }
 
     /// <summary>
@@ -77,69 +77,69 @@ internal sealed class HeldTasks
     /// <param name="fullLimit">A full limit of the task, as its position among <see cref="Graph.LimitNames"/>.</param>
     public void Hold(BuiltTask task, int fullLimit)
     {
-        var set = _setOf[task.Position];
-        var tasks = _tasksOf[set];
+        var limitSet = _limitSetOf[task.Position];
+        var tasks = _tasksOf[limitSet];
         if (tasks.Count == 0)
         {
             tasks.Add(task.Position);
-            Wait(set, fullLimit);
+            Wait(limitSet, fullLimit);
             return;
         }
 
-        var under = _waitsUnder[set];
-        _waitingUnder[under].Remove((tasks.Min, set));
+        var under = _waitsUnder[limitSet];
+        _waitingUnder[under].Remove((tasks.Min, limitSet));
         tasks.Add(task.Position);
-        _waitingUnder[under].Add((tasks.Min, set));
+        _waitingUnder[under].Add((tasks.Min, limitSet));
     }
 
     /// <summary>A task has given back a slot of a limit: the sets waiting under it may fit again.</summary>
     /// <param name="limit">The limit, as its position among <see cref="Graph.LimitNames"/>.</param>
-    public void Release(int limit)
+    public void LimitGivenBack(int limit)
     {
-        if (!_isReleasing[limit] && _waitingUnder[limit].Count > 0)
+        if (!_isGivenBack[limit] && _waitingUnder[limit].Count > 0)
         {
-            _isReleasing[limit] = true;
-            _releasing.Add(limit);
+            _isGivenBack[limit] = true;
+            _givenBack.Add(limit);
         }
     }
 
-    /// <summary>Begins a walk: from now on <see cref="First"/> offers the waiting sets of each releasing limit.</summary>
+    /// <summary>Begins a walk: from now on <see cref="First"/> offers the sets waiting under each limit given back.</summary>
     public void BeginWalk()
     {
         _offered.Clear();
-        foreach (var limit in _releasing)
+        foreach (var limit in _givenBack)
         {
             Offer(limit);
         }
     }
 
     /// <summary>
-    /// The position of the first held task, among those the releasing limits offer, whose limits all have room, or
-    /// <see langword="null"/> when there is none. On the way, a releasing limit found full stops releasing, and a set offered
-    /// with another limit full moves to wait under that one; neither is tried.
+    /// The position of the first held task, among those the limits given back offer, whose limits all have room, or
+    /// <see langword="null"/> when there is none. On the way, a limit given back that is found full no longer counts as given
+    /// back, and a set offered with another limit full moves to wait under that one; neither is tried.
     /// </summary>
     public int? First()
     {
         while (_offered.TryPeek(out var limit, out _))
         {
-            if (!_isReleasing[limit] || _waitingUnder[limit].Count == 0)
+            if (!_isGivenBack[limit] || _waitingUnder[limit].Count == 0)
             {
                 _offered.Dequeue();
                 continue;
             }
 
-            var (position, set) = _waitingUnder[limit].Min;
-            switch (_slots.FullLimitAmong(_limitsOf[set]))
+            var (position, limitSet) = _waitingUnder[limit].Min;
+            switch (_slots.FullLimitAmong(_limitsOf[limitSet]))
             {
                 case null:
                     return position;
                 case var full when full == limit:
-                    _isReleasing[limit] = false;
+                    _isGivenBack[limit] = false;
                     _offered.Dequeue();
                     break;
                 case { } full:
-                    _waitingUnder[limit].Remove((position, set));
-                    Wait(set, full);
+                    _waitingUnder[limit].Remove((position, limitSet));
+                    Wait(limitSet, full);
                     _offered.Dequeue();
                     Offer(limit);
                     break;
@@ -153,41 +153,41 @@ internal sealed class HeldTasks
     public void StartedFirst()
     {
         var limit = _offered.Dequeue();
-        var (position, set) = _waitingUnder[limit].Min;
-        _waitingUnder[limit].Remove((position, set));
-        var tasks = _tasksOf[set];
+        var (position, limitSet) = _waitingUnder[limit].Min;
+        _waitingUnder[limit].Remove((position, limitSet));
+        var tasks = _tasksOf[limitSet];
         tasks.Remove(position);
         if (tasks.Count > 0)
         {
-            _waitingUnder[limit].Add((tasks.Min, set));
+            _waitingUnder[limit].Add((tasks.Min, limitSet));
         }
 
         Offer(limit);
     }
 
-    /// <summary>Ends a walk: a limit stays releasing only while sets wait under it, so that the next walk offers them.</summary>
+    /// <summary>Ends a walk: a limit still counts as given back only while sets wait under it, so that the next walk offers them.</summary>
     public void EndWalk()
     {
-        foreach (var limit in _releasing)
+        foreach (var limit in _givenBack)
         {
             if (_waitingUnder[limit].Count == 0)
             {
-                _isReleasing[limit] = false;
+                _isGivenBack[limit] = false;
             }
         }
 
-        _releasing.RemoveAll(limit => !_isReleasing[limit]);
+        _givenBack.RemoveAll(limit => !_isGivenBack[limit]);
     }
 
-    private void Wait(int set, int limit)
+    private void Wait(int limitSet, int limit)
     {
-        _waitsUnder[set] = limit;
-        _waitingUnder[limit].Add((_tasksOf[set].Min, set));
+        _waitsUnder[limitSet] = limit;
+        _waitingUnder[limit].Add((_tasksOf[limitSet].Min, limitSet));
     }
 
     private void Offer(int limit)
     {
-        if (_isReleasing[limit] && _waitingUnder[limit].Count > 0)
+        if (_isGivenBack[limit] && _waitingUnder[limit].Count > 0)
         {
             _offered.Enqueue(limit, _waitingUnder[limit].Min.Position);
         }

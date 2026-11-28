@@ -62,7 +62,7 @@ public class RunBenchmarks
 
         await Check(_largeGraph, expectedWarnings: 0).ConfigureAwait(false);
         await Check(_heldByLimits, expectedWarnings: 0).ConfigureAwait(false);
-        await Check(_heldByOneSmallLimit, expectedWarnings: 0).ConfigureAwait(false);
+        await Check(_heldByOneSmallLimit, expectedWarnings: 0, OneSharedLimitOptions()).ConfigureAwait(false);
         await Check(_onAJournal, expectedWarnings: 0, OnAJournal()).ConfigureAwait(false);
         await Check(_progress, expectedWarnings: 0).ConfigureAwait(false);
         await Check(_warningsBeyondKept, expectedWarnings: 256 * WarningsPerTask).ConfigureAwait(false);
@@ -78,7 +78,7 @@ public class RunBenchmarks
 
     /// <summary>10,000 tasks with no dependencies, every one holding one limit of 4 slots.</summary>
     [Benchmark]
-    public Task<RunOutcome> HeldByOneSmallLimit() => Run(_heldByOneSmallLimit);
+    public Task<RunOutcome> HeldByOneSmallLimit() => Run(_heldByOneSmallLimit, OneSharedLimitOptions());
 
     /// <summary>160 tasks on a new journal file, each settle flushed to the disk.</summary>
     [Benchmark]
@@ -110,10 +110,14 @@ public class RunBenchmarks
     private static RunOptions Options() => new()
     {
         Journal = Journal.None,
-        Limits = new Dictionary<string, int>(Enumerable.Range(1, Shards).ToDictionary(shard => $"shard-{shard}", _ => ShardLimitSize))
-        {
-            [SharedLimit] = SharedLimitSize,
-        },
+        Limits = Enumerable.Range(1, Shards).ToDictionary(shard => $"shard-{shard}", _ => ShardLimitSize),
+        Reporters = [new PlainTextReporter(TextWriter.Null)],
+    };
+
+    private static RunOptions OneSharedLimitOptions() => new()
+    {
+        Journal = Journal.None,
+        Limits = new Dictionary<string, int> { [SharedLimit] = SharedLimitSize },
         Reporters = [new PlainTextReporter(TextWriter.Null)],
     };
 
