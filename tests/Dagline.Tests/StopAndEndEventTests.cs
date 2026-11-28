@@ -19,7 +19,7 @@ public class StopAndEndEventTests
     }
 
     [Test]
-    public async Task An_ordinary_run_ends_with_its_run_outcome_and_no_error()
+    public async Task An_ordinary_run_ends_with_its_run_outcome_and_no_journal_error()
     {
         var reporter = new RecordingReporter();
         var builder = new GraphBuilder();
@@ -29,6 +29,6 @@ public class StopAndEndEventTests
 
         var ended = reporter.Events[^1].ShouldBeOfType<RunEnded>();
         ended.Outcome.ShouldBe(RunOutcome.Incomplete);
-        ended.Error.ShouldBeNull();
+        ended.JournalError.ShouldBeNull();
     }
 }

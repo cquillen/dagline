@@ -27,11 +27,11 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.DrainRequested> | When the run applies a drain, at most once per run, and never once a stop has been applied. From then on nothing starts, and the running tasks finish as they would. | Nothing beyond its time: a drain only comes from the app. |
 | <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run, after `DrainRequested` when a drain came first. From then on nothing starts. | Who asked, `By`: the app by cancelling the run's token, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
 | <xref:Dagline.GraceEnded> | When the grace period runs out after a stop with tasks still running, at most once per run. Never when the last running task ended in time. | Nothing beyond its time: only the grace period running out ends the wait. The tasks left behind follow, each cancelled. |
-| <xref:Dagline.RunEnded> | Last, once per run. | Exactly one of the run outcome and an error: a run whose journal could no longer be written ends with a `JournalWriteException` in `Error` and a null `Outcome`. |
+| <xref:Dagline.RunEnded> | Last, once per run. | The run outcome, always, and the journal's error beside it in `JournalError` when a write failed: a run whose journal could no longer be written ends unrecorded. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
-Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.DrainState>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
+Nothing an event carries is ever null, except the text of a wait the task gave none for, and the journal's error of a <xref:Dagline.RunEnded> when every write landed. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.DrainState>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
 
 ### The order within one step
 
@@ -180,7 +180,7 @@ A run that continues a [journal](journals.md) begins with its earlier successes 
 
 An earlier success keeps its whole outcome, warnings included, so `WarningCount` and `WithWarnings` cover every task in the graph. A reporter that lists warnings in its summary lists <xref:Dagline.Snapshot.WithWarningsInThisRun>, and can count those of earlier runs, which an earlier summary listed, from <xref:Dagline.Snapshot.EarlierSuccessesWithWarnings>.
 
-A run whose journal can no longer be written is stopped by Dagline: `StopRequested` has `By` set to `StopRequester.Dagline`, unless the app had already asked for a stop, whose `StopRequested` stays the only one, with `By` set to `StopRequester.App`. Either way `RunEnded` carries the `JournalWriteException` in `Error` with no run outcome. The final snapshot has an end time and no `Outcome`.
+A run whose journal can no longer be written is stopped by Dagline: `StopRequested` has `By` set to `StopRequester.Dagline`, unless the app had already asked for a stop, whose `StopRequested` stays the only one, with `By` set to `StopRequester.App`. Either way `RunEnded` carries the run outcome unrecorded, with the file system's failure in `JournalError`, and the final snapshot's `Outcome` is unrecorded too. When only the run's end could not be written, `RunEnded` carries the outcome the run reached with the error beside it. The plain-text reporter and the Spectre display each print the stop by Dagline, the end with the error, and a summary that says the journal is missing some of the run, or, after a failed end alone, that the journal lists the run as died.
 
 ## What a reporter may rely on
 
@@ -445,7 +445,7 @@ Every line about an event begins with the time of the event, read from the run's
 | `group <path> <status>: <counts>` | The last task beneath a group settles. |
 | `tasks: <counts>` | Nothing has been printed for a minute. |
 | `run ended: <run outcome> in <duration>` | The run ends. The summary follows. |
-| `run ended: journal write failed after <duration>: <message>` | The run ends with an error because its journal could no longer be written. The message is that of the cause. The summary follows. |
+| `run ended: <run outcome> in <duration>: journal write failed: <message>` | The run ends after a journal write failed: unrecorded, or, when only its end could not be written, the outcome it reached. The message is the file system's. The summary follows. |
 
 What to know about them:
 
@@ -469,7 +469,7 @@ What to know about them:
 
 The summary follows the `run ended` line and has no timestamps. A section with nothing in it is left out, so a complete run with no journal and no warnings ends with the counts alone.
 
-1. **The journal**: on a run with a journal, `journal:` and the same text as the line after `run started`.
+1. **The journal**: on a run with a journal, `journal:` and the same text as the line after `run started`. After a failed journal write a line follows it: `unrecorded: the journal is missing some of what this run did`, or, when only the run's end could not be written, `the run's end is not recorded: the journal lists this run as died`.
 2. **The counts**: `tasks:` and the count of tasks per status. The tasks a stopped run never reached are counted here as pending and ready, and are not listed anywhere else.
 3. **The failures**: `failed:` and the number of failed tasks, then each of them in declaration order. The first line of a failure has the path, the kind of failure (`reported` or `unexpected`), when the task failed and how long it had run. Beneath it, each only when there is something to show:
    - `progress:` the progress the task had reported when it failed. It reads `<text>`, `<count>`, `<count> of <total>`, or the text and the count joined by a comma. It is always one line: a line break in the status text is printed as a space.

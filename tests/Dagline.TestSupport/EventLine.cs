@@ -30,8 +30,7 @@ public static class EventLine
             DrainRequested => "drain requested",
             StopRequested => "stop requested",
             GraceEnded => "grace period over",
-            RunEnded { Outcome: { } outcome } => $"run ended: {Lower(outcome)}",
-            RunEnded ended => $"run ended: {ended.Error!.GetType().Name}",
+            RunEnded ended => $"run ended: {Lower(ended.Outcome)}",
             _ => runEvent.ToString(),
         };
     }

@@ -28,7 +28,7 @@ public sealed class Run : ISnapshotSource
     private Run(RunLoop loop)
     {
         _loop = loop;
-        Result = ThrowIfUnrecordedAsync(loop.Result);
+        Result = loop.Result;
     }
 
     /// <summary>
@@ -48,9 +48,10 @@ public sealed class Run : ISnapshotSource
     /// the same task each time it is read, and <see cref="Runner.RunAsync"/> returns it.
     /// </summary>
     /// <remarks>
-    /// A task's exception, a reporter's exception and the cancellation of the run's token never fault it. It faults with a
-    /// <see cref="JournalWriteException"/> when the run's journal could no longer be written during the run, once reporters have
-    /// handled every event (see <see cref="Runner.Start"/>).
+    /// A task's exception, a reporter's exception, the cancellation of the run's token and a journal write that fails never fault
+    /// it. A run whose journal could no longer be written ends with the run outcome <see cref="RunOutcome.Unrecorded"/>, and its
+    /// result carries the file system's failure in <see cref="RunResult.JournalError"/> beside its reporter errors (see
+    /// <see cref="Runner.Start"/>).
     /// </remarks>
     public Task<RunResult> Result { get; }
 
@@ -75,12 +76,6 @@ public sealed class Run : ISnapshotSource
     /// Asked again, after the token was cancelled, or once the run has ended, it changes nothing.
     /// </remarks>
     public void Stop() => _loop.Stop(StopRequester.App);
-
-    /// <summary>
-    /// The run's result as its loop gives it, an unrecorded run's included, which <see cref="Result"/> throws instead. For the
-    /// scripted tests, until unrecorded becomes a run outcome (#153).
-    /// </summary>
-    internal Task<RunResult> ResultEvenIfUnrecorded => _loop.Result;
 
     /// <summary>The run's inbox, which a test reads to see that a loop that faulted has closed it.</summary>
     internal Inbox Inbox => _loop.Inbox;
@@ -114,12 +109,5 @@ public sealed class Run : ISnapshotSource
         var run = new Run(new RunLoop(graph, settings, reporters, journal, host));
         run._loop.Start(cancellationToken);
         return run;
-    }
-
-    // Until #153 makes unrecorded a run outcome: an unrecorded run's result throws the exception its end carried, as before.
-    private static async Task<RunResult> ThrowIfUnrecordedAsync(Task<RunResult> ended)
-    {
-        var result = await ended.ConfigureAwait(false);
-        return result.Unrecorded is { } unrecorded ? throw unrecorded : result;
     }
 }

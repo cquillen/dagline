@@ -29,10 +29,9 @@ public sealed class ScriptedDriver
 
     /// <summary>
     /// The run's result: completed once the run has ended and its reporters are done, or faulted with what faulted the run's loop.
-    /// A test awaits it once it has pumped the run to its end, and the await then waits for nothing. Unlike <see cref="Run.Result"/>,
-    /// it gives an unrecorded run's result rather than throwing, until #153 makes unrecorded a run outcome.
+    /// A test awaits it once it has pumped the run to its end, and the await then waits for nothing.
     /// </summary>
-    public Task<RunResult> Result => _run.ResultEvenIfUnrecorded;
+    public Task<RunResult> Result => _run.Result;
 
     /// <summary>Whether the run's inbox is closed: the run's loop has gone, so nothing posted to it is read.</summary>
     public bool InboxIsClosed => _run.Inbox.IsClosed;

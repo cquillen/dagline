@@ -190,7 +190,7 @@ A run on a journal also names the journal on the outcome line, as in `Run stoppe
 
 In order:
 
-1. A rule, then the run outcome (`Run complete`, `Run incomplete` or `Run stopped`), the duration and the journal's id and run number. A run whose journal could no longer be written reads `Run ended with an error`, with the error's message beneath.
+1. A rule, then the run outcome (`Run complete`, `Run incomplete`, `Run stopped` or `Run unrecorded`), the duration and the journal's id and run number. After a failed journal write a line beneath it says so, with the file system's message: `The journal could no longer be written, so it is missing some of this run: <message>` for an unrecorded run, or `The run's end could not be written, so the journal lists this run as died: <message>` when only its end failed.
 2. The count per status, with earlier successes in brackets, and the warnings.
 3. How many tasks a stopped run never reached.
 4. **Failures**, in declaration order: the kind, when the task failed, how long it ran and how far it got; its message; its detail lines, and how many more were counted but not kept; and what it blocked, named by the roots of the cascade, with the number of tasks beneath a root that is a group, as in `finish (1)`.
@@ -233,7 +233,7 @@ For a terminal or font that lacks the Unicode glyphs, set `Ascii`:
 var reporter = SpectreReporter.Create(new SpectreOptions { Ascii = true });
 ```
 
-The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Text from your graph and tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the error a run ended with, is drawn with each character outside ASCII as `?`, so `café` becomes `caf?`. Neither a frame nor the summary then writes any character outside ASCII.
+The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Text from your graph and tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the journal error a run ended with, is drawn with each character outside ASCII as `?`, so `café` becomes `caf?`. Neither a frame nor the summary then writes any character outside ASCII.
 
 ### In your own tests
 

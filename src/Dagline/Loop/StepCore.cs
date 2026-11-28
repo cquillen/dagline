@@ -97,10 +97,8 @@ internal sealed class StepCore
     // The file system's failure of the first write that failed: from then on nothing is written, and nothing starts.
     private Exception? _writeFailure;
 
-    // The outcome the run reached by the rule, and, when a write failed before the run ended, the exception it ends with, which
-    // holds it unrecorded until #153 makes unrecorded a run outcome.
+    // The outcome the run ends with: unrecorded when a write failed before the run ended, and otherwise the one reached by the rule.
     private RunOutcome _reached;
-    private JournalWriteException? _unrecorded;
     private bool _stoppedBeforeTheStart;
     private DateTimeOffset _now;
     private RunMilestones _milestones = new(Started: default, Drain: null, Stop: null, Ended: null, Outcome: null);
@@ -676,7 +674,7 @@ internal sealed class StepCore
     /// The run ends when no task is running and, unless a drain or a stop has been applied, none is ready: its end is recorded,
     /// flushed, then the journal is closed and the end is published. Its outcome is complete when every task succeeded, and
     /// otherwise stopped after a drain or a stop, and incomplete without one. After a failed write it ends unrecorded instead,
-    /// which takes precedence over each of them: it records no end, and its snapshot has an end and no run outcome.
+    /// which takes precedence over each of them, and it records no end.
     /// </summary>
     private void EndIfDone()
     {
@@ -689,16 +687,15 @@ internal sealed class StepCore
             : IsEndingEarly ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
         _life = Life.Ended;
-        _reached = outcome;
-        _unrecorded = _writeFailure is { } failure ? new JournalWriteException(failure) : null;
-        _milestones = _milestones with { Ended = _now, Outcome = _unrecorded is null ? outcome : null };
+        _reached = _writeFailure is null ? outcome : RunOutcome.Unrecorded;
+        _milestones = _milestones with { Ended = _now, Outcome = _reached };
         Record(_onAJournal ? [new RunEndedEntry(_now, outcome)] : [], JournalFlush.ToDisk, AfterWrite.End);
     }
 
     /// <summary>
-    /// The end is written, or is not written since a write failed: the journal is closed, then the end is published. A run that
-    /// ends unrecorded publishes the exception it ends with in place of a run outcome, until #153 makes
-    /// unrecorded a run outcome. The run's result carries the failure of a write either way, that of its end entry alone included.
+    /// The end is written, or is not written since a write failed: the journal is closed, then the end is published. The end and
+    /// the run's result carry the failure of a write either way, that of its end entry alone included, which leaves the run the
+    /// outcome it reached.
     /// </summary>
     private void AfterTheEndIsWritten()
     {
@@ -707,8 +704,8 @@ internal sealed class StepCore
             _effects.Add(Effect.CloseJournal);
         }
 
-        Publish(_unrecorded is null ? new RunEnded(_now, _reached) : new RunEnded(_now, _unrecorded));
-        _effects.Add(Effect.EndRun(_reached, _writeFailure, _unrecorded));
+        Publish(new RunEnded(_now, _reached, _writeFailure));
+        _effects.Add(Effect.EndRun(_reached, _writeFailure));
     }
 
     /// <summary>
@@ -728,7 +725,7 @@ internal sealed class StepCore
 
         if (_writeFailure is { } failed)
         {
-            _effects.Add(Effect.SaveRefused(task, save, new JournalWriteException(failed, _source.Current)));
+            _effects.Add(Effect.SaveNotWritten(task, save, failed));
             return;
         }
 
@@ -763,7 +760,7 @@ internal sealed class StepCore
     {
         var (task, save) = _saving!.Value;
         _saving = null;
-        _effects.Add(Effect.SaveRefused(task, save, new JournalWriteException(failure, _source.Current)));
+        _effects.Add(Effect.SaveNotWritten(task, save, failure));
         StartWhatFitsUnlessTheJournalFailed();
     }
 

@@ -224,4 +224,4 @@ The promise of the default holds as far as the storage device honours a flush. A
 
 ## When a journal write fails
 
-If the journal can no longer be written during a run, because the disk is full or the file is gone, Dagline stops the run itself, ends it with a <xref:Dagline.JournalWriteException>, and writes nothing more to the journal. The journal then has no end recorded, lists as `Died`, and can be continued once the cause is fixed. [Running and stopping](running-and-stopping.md#when-a-journal-write-fails) describes what the run does.
+If the journal can no longer be written during a run, because the disk is full or the file is gone, Dagline stops the run itself, writes nothing more to the journal, and ends the run with the run outcome unrecorded, with the file system's failure in <xref:Dagline.RunResult.JournalError>. Nothing is thrown, except to a task whose checkpoint save could not be written. The journal then has no end recorded, lists as `Died`, and can be continued once the cause is fixed. [Running and stopping](running-and-stopping.md#when-a-journal-write-fails) describes what the run does.
