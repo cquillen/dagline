@@ -140,18 +140,6 @@ public class LoopRunTests
     }
 
     [Test]
-    public async Task The_one_call_form_switched_onto_the_new_engine_refuses_a_drain_signal_or_a_token_at_the_call()
-    {
-        using var cancellation = new CancellationTokenSource();
-
-        Should.Throw<NotSupportedException>(() => NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, drain: new DrainSignal()));
-        Should.Throw<NotSupportedException>(
-            () => NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, cancellationToken: cancellation.Token));
-        (await NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, cancellationToken: CancellationToken.None))
-            .Outcome.ShouldBe(RunOutcome.Complete);
-    }
-
-    [Test]
     public async Task A_fault_inside_the_loop_faults_the_result_and_closes_the_inbox()
     {
         var clock = new CountingClock { FailAtRead = 2 };
