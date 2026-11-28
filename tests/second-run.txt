@@ -15,9 +15,12 @@ Dagline.Tests/GraphTests
 Dagline.Tests/GroupSettledTests
 Dagline.Tests/GroupTests
 Dagline.Tests/HeldTaskOrderTests
+Dagline.Tests/JournalCompatibilityTests
 Dagline.Tests/JournalDeletingTests
+Dagline.Tests/JournalDurabilityTests
 Dagline.Tests/JournalHoldingTests
 Dagline.Tests/JournalTests
+Dagline.Tests/KilledProcessTests
 Dagline.Tests/LimitTests
 Dagline.Tests/LimitUseTests
 Dagline.Tests/LoopReportTests
