@@ -466,11 +466,14 @@ public sealed class TaskContext
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // The helper's awaits resume on the context the task body runs on, so that a stop of a waiting task stays on the host
+        // that started the body (ADR 0015): a cancelled delay awaited with no context resumes on the thread pool. In an app a
+        // body starts on the thread pool with no context, so nothing changes there.
         using (BeginWaiting(text))
         {
-            while (!await check(cancellationToken).ConfigureAwait(false))
+            while (!await check(cancellationToken).ConfigureAwait(true))
             {
-                await Task.Delay(interval, TimeProvider, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(interval, TimeProvider, cancellationToken).ConfigureAwait(true);
             }
         }
     }

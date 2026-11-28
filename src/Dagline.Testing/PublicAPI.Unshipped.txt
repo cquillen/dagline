@@ -3,3 +3,16 @@
 *REMOVED*Dagline.Testing.TaskHarness.RunUntilWaitingThenStopAsync() -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
 Dagline.Testing.TaskHarness.RunAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
 Dagline.Testing.TaskHarness.RunUntilWaitingThenStopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.Testing.TaskOutcome!>!
+Dagline.Testing.ScriptedRun
+Dagline.Testing.ScriptedRun.Advance(System.TimeSpan by) -> void
+Dagline.Testing.ScriptedRun.FireNextTimer() -> bool
+Dagline.Testing.ScriptedRun.Finish(System.TimeSpan realTimeLimit) -> Dagline.RunResult!
+Dagline.Testing.ScriptedRun.Pump() -> int
+Dagline.Testing.ScriptedRun.PumpBodies() -> int
+Dagline.Testing.ScriptedRun.PumpLoop() -> int
+Dagline.Testing.ScriptedRun.PumpReporters() -> int
+Dagline.Testing.ScriptedRun.PumpUntil(System.Func<Dagline.Snapshot!, bool>! condition, System.TimeSpan realTimeLimit) -> bool
+Dagline.Testing.ScriptedRun.PumpUntilAsync(System.Func<Dagline.Snapshot!, bool>! condition, System.TimeSpan realTimeLimit) -> System.Threading.Tasks.Task<bool>!
+Dagline.Testing.ScriptedRun.Run.get -> Dagline.Run!
+Dagline.Testing.ScriptedRun.TimeProvider.get -> System.TimeProvider!
+static Dagline.Testing.ScriptedRun.Start(Dagline.Graph! graph, Dagline.RunOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Dagline.Testing.ScriptedRun!

@@ -5,10 +5,31 @@ namespace Dagline.Testing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A run of the harness is a real <see cref="Runner.RunAsync"/> through Dagline's public API, on a graph of one task at the
-/// root with default <see cref="RunOptions"/> except for the journal, the clock, an unlimited
-/// <see cref="RunOptions.GracePeriod"/> and reporters of the harness's own that watch the run. The task body sees exactly
-/// what it would in a real run, so a test proves what a real run will do.
+/// A run of the harness is a real run through Dagline's public API, a <see cref="ScriptedRun"/> that the harness pumps inside the
+/// call, on a graph of one task at the root with default <see cref="RunOptions"/> except for the journal, the clock, an
+/// unlimited <see cref="RunOptions.GracePeriod"/> and <see cref="RunOptions.ReporterWait"/>, and a reporter of the harness's own
+/// that watches the run. The task body sees exactly what it would in a real run, so a test proves what a real run will do. The
+/// body starts on the thread that calls the run method, inside the call, under a synchronization context of the harness's own, and
+/// every await in it that resumes on its context comes back to the harness's pump. That is the one difference from an app: a
+/// body that blocks on its own asynchronous work, with <see cref="Task.Wait()"/> or <see cref="Task{TResult}.Result"/>, or on
+/// something the test does only after the call returns, hangs under the harness.
+/// </para>
+/// <para>
+/// With no clock passed to <see cref="For"/>, every run is on a clock of the harness's own, one for its life, on which time moves
+/// only when the harness fires a timer: whenever nothing of the run is left to do, the harness fires the timer due first, moving
+/// the time on to when it is due. So a delay ends at once, from the body's point of view, and a graph of waits of hours takes no
+/// real time. The clock starts at midnight UTC on 1 January 2000, its local time zone is UTC, and it carries its time from one
+/// run to the next. Its guard is that of an <see cref="InstantClock"/>: once more than 7 days of fake time have passed, the body
+/// can make no delay or timer on it, and the run method throws <see cref="ClockGuardException"/>.
+/// </para>
+/// <para>
+/// A clock passed to <see cref="For"/> is used as it is: the harness never fires its timers, and pumps the run until its result,
+/// waiting in real time whenever nothing is queued.
+/// </para>
+/// <para>
+/// Whenever the run's body awaits what the pump cannot see, such as real I/O, the harness waits, in real time and for as long as
+/// it takes, until something is queued or a timer is set. A body that never ends keeps the call from returning: the test's own
+/// timeout is what fails it.
 /// </para>
 /// <para>
 /// <see cref="For"/> only wraps the body: nothing runs and nothing touches the disk until the first run. That run starts a new
@@ -50,15 +71,18 @@ public sealed class TaskHarness : IAsyncDisposable
 
     private readonly TaskBody _body;
     private readonly TimeProvider? _passedClock;
-    private readonly InstantClock _defaultClock = new();
+    private readonly ScriptedClock _defaultClock;
+    private readonly Guard _defaultGuard = new(TimeSpan.FromDays(7));
     private readonly string _seed;
     private string _checkpoint;
     private string? _directory;
     private string? _journalId;
     private bool _disposed;
+    private bool _bodyIsRunning;
 
     private TaskHarness(TaskBody body, TimeProvider? timeProvider, string checkpoint)
     {
+        _defaultClock = new ScriptedClock(RefuseTimersPastTheGuard);
         _body = body;
         _passedClock = timeProvider;
         _seed = checkpoint;
@@ -69,11 +93,9 @@ public sealed class TaskHarness : IAsyncDisposable
     /// <param name="body">The task body to run, as it would be handed to <see cref="GraphBuilder.Task"/>.</param>
     /// <param name="timeProvider">
     /// The clock every run uses, as <see cref="RunOptions.TimeProvider"/>, and so the one the body sees as
-    /// <see cref="TaskContext.TimeProvider"/>. It is used as is. With none, <see cref="RunAsync"/> uses an
-    /// <see cref="InstantClock"/> with the default guard, one for the life of the harness, so its guard counts fake time across
-    /// runs. <see cref="RunUntilWaitingThenStopAsync"/> uses a clock built on that same <see cref="InstantClock"/>, so fake time
-    /// and the guard carry across both calls: on it a delay or timer ends at once while the task is not waiting, and never
-    /// fires while it is.
+    /// <see cref="TaskContext.TimeProvider"/>. It is used as is, and the harness never moves it. With none, every run uses a clock
+    /// of the harness's own, one for the life of the harness, whose timers the harness fires whenever nothing of the run is left
+    /// to do, so its time and its 7-day guard carry across runs and across both run methods. That clock is not public.
     /// </param>
     /// <param name="checkpoint">
     /// A checkpoint for the task to read back as <see cref="TaskContext.Checkpoint"/> in the first run, as if an earlier run had
@@ -109,20 +131,19 @@ public sealed class TaskHarness : IAsyncDisposable
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The harness has been disposed.</exception>
     /// <exception cref="ClockGuardException">
-    /// The run's clock is an <see cref="InstantClock"/>, whether the default or passed to <see cref="For"/>, and the run ended
-    /// with more fake time passed than its guard. This is thrown in place of the outcome, which would be the unexpected failure
-    /// the guard caused, so a check that never returns <see langword="true"/> fails the test with this exception.
+    /// No clock was passed to <see cref="For"/>, or the clock passed is an <see cref="InstantClock"/>, and the run ended with more
+    /// fake time passed than its guard. This is thrown in place of the outcome, which would be the unexpected failure the guard
+    /// caused, so a check that never returns <see langword="true"/> fails the test with this exception.
     /// </exception>
     public Task<TaskOutcome> RunAsync(CancellationToken cancellationToken = default)
-        => RunWithAsync(_passedClock ?? _defaultClock, liveRun: null, stopAtWait: null, cancellationToken);
+        => RunWithAsync(stopAtWait: false, cancellationToken);
 
     /// <summary>
     /// Runs the task, stops the run as soon as it begins waiting, as an operator would, and returns the outcome the run ends
     /// with. This is how a first run is cut short, so that a later <see cref="RunAsync"/> can test how the task re-attaches.
     /// </summary>
     /// <param name="cancellationToken">
-    /// The caller's token, to which the harness's own stop is linked: cancelling it stops the run before the task begins waiting,
-    /// as the wait would.
+    /// The run's token: cancelling it stops the run, before the task begins waiting or after, as the harness's own stop does.
     /// </param>
     /// <returns>
     /// The task's outcome. For a task that waits through <see cref="TaskContext.WaitUntilAsync"/> it is
@@ -133,33 +154,25 @@ public sealed class TaskHarness : IAsyncDisposable
     /// </returns>
     /// <remarks>
     /// <para>
-    /// The stop is made once, by cancelling a token source of this run's own, linked to <paramref name="cancellationToken"/> and
-    /// passed as the run's token, when the harness's reporter sees the first <see cref="WaitingChanged"/> that begins a wait. The
-    /// grace period is unlimited, so the run waits for the task to end however long it takes.
+    /// The harness pumps the run until nothing is queued. If the task is then waiting, as the run has applied it, the harness
+    /// stops the run with <see cref="Run.Stop"/>, once, and pumps it to its result. If it is not, and no clock was passed to
+    /// <see cref="For"/>, it fires the harness clock's next timer, moving the time on to when it is due, and pumps again. A task
+    /// is waiting inside <see cref="TaskContext.WaitUntilAsync"/> and inside a <see cref="TaskContext.BeginWaiting"/> scope alike.
+    /// So a body that delays before it waits reaches its wait with the clock moved by exactly those delays, and is stopped there
+    /// once the wait has made its first check, before the wait's first delay ends. A wait that has begun and ended between two
+    /// moments when nothing is queued is never seen, and the run goes on. After the stop, timers fire again whenever nothing is
+    /// queued, so a delay in cleanup after the stop ends. The grace period is unlimited, so the run waits for the task to end
+    /// however long it takes.
     /// </para>
     /// <para>
-    /// With no clock passed to <see cref="For"/>, the run uses a clock on which delays end at once until the task waits, and
-    /// never while it waits. It decides each delay or timer from the run's live snapshot, <see cref="ISnapshotSource.Current"/>
-    /// on the source <see cref="RunStarted"/> carries, by whether the task's node <see cref="NodeSnapshot.IsWaiting"/>: when
-    /// the task is not waiting, a delay or timer ends at once, as on an <see cref="InstantClock"/>; when it is, it never fires,
-    /// even after the wait ends. The decision is made when the timer is made, again on every <see cref="ITimer.Change"/> and
-    /// before each repeat of a periodic timer, and again just before every callback, so a timer fires while the task is
-    /// waiting only if its firing had already found the task not waiting when the wait began: that callback still runs. Each
-    /// call makes a clock of its own, which asks only its own run, so a timer kept from one call into a later one is still
-    /// decided by the run it was made in. A task is waiting inside <see cref="TaskContext.WaitUntilAsync"/> and inside a <see cref="TaskContext.BeginWaiting"/>
-    /// scope alike, and is marked so as the scope opens, before the wait makes its first delay, so the wait's own delays never
-    /// end and the task is still waiting when the stop arrives. A delay made after the wait, such as one in cleanup after the
-    /// stop, ends at once again. In this call only, the harness holds the body until its reporter has received
-    /// <see cref="RunStarted"/>, so every delay the body makes is decided from the live snapshot.
+    /// The harness's pump stays exact only for what it can see: a body whose awaits are completed by the run, by the harness's
+    /// clock or by the body itself on its context. Real I/O is waited for in real time; the stop then lands once the run has
+    /// applied the wait, whatever the I/O is doing.
     /// </para>
     /// <para>
-    /// The clock's time and guard are those of the <see cref="InstantClock"/> that <see cref="RunAsync"/> uses, one for the
-    /// life of the harness, so fake time carries from this call to a later <see cref="RunAsync"/>, and a body that delays in a
-    /// loop and never waits ends with <see cref="ClockGuardException"/> instead of hanging.
-    /// </para>
-    /// <para>
-    /// A clock passed to <see cref="For"/> is used as is. With an <see cref="InstantClock"/> passed in this is a race by nature:
-    /// the wait's checks run without delay, so the task may settle before the stop lands, and that outcome is returned.
+    /// A clock passed to <see cref="For"/> is used as is, and the harness never fires its timers. With an
+    /// <see cref="InstantClock"/> passed in this is a race by nature: its timers fire on the thread pool at once, so the wait's
+    /// checks run without delay, the task may settle before the harness sees it waiting, and that outcome is returned.
     /// </para>
     /// <para>
     /// Exceptions are as for <see cref="RunAsync"/>: one from the body is the task's unexpected failure, and one from the run
@@ -171,19 +184,8 @@ public sealed class TaskHarness : IAsyncDisposable
     /// No clock was passed to <see cref="For"/>, or the clock passed is an <see cref="InstantClock"/>, and the run ended with
     /// more fake time passed than its guard, as for <see cref="RunAsync"/>.
     /// </exception>
-    public async Task<TaskOutcome> RunUntilWaitingThenStopAsync(CancellationToken cancellationToken = default)
-    {
-        using var stopAtWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (_passedClock is { } passed)
-        {
-            return await RunWithAsync(passed, liveRun: null, stopAtWait, stopAtWait.Token).ConfigureAwait(false);
-        }
-
-        // The clock is made for this run and asks only this run, so a timer kept past the run is never decided by a later one.
-        var liveRun = new LiveRun(_taskPath);
-        var clock = new InstantUntilWaitingClock(_defaultClock, liveRun.IsTaskWaiting);
-        return await RunWithAsync(clock, liveRun, stopAtWait, stopAtWait.Token).ConfigureAwait(false);
-    }
+    public Task<TaskOutcome> RunUntilWaitingThenStopAsync(CancellationToken cancellationToken = default)
+        => RunWithAsync(stopAtWait: true, cancellationToken);
 
     /// <summary>
     /// Deletes the harness's temporary directory and its journal, if a run created them. Disposing twice is harmless, and a run
@@ -202,39 +204,42 @@ public sealed class TaskHarness : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    private async Task<TaskOutcome> RunWithAsync(
-        TimeProvider clock,
-        LiveRun? liveRun,
-        CancellationTokenSource? stopAtWait,
-        CancellationToken cancellationToken)
+    private async Task<TaskOutcome> RunWithAsync(bool stopAtWait, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _directory ??= CreateDirectory();
 
         var builder = new GraphBuilder();
-        builder.Task(_taskName, context => RunBodyAsync(liveRun?.Started, context));
-        var watcher = new WaitWatcher(stopAtWait);
+        builder.Task(_taskName, RunBodyAsync);
+        var watcher = new WaitWatcher();
         var options = new RunOptions
         {
             Journal = _journalId is null
                 ? Journal.New(_directory, durability: JournalDurability.HandedToOperatingSystem)
                 : Journal.Continue(_directory, _journalId, JournalDurability.HandedToOperatingSystem),
-            TimeProvider = clock,
+            TimeProvider = _passedClock ?? _defaultClock,
             GracePeriod = Timeout.InfiniteTimeSpan,
-            Reporters = liveRun is null ? [watcher] : [watcher, liveRun],
+            Reporters = [watcher],
+
+            // The harness's one reporter never blocks, so nothing is gained by a limit, and a limit's timer on an instant clock
+            // passed in would fire at once on the thread pool and could drop the reporter before it heard the run's last events.
+            ReporterWait = Timeout.InfiniteTimeSpan,
         };
 
+        var scripted = ScriptedRun.Start(builder.Build(), options, _passedClock is null ? _defaultClock : null, cancellationToken);
         RunResult result;
         try
         {
-            result = await Runner.RunAsync(builder.Build(), options, cancellationToken).ConfigureAwait(false);
+            await PumpToTheEndAsync(scripted, stopAtWait).ConfigureAwait(false);
+            result = await scripted.Run.Result.ConfigureAwait(false);
         }
         finally
         {
-            _journalId ??= watcher.JournalId;
+            // From the run, not the reporter: a reporter the run let go of at its end would have missed the journal.
+            _journalId ??= scripted.Run.Current.Journal?.Id;
         }
 
-        GuardedClock?.ThrowIfPastGuard();
+        ThrowIfPastTheGuard();
         var task = result.Snapshot[_taskPath];
         // A success discards the checkpoint (ADR 0006). The public API shows no checkpoint after the run, so the rule is restated here.
         if (task.Status is NodeStatus.Succeeded)
@@ -245,85 +250,116 @@ public sealed class TaskHarness : IAsyncDisposable
         return new TaskOutcome(task, watcher.Waited, watcher.WaitingText, _checkpoint);
     }
 
-    private InstantClock? GuardedClock => _passedClock is null ? _defaultClock : _passedClock as InstantClock;
-
-    private async Task RunBodyAsync(Task? liveRunStarted, TaskContext context)
+    /// <summary>
+    /// Pumps the run until its result is complete. Whenever nothing is queued: once the task is waiting, as the run has applied it,
+    /// the run is stopped, if this run stops at the wait and has not yet; otherwise the default clock's next timer fires; and with
+    /// neither to do, the pump waits, in real time and for as long as it takes, for something to be queued or a timer to be set.
+    /// </summary>
+    private async Task PumpToTheEndAsync(ScriptedRun scripted, bool stopAtWait)
     {
-        try
+        var stopped = !stopAtWait;
+        while (true)
         {
-            // Held until the run's own clock can read the live snapshot, so it decides every delay the body makes from it.
-            // This waits on a reporter, which ADR 0010 says the run never does, but the run itself is not held: only this body
-            // is, by the harness's own reporter, which never throws and is dropped only once the run has ended, so RunStarted
-            // always reaches it while the task runs. It takes no token for the same reason.
-            if (liveRunStarted is not null)
+            scripted.Pump();
+            if (scripted.Run.Result.IsCompleted)
             {
-                await liveRunStarted.ConfigureAwait(false);
+                return;
             }
 
+            if (!stopped && scripted.Run.Current[_taskPath].IsWaiting)
+            {
+                scripted.Run.Stop();
+                stopped = true;
+                continue;
+            }
+
+            if (_passedClock is null && scripted.FireNextTimer())
+            {
+                continue;
+            }
+
+            await scripted.WhenThereIsSomethingToDoAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <exception cref="ClockGuardException">The run's clock has passed more fake time than its guard.</exception>
+    private void ThrowIfPastTheGuard()
+    {
+        if (_passedClock is null)
+        {
+            _defaultGuard.ThrowIfPast(_defaultClock.Elapsed);
+        }
+        else if (_passedClock is InstantClock instant)
+        {
+            instant.ThrowIfPastGuard();
+        }
+    }
+
+    // The awaits here are a task body's own: each resumes on the host that started the body (ADR 0015), so that a scripted run's
+    // body stays on its pump. The seed's save is answered on the loop's turn, which has no context: resuming there would take the
+    // consumer's body off the pump.
+    private async Task RunBodyAsync(TaskContext context)
+    {
+        Volatile.Write(ref _bodyIsRunning, true);
+        try
+        {
             // Saving the seed is the one way to hand a checkpoint to a task on a new journal through the public API. It takes no
             // token, as a task's own save after a trigger should not: a stop under way must not lose the seed for every later run.
             if (_journalId is null && _seed.Length > 0)
             {
-                await context.SaveCheckpointAsync(_seed, CancellationToken.None).ConfigureAwait(false);
+                await context.SaveCheckpointAsync(_seed, CancellationToken.None).ConfigureAwait(true);
             }
 
-            await _body(context).ConfigureAwait(false);
+            await _body(context).ConfigureAwait(true);
         }
         finally
         {
             _checkpoint = context.Checkpoint;
+            Volatile.Write(ref _bodyIsRunning, false);
+        }
+    }
+
+    // The default clock's guard refuses only a timer made while the body runs, as an instant clock's refuses the body's delays: the
+    // run's own timer for the reporter wait, made once the body has ended, is never refused, so the run always ends.
+    private void RefuseTimersPastTheGuard()
+    {
+        if (Volatile.Read(ref _bodyIsRunning))
+        {
+            _defaultGuard.ThrowIfPast(_defaultClock.Elapsed);
         }
     }
 
     private static string CreateDirectory() => Directory.CreateTempSubdirectory("dagline-harness-").FullName;
 
-    // Records what the outcome needs from the run's events, and stops the run at the first wait when asked to.
-    private sealed class WaitWatcher(CancellationTokenSource? stopAtWait) : IReporter
+    // Records what the outcome needs from the run's events.
+    private sealed class WaitWatcher : IReporter
     {
         public bool Waited { get; private set; }
 
         public string? WaitingText { get; private set; }
 
-        public string? JournalId { get; private set; }
-
         public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
         {
-            JournalId ??= snapshot.Journal?.Id;
-            if (runEvent is not WaitingChanged { Waiting: true } began)
+            if (runEvent is WaitingChanged { Waiting: true } began)
             {
-                return ValueTask.CompletedTask;
-            }
-
-            WaitingText = began.Text;
-            if (!Waited)
-            {
+                WaitingText = began.Text;
                 Waited = true;
-                stopAtWait?.Cancel();
             }
 
             return ValueTask.CompletedTask;
         }
     }
 
-    // Holds one run's live snapshot source from RunStarted on, so the run's clock can ask whether the task is waiting now.
-    private sealed class LiveRun(NodePath task) : IReporter
+    // The guard of the default clock: the most fake time it may pass, as an instant clock's guard is.
+    private sealed class Guard(TimeSpan guard)
     {
-        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private volatile ISnapshotSource? _source;
-
-        public Task Started => _started.Task;
-
-        public bool IsTaskWaiting() => _source?.Current[task].IsWaiting is true;
-
-        public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
+        /// <exception cref="ClockGuardException"><paramref name="elapsed"/> is more than the guard.</exception>
+        public void ThrowIfPast(TimeSpan elapsed)
         {
-            if (runEvent is RunStarted started)
+            if (elapsed > guard)
             {
-                _source = started.Source;
-                _started.TrySetResult();
+                throw new ClockGuardException(elapsed, guard);
             }
-
-            return ValueTask.CompletedTask;
         }
     }
 }
