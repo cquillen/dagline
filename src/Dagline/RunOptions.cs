@@ -126,6 +126,14 @@ public sealed record RunOptions
     = [];
 
     /// <summary>
+    /// The reporter wait: how long a run on the new engine waits for its reporters once the event that says the run ended is
+    /// queued, measured on <see cref="TimeProvider"/>. 30 seconds by default, or <see cref="Timeout.InfiniteTimeSpan"/> to wait for
+    /// as long as they take. A reporter still busy when it runs out is dropped. Internal until the cutover of spec #139, which
+    /// makes it a run option; the existing engine ignores it.
+    /// </summary>
+    internal TimeSpan ReporterWait { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Whether <see cref="Runner.RunAsync"/> runs the graph on the new engine of spec #139. Only <see cref="OnTheNewEngine"/> sets
     /// it, and it goes at the cutover with the existing engine.
     /// </summary>

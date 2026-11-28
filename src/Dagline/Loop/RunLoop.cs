@@ -10,8 +10,8 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// The run's life is the loop's control flow: read, decide, carry out, repeat; then, once the core has ended the run, wait for
-/// the reporters, still reading the inbox, and return. The loop awaits only its inbox: the reporters being done reaches it as an
-/// input. It reads the run's clock once for each input it takes from the inbox, and the result of a write, the next input after a
+/// the reporters for at most the reporter wait, still reading the inbox, and return. The loop awaits only its inbox: the reporters
+/// being done and the reporter wait running out each reach it as an input. It reads the run's clock once for each input it takes from the inbox, and the result of a write, the next input after a
 /// record, is given to the core with no time, ahead of anything in the inbox.
 /// </para>
 /// <para>
@@ -22,7 +22,7 @@ namespace Dagline;
 [SuppressMessage(
     "Reliability",
     "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The source of the tasks' token has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token. The grace period's timer is disposed when the run ends.")]
+    Justification = "The source of the tasks' token has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token. The grace period's timer is disposed when the run ends, and the reporter wait's when the loop returns.")]
 internal sealed class RunLoop
 {
     private readonly IRunHost _host;
@@ -34,10 +34,12 @@ internal sealed class RunLoop
     private readonly CancellationTokenSource _tasksTokenSource = new();
     private readonly TaskCompletionSource<RunResult> _result;
     private readonly TimeSpan _gracePeriod;
+    private readonly TimeSpan _reporterWait;
 
     private RunOutcome? _outcome;
     private CancellationTokenRegistration _hearsTheStop;
     private ITimer? _gracePeriodTimer;
+    private ITimer? _reporterWaitTimer;
 
     /// <param name="graph">The graph to run.</param>
     /// <param name="settings">The settings of the run.</param>
@@ -52,6 +54,7 @@ internal sealed class RunLoop
         _host = host;
         _clock = settings.TimeProvider;
         _gracePeriod = settings.GracePeriod;
+        _reporterWait = settings.ReporterWait;
         _journal = journal;
         Inbox = new Inbox(host);
         _delivery = new HostedDelivery(reporters, host);
@@ -129,10 +132,18 @@ internal sealed class RunLoop
                     break;
                 }
 
+                if (input.Kind is InputKind.ReporterWaitOver)
+                {
+                    // Dropping the busy reporters finishes them, so the reporters being done is the input that follows.
+                    _delivery.DropTheBusy();
+                    continue;
+                }
+
                 written = CarryOut(_core.Apply(input, now));
             }
 
             Inbox.Close();
+            _reporterWaitTimer?.Dispose();
             _result.TrySetResult(new RunResult(_outcome!.Value, Source.Current, _delivery.Errors));
         }
         catch (Exception fault)
@@ -140,6 +151,7 @@ internal sealed class RunLoop
             // A fault in Dagline itself: the app awaiting the result is told, rather than left waiting for ever.
             Inbox.Close();
             LetGoOfTheTokenAndTheTimer();
+            _reporterWaitTimer?.Dispose();
             _result.TrySetException(fault);
         }
     }
@@ -249,11 +261,22 @@ internal sealed class RunLoop
         _gracePeriodTimer?.Dispose();
     }
 
-    /// <summary>The run has ended: no event follows, and the loop waits for the reporters to be done, as an input.</summary>
+    /// <summary>
+    /// The run has ended: no event follows, and the loop waits for the reporters to be done, as an input, for at most the reporter
+    /// wait, which starts now, on the run's clock, the event that says the run ended being queued. Its running out is an input too.
+    /// </summary>
     private void End(RunOutcome outcome)
     {
         _outcome = outcome;
         LetGoOfTheTokenAndTheTimer();
         _delivery.Complete(() => Inbox.Post(Input.ReportersDone));
+        if (_reporterWait != Timeout.InfiniteTimeSpan)
+        {
+            _reporterWaitTimer = _clock.CreateTimer(
+                static loop => ((RunLoop)loop!).Inbox.Post(Input.ReporterWaitOver),
+                this,
+                _reporterWait,
+                Timeout.InfiniteTimeSpan);
+        }
     }
 }

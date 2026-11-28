@@ -9,6 +9,12 @@ namespace Dagline;
 internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeProvider TimeProvider)
 {
     /// <summary>
+    /// How long the run waits for its reporters once its end is queued for them: zero or more, or
+    /// <see cref="Timeout.InfiniteTimeSpan"/>. Only the new engine reads it.
+    /// </summary>
+    public TimeSpan ReporterWait { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Checks the options of a run of <paramref name="graph"/> and reads its settings from them. This is the one place
     /// the options are checked: every problem found is gathered into one exception.
     /// </summary>
@@ -25,6 +31,9 @@ internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeP
 
         return problems.Count > 0
             ? throw new RunConfigurationException(problems)
-            : new RunSettings(LimitSizes.For(graph, options), options.GracePeriod, options.TimeProvider);
+            : new RunSettings(LimitSizes.For(graph, options), options.GracePeriod, options.TimeProvider)
+            {
+                ReporterWait = options.ReporterWait,
+            };
     }
 }

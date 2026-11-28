@@ -21,6 +21,12 @@ internal enum InputKind
     /// </summary>
     ReportersDone,
 
+    /// <summary>
+    /// The reporter wait has run out. Not an input of the core: the loop reads it, once the run has ended, and drops each reporter
+    /// still busy, which makes the reporters done.
+    /// </summary>
+    ReporterWaitOver,
+
     /// <summary>The app asks the run to drain: start nothing new, and let the running tasks finish untold.</summary>
     Drain,
 
@@ -47,6 +53,8 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
     public static Input Start { get; } = new(InputKind.Start);
 
     public static Input ReportersDone { get; } = new(InputKind.ReportersDone);
+
+    public static Input ReporterWaitOver { get; } = new(InputKind.ReporterWaitOver);
 
     public static Input Drain { get; } = new(InputKind.Drain);
 
