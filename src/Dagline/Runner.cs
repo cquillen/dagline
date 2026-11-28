@@ -167,13 +167,16 @@ public static class Runner
     private static Task<RunResult> RunOnTheNewEngineAsync(Graph graph, RunOptions options, DrainSignal? drain, CancellationToken cancellationToken)
     {
         var run = LoopRun.Start(graph, options, ThreadPoolHost.Instance, drain?.IsRequested ?? false, cancellationToken);
-        return drain is null ? run.Result : DrainedOnRequestAsync(run, drain);
+        return EndedAsTheExistingEngineEndsAsync(run, drain);
     }
 
-    private static async Task<RunResult> DrainedOnRequestAsync(LoopRun run, DrainSignal drain)
+    // A drain signal requested once the run has started drains it. A run that ended unrecorded throws what its end carried, as the
+    // existing engine does, until the cutover (#153) makes unrecorded a run outcome.
+    private static async Task<RunResult> EndedAsTheExistingEngineEndsAsync(LoopRun run, DrainSignal? drain)
     {
-        using var hearsTheDrain = drain.OnRequest(run.Drain);
-        return await run.Result.ConfigureAwait(false);
+        using var hearsTheDrain = drain?.OnRequest(run.Drain);
+        var result = await run.Result.ConfigureAwait(false);
+        return result.Unrecorded is { } unrecorded ? throw unrecorded : result;
     }
 
     // The token is the run's own input, which stops it: the awaits here wait for the run to end however it ends, so none takes it.

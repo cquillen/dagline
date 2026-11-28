@@ -109,6 +109,25 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return Moved(from, now);
     }
 
+    /// <summary>
+    /// Moves a task that has just started back to ready, with no start time, as though it had never started: on the new engine, the
+    /// write that recorded its start failed before its body started. The one move back a status makes.
+    /// </summary>
+    /// <returns>
+    /// The task as it is now, with a move from running to ready that the run never publishes, so that the counts it is in move back.
+    /// </returns>
+    public TaskChange StayReady(DateTimeOffset now)
+    {
+        if (Status is not NodeStatus.Running)
+        {
+            throw new InvalidOperationException($"The task '{task.Path}' cannot stay ready: it is {Status}, not running.");
+        }
+
+        Status = NodeStatus.Ready;
+        _started = null;
+        return Moved(NodeStatus.Running, now);
+    }
+
     /// <summary>Settles a pending task as blocked by the failed task at <paramref name="cause"/>.</summary>
     public TaskChange Block(NodePath cause, DateTimeOffset now) => SettleWith(TaskOutcome.Blocked(cause), now);
 
@@ -334,6 +353,12 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     public InvalidOperationException? CheckpointChangeRefusal() => IsRunning ? null : new InvalidOperationException(
         $"The task '{task.Path}' cannot change its checkpoint: it is {NameText.Of(Status)}, "
         + "so the run no longer keeps anything it does. A task changes its checkpoint only while it is running.");
+
+    /// <summary>
+    /// Whether <paramref name="text"/> would change the task's checkpoint: <see langword="false"/> only for a clearing of a checkpoint
+    /// it does not have, as <see cref="ChangeCheckpoint"/> answers.
+    /// </summary>
+    public bool IsCheckpointChangedBy(string text) => text.Length > 0 || Checkpoint.Length > 0;
 
     /// <summary>
     /// Replaces the task's checkpoint with <paramref name="text"/>, which clears it when empty. Unlike a report, it throws on a task

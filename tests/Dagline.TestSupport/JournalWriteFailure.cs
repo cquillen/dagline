@@ -29,6 +29,25 @@ public sealed class JournalWriteFailure
         _message = message;
     }
 
+    /// <summary>
+    /// Fails the write that holds the run's start: the first write of a run, which holds the set-asides too, flushed before any
+    /// task starts.
+    /// </summary>
+    public static JournalWriteFailure RunStart() => new(JournalLine.RunStart);
+
+    /// <summary>
+    /// Fails the write that holds the start of the task at <paramref name="taskPath"/>, with the starts of the tasks that start
+    /// beside it.
+    /// </summary>
+    /// <param name="taskPath">The task's path as text, such as <c>shard-1/load</c>.</param>
+    /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>
+    public static JournalWriteFailure StartOf(string taskPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskPath);
+
+        return new JournalWriteFailure(JournalLine.StartOf(taskPath));
+    }
+
     /// <summary>Fails the write that holds the settle of the task at <paramref name="taskPath"/>, whatever it settled with.</summary>
     /// <param name="taskPath">The task's path as text, such as <c>shard-1/load</c>.</param>
     /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>

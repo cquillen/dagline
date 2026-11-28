@@ -39,6 +39,8 @@ internal sealed class RunLoop
     private readonly TimeSpan _reporterWait;
 
     private RunOutcome? _outcome;
+    private Exception? _journalError;
+    private JournalWriteException? _unrecorded;
 
     // The last save the loop took: the only one that can still be waiting for its answer, since the core answers a save in the
     // input that brings it or in the result of its write, which is the next input.
@@ -165,7 +167,7 @@ internal sealed class RunLoop
 
             Inbox.Close();
             _reporterWaitTimer?.Dispose();
-            _result.TrySetResult(new RunResult(_outcome!.Value, Source.Current, _delivery.Errors));
+            _result.TrySetResult(new RunResult(_outcome!.Value, Source.Current, _delivery.Errors, _journalError, _unrecorded));
         }
         catch (Exception fault)
         {
@@ -173,6 +175,9 @@ internal sealed class RunLoop
             // being left waiting for ever. Closing the inbox refuses the saves still queued.
             _lastSave?.Refuse(fault);
             Inbox.Close();
+
+            // Let go of, so that a later run can continue it: closing it again, after the run's end closed it, does nothing.
+            _journal?.Dispose();
             LetGoOfTheTokenAndTheTimer();
             _reporterWaitTimer?.Dispose();
             _result.TrySetException(fault);
@@ -214,7 +219,7 @@ internal sealed class RunLoop
                         Timeout.InfiniteTimeSpan);
                     break;
                 case EffectKind.EndRun:
-                    End(effect.Outcome);
+                    End(effect.Outcome, effect.JournalError, effect.Unrecorded);
                     break;
                 case EffectKind.MarkCurrentOutOfDate:
                     _currentIsOutOfDate = true;
@@ -264,6 +269,13 @@ internal sealed class RunLoop
     private void Publish(RunEvent runEvent, SnapshotChange change)
     {
         var snapshot = _core.SnapshotAfter(change);
+
+        // Until the cutover (#153): the exception an unrecorded run's end carries holds the final snapshot, as on the existing engine.
+        if (runEvent is RunEnded { Error: JournalWriteException unrecorded })
+        {
+            unrecorded.Holds(snapshot);
+        }
+
         _currentIsOutOfDate = false;
         Source.Publish(snapshot, _core.Sampled);
         _delivery.Publish(runEvent, snapshot);
@@ -324,9 +336,11 @@ internal sealed class RunLoop
     /// The run has ended: no event follows, and the loop waits for the reporters to be done, as an input, for at most the reporter
     /// wait, which starts now, on the run's clock, the event that says the run ended being queued. Its running out is an input too.
     /// </summary>
-    private void End(RunOutcome outcome)
+    private void End(RunOutcome outcome, Exception? journalError, JournalWriteException? unrecorded)
     {
         _outcome = outcome;
+        _journalError = journalError;
+        _unrecorded = unrecorded;
         LetGoOfTheTokenAndTheTimer();
         _delivery.Complete(() => Inbox.Post(Input.ReportersDone));
         if (_reporterWait != Timeout.InfiniteTimeSpan)
