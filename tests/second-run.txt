@@ -2,14 +2,23 @@
 # as <test project>/<class>, kept in order. A ticket adds a line for each class it makes pass. The list goes at the cutover.
 Dagline.Spectre.Tests/ChoosingTests
 Dagline.Spectre.Tests/DrawingTests
+Dagline.Spectre.Tests/GroupsTests
+Dagline.Spectre.Tests/HeaderTests
+Dagline.Spectre.Tests/ProblemsTests
 Dagline.Spectre.Tests/SmallTerminalTests
+Dagline.Spectre.Tests/SpaceTests
 Dagline.Spectre.Tests/StopBannerTests
+Dagline.Spectre.Tests/WidthTests
 Dagline.Tests/ArgumentTests
 Dagline.Tests/BlockingTests
 Dagline.Tests/CheckpointTests
 Dagline.Tests/ConsoleStopTests
+Dagline.Tests/ContinueTests
 Dagline.Tests/DependencyTests
+Dagline.Tests/DrainTests
 Dagline.Tests/FailureSummaryTests
+Dagline.Tests/FailureTests
+Dagline.Tests/GracePeriodTests
 Dagline.Tests/GraphDiffersFromJournalTests
 Dagline.Tests/GraphTests
 Dagline.Tests/GroupSettledTests
@@ -19,6 +28,7 @@ Dagline.Tests/JournalCompatibilityTests
 Dagline.Tests/JournalDeletingTests
 Dagline.Tests/JournalDurabilityTests
 Dagline.Tests/JournalHoldingTests
+Dagline.Tests/JournalListingTests
 Dagline.Tests/JournalTests
 Dagline.Tests/KilledProcessTests
 Dagline.Tests/LimitTests
@@ -40,12 +50,14 @@ Dagline.Tests/SchedulingTests
 Dagline.Tests/SetAsideTests
 Dagline.Tests/SingleUseTests
 Dagline.Tests/SlotTryTests
-Dagline.Tests/StatusOfTests
 Dagline.Tests/SnapshotTests
+Dagline.Tests/StatusOfTests
 Dagline.Tests/StepCoreEffectTests
 Dagline.Tests/StepOrderTests
 Dagline.Tests/StopAndEndEventTests
+Dagline.Tests/StopTests
 Dagline.Tests/TaskContextTests
+Dagline.Tests/TaskCountsTests
 Dagline.Tests/WaitUntilAsyncTests
 Dagline.Tests/WaitingTests
 Dagline.Tests/WarningTests
