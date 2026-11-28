@@ -25,8 +25,9 @@ dotnet run -c Release --project benchmarks/Dagline.Benchmarks
 ```
 
 It runs each scenario (a large graph of nested groups, a task that reports progress very often, tasks given more warnings
-than are kept, and tasks that begin and end waiting) with [BenchmarkDotNet](https://benchmarkdotnet.org/) and prints, for each,
-the time taken and the bytes allocated. It takes a few minutes. Pass BenchmarkDotNet's own arguments after `--` to run fewer,
+than are kept, tasks that begin and end waiting, tasks held by full limits, tasks on a journal file, and 20,000 tasks made ready
+in one step) with [BenchmarkDotNet](https://benchmarkdotnet.org/) and prints, for each, the time taken, the bytes allocated and
+the garbage collections per thousand runs. It takes a few minutes. Pass BenchmarkDotNet's own arguments after `--` to run fewer,
 such as `-- --filter *Progress*`. Compare numbers taken on the same machine only. The measurement is not part of
 `dotnet test` and is never packed.
 
