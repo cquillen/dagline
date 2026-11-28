@@ -140,6 +140,64 @@ public class LoopRunTests
     }
 
     [Test]
+    public async Task A_journal_the_existing_engine_wrote_is_continued_by_the_new_engine_entry_for_entry_as_the_existing_engine_continues_it()
+    {
+        using var first = new TemporaryDirectory();
+        using var existingDirectory = new TemporaryDirectory();
+        using var newDirectory = new TemporaryDirectory();
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var checkFails = true;
+        var before = new GraphBuilder();
+        before.Task("prepare", _ => Task.CompletedTask);
+        var check = before.Task("check", _ => checkFails ? throw new InvalidOperationException("bad data") : Task.CompletedTask);
+        before.Task("load", _ => Task.CompletedTask).After(check);
+        before.Task("gone", _ => Task.CompletedTask);
+        var id = (await global::Dagline.Runner.RunAsync(before.Build(), new RunOptions { Journal = Journal.New(first.Path), TimeProvider = clock }))
+            .Snapshot.Journal!.Id;
+        existingDirectory.CopyIn(TheJournalIn(first));
+        newDirectory.CopyIn(TheJournalIn(first));
+        checkFails = false;
+        clock.Advance(Seconds(60));
+
+        // The same graph less one task: prepare is an earlier success, load is set aside and gone is not in the graph.
+        var after = new GraphBuilder();
+        after.Task("prepare", _ => Task.CompletedTask);
+        var checkAgain = after.Task("check", _ => Task.CompletedTask);
+        after.Task("load", _ => Task.CompletedTask).After(checkAgain);
+        var graph = after.Build();
+        var existing = new RecordingReporter();
+        var scripted = new RecordingReporter();
+        await global::Dagline.Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(existingDirectory.Path, id), Reporters = [existing], TimeProvider = clock });
+        var result = await ScriptedDriver
+            .Start(graph, new RunOptions { Journal = Journal.Continue(newDirectory.Path, id), Reporters = [scripted], TimeProvider = clock })
+            .Finish();
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        result.Snapshot.Counts.EarlierSuccesses.ShouldBe(1);
+        result.Snapshot.SetAside.Select(path => path.ToString()).ShouldBe(["load"]);
+        result.Snapshot.JournalPathsNotInGraph.ShouldBe(1);
+        Described(scripted).ShouldBe(Described(existing));
+        LinesAfterTheHeader(newDirectory).ShouldBe(LinesAfterTheHeader(existingDirectory));
+        JournalEntries.Read(TheJournalIn(newDirectory)).Skip(11).ShouldBe(
+            ["run started", "set aside load", "started check", "settled check", "started load", "settled load", "run ended"]);
+    }
+
+    [Test]
+    public async Task A_reporter_that_hears_the_run_ended_can_continue_the_journal_at_once()
+    {
+        using var directory = new TemporaryDirectory();
+        var continuer = new ContinuingReporter(directory.Path);
+        var driver = ScriptedDriver.Start(Chain(), new RunOptions { Journal = Journal.New(directory.Path), Reporters = [continuer] });
+
+        var result = await driver.Finish();
+
+        continuer.ContinuedRun.ShouldBe(2);
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+    }
+
+    [Test]
     public async Task The_one_call_form_switched_onto_the_new_engine_refuses_a_drain_signal_or_a_token_at_the_call()
     {
         using var cancellation = new CancellationTokenSource();
@@ -193,6 +251,23 @@ public class LoopRunTests
     private static string[] LinesAfterTheHeader(TemporaryDirectory directory) => [.. File.ReadAllLines(TheJournalIn(directory)).Skip(1)];
 
     private static TimeSpan Seconds(int seconds) => TimeSpan.FromSeconds(seconds);
+
+    /// <summary>A reporter that, on hearing the run ended, continues the run's journal with a run of its own.</summary>
+    private sealed class ContinuingReporter(string directory) : IReporter
+    {
+        public int? ContinuedRun { get; private set; }
+
+        public async ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
+        {
+            if (runEvent is RunEnded)
+            {
+                var continued = await ScriptedDriver
+                    .Start(Chain(), new RunOptions { Journal = Journal.Continue(directory, snapshot.Journal!.Id) })
+                    .Finish();
+                ContinuedRun = continued.Snapshot.Journal!.Run;
+            }
+        }
+    }
 
     /// <summary>A clock that moves on one second at each read and counts the reads; it can be told to throw at one of them.</summary>
     private sealed class CountingClock : TimeProvider

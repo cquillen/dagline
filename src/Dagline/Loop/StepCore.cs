@@ -53,6 +53,7 @@ internal sealed class StepCore
     private readonly Dictionary<string, int> _limits;
     private readonly string _user = Environment.UserName;
     private readonly string _machine = Environment.MachineName;
+    private readonly Continuation _continuation;
 
     // Reused at every settle, so working out what follows from it allocates no collection of its own.
     private readonly List<BuiltTask> _becomingReady = [];
@@ -72,8 +73,10 @@ internal sealed class StepCore
     /// <param name="graph">The graph the run runs.</param>
     /// <param name="settings">The settings of the run: the sizes of its slots.</param>
     /// <param name="journal">
-    /// The journal the run is on, as it was folded when opened, or <see langword="null"/> for a run with no journal. Only a new
-    /// journal is recorded as yet: continuing one is still to come.
+    /// The journal the run is on, as it was folded when opened, or <see langword="null"/> for a run with no journal. What the run
+    /// takes from it is decided here, once, before the run starts: a task it holds as an earlier success begins succeeded and is
+    /// never made ready, the earlier successes the <em>after</em> rule sets aside run again, and the journal's paths not in the
+    /// graph are counted (<see cref="Continuation"/>).
     /// </param>
     /// <param name="source">The source of snapshots that <see cref="RunStarted"/> hands to reporters.</param>
     public StepCore(Graph graph, RunSettings settings, JournalFold? journal, ISnapshotSource source)
@@ -81,6 +84,7 @@ internal sealed class StepCore
         _graph = graph;
         _source = source;
         _onAJournal = journal is not null;
+        _continuation = new Continuation(graph, journal);
         _maxRunningTasks = settings.Sizes.MaxRunningTasks;
         _limits = graph.LimitNames
             .Zip(settings.Sizes.Limits)
@@ -93,7 +97,9 @@ internal sealed class StepCore
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
         {
-            var instance = new TaskInstance(task);
+            var instance = _continuation.EarlierSuccessOf(task) is { } recorded
+                ? TaskInstance.EarlierSuccess(task, recorded)
+                : new TaskInstance(task);
             _instances[task.Position] = instance;
             atTheStart[task.Position] = instance.ToNodeSnapshot();
         }
@@ -103,7 +109,12 @@ internal sealed class StepCore
             graph.Nodes.Select(node => atTheStart[node.Position] ?? _rollUp.SnapshotOf((BuiltGroup)node)),
             graph.Positions,
             _slots,
-            new SnapshotJournal(journal?.NextRun));
+            new SnapshotJournal(journal?.NextRun)
+            {
+                SetAside = [.. _continuation.SetAside.Select(task => task.Path)],
+                JournalPathsNotInGraph = _continuation.PathsNotInGraph,
+                JournalPathsNotInGraphUnsucceeded = _continuation.PathsNotInGraphUnsucceeded,
+            });
     }
 
     /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
@@ -163,14 +174,39 @@ internal sealed class StepCore
     /// <summary>The run as it is now. The snapshot of every event published so far must have been built first.</summary>
     public Snapshot TakeSnapshot() => _snapshots.Take(ChangeSinceLastEvent());
 
-    /// <summary>The run starts: its start is recorded, then published, and the tasks with no dependency become ready and those that fit start.</summary>
+    /// <summary>
+    /// The run starts: its start is recorded with its set-asides, flushed, then published, and the tasks with no dependency become
+    /// ready and those that fit start.
+    /// </summary>
     private void Start()
     {
         _milestones = _milestones with { Started = _now };
-        Record(
-            _onAJournal ? [new RunStartedEntry(_now, _user, _machine, _maxRunningTasks, _limits, 0, 0)] : [],
-            JournalFlush.ToDisk,
-            AfterWrite.RunStart);
+        Record(_onAJournal ? EntriesOfTheStart() : [], JournalFlush.ToDisk, AfterWrite.RunStart);
+    }
+
+    /// <summary>
+    /// The run's start, with the counts of the journal's paths not in the graph, then an entry for each earlier success it sets
+    /// aside, in declaration order: so each set-aside is on disk before any task starts.
+    /// </summary>
+    private List<JournalEntry> EntriesOfTheStart()
+    {
+        List<JournalEntry> entries =
+        [
+            new RunStartedEntry(
+                _now,
+                _user,
+                _machine,
+                _maxRunningTasks,
+                _limits,
+                _continuation.PathsNotInGraph,
+                _continuation.PathsNotInGraphUnsucceeded),
+        ];
+        foreach (var task in _continuation.SetAside)
+        {
+            entries.Add(new SetAsideEntry(task.Path.ToString(), _now));
+        }
+
+        return entries;
     }
 
     /// <summary>
