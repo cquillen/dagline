@@ -19,6 +19,8 @@ public class RunBenchmarks
     private const int Shards = 10;
     private const int TenantsPerShard = 150;
     private const int ShardLimitSize = 2;
+    private const string SharedLimit = "shared";
+    private const int SharedLimitSize = 4;
 
     private static readonly string[] _statusTexts = Texts("working on item", 1_000);
     private static readonly string[] _warnings = Texts("warning about item", WarningsPerTask);
@@ -29,6 +31,7 @@ public class RunBenchmarks
     private Graph _warningsBeyondKept = null!;
     private Graph _waiting = null!;
     private Graph _heldByLimits = null!;
+    private Graph _heldByOneSmallLimit = null!;
     private Graph _onAJournal = null!;
     private string _journals = null!;
 
@@ -50,12 +53,16 @@ public class RunBenchmarks
         // 1,500 tasks in 10 shards, each shard's tasks holding a limit of 2, so nearly every ready task is held by a full limit.
         _heldByLimits = Sharded(Shards, TenantsPerShard, limited: true);
 
+        // 10,000 tasks in 100 groups of 100, every task holding one limit of 4, so each settle leaves thousands of ready tasks held.
+        _heldByOneSmallLimit = OneSharedLimit(groups: 100, tasksPerGroup: 100);
+
         // 160 tasks on a journal file, so each settle is flushed to the disk.
         _onAJournal = Sharded(shards: 4, tenantsPerShard: 40, limited: false);
         _journals = Directory.CreateTempSubdirectory("dagline-benchmarks-").FullName;
 
         await Check(_largeGraph, expectedWarnings: 0).ConfigureAwait(false);
         await Check(_heldByLimits, expectedWarnings: 0).ConfigureAwait(false);
+        await Check(_heldByOneSmallLimit, expectedWarnings: 0, OneSharedLimitOptions()).ConfigureAwait(false);
         await Check(_onAJournal, expectedWarnings: 0, OnAJournal()).ConfigureAwait(false);
         await Check(_progress, expectedWarnings: 0).ConfigureAwait(false);
         await Check(_warningsBeyondKept, expectedWarnings: 256 * WarningsPerTask).ConfigureAwait(false);
@@ -68,6 +75,10 @@ public class RunBenchmarks
     /// <summary>1,500 tasks in 10 shards, each shard's tasks holding a limit of 2 slots.</summary>
     [Benchmark]
     public Task<RunOutcome> HeldByLimits() => Run(_heldByLimits);
+
+    /// <summary>10,000 tasks with no dependencies, every one holding one limit of 4 slots.</summary>
+    [Benchmark]
+    public Task<RunOutcome> HeldByOneSmallLimit() => Run(_heldByOneSmallLimit, OneSharedLimitOptions());
 
     /// <summary>160 tasks on a new journal file, each settle flushed to the disk.</summary>
     [Benchmark]
@@ -103,6 +114,13 @@ public class RunBenchmarks
         Reporters = [new PlainTextReporter(TextWriter.Null)],
     };
 
+    private static RunOptions OneSharedLimitOptions() => new()
+    {
+        Journal = Journal.None,
+        Limits = new Dictionary<string, int> { [SharedLimit] = SharedLimitSize },
+        Reporters = [new PlainTextReporter(TextWriter.Null)],
+    };
+
     private RunOptions OnAJournal() => Options() with { Journal = Journal.New(_journals) };
 
     // A scenario that does not do what it says would measure nothing, so each is run once and checked before it is measured.
@@ -135,6 +153,21 @@ public class RunBenchmarks
             for (var tenant = 1; tenant <= tenantsPerShard; tenant++)
             {
                 group.Task($"tenant-{tenant}", ReportAndSucceed);
+            }
+        }
+
+        return builder.Build();
+    }
+
+    private static Graph OneSharedLimit(int groups, int tasksPerGroup)
+    {
+        var builder = new GraphBuilder();
+        for (var index = 1; index <= groups; index++)
+        {
+            var group = builder.Group($"group-{index}");
+            for (var task = 1; task <= tasksPerGroup; task++)
+            {
+                group.Task($"task-{task}", ReportAndSucceed).Limit(SharedLimit);
             }
         }
 

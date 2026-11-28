@@ -10,9 +10,11 @@
     <AdditionalFiles Include="BannedSymbols.Console.txt" />
   </ItemGroup>
 
-  <!-- The one opening into the core's internals: the never-packed shared test support, for the journal write hook alone (CODING_STANDARDS.md). -->
+  <!-- The two openings into the core's internals (CODING_STANDARDS.md): the never-packed shared test support, for its two test hooks,
+       and the core's own tests, for the step core's count of slot tries alone. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Dagline.TestSupport" />
+    <InternalsVisibleTo Include="Dagline.Tests" />
   </ItemGroup>
 
 </Project>

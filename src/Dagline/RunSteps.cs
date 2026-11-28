@@ -31,12 +31,11 @@ internal sealed class RunSteps
     private readonly Graph _graph;
     private readonly TimeSpan _gracePeriod;
     private readonly RollUp _rollUp;
-    // The ready tasks to try at the next walk, in declaration order. A ready task a full limit turned away waits in _heldBy under
-    // that limit instead, and is tried again only once a task gives the limit back: until then the limit stays full, so every
-    // walk would turn it away again, and on a large graph with small limits most of a walk was those tasks.
+    // The ready tasks to try at the next walk, in declaration order. A ready task a full limit turned away waits in _held instead,
+    // and is tried again only once it fits: until then every walk would turn it away again, and on a large graph with small
+    // limits most of a walk was those tasks.
     private readonly SortedSet<int> _ready = [];
-    private readonly List<int>[] _heldBy;
-    private readonly List<int> _givenBack = [];
+    private readonly HeldTasks _held;
 
     // Reused at every settle, so working out what follows from it allocates no collection of its own.
     private readonly SortedSet<int> _dependents = [];
@@ -71,7 +70,7 @@ internal sealed class RunSteps
         _graph = graph;
         _gracePeriod = settings.GracePeriod;
         _slots = new Slots(graph.LimitNames, settings.Sizes);
-        _heldBy = [.. graph.LimitNames.Select(_ => new List<int>())];
+        _held = new HeldTasks(graph, _slots);
         _instances = InstancesAtTheStart(earlier, continuation);
 
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
@@ -318,6 +317,9 @@ internal sealed class RunSteps
     /// </summary>
     public Snapshot TakeSnapshot() => _snapshots.Take(ChangeSinceLastEvent());
 
+    /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
+    public int SlotTries => _slots.Tries;
+
     private bool HasStopped => _milestones.Stop is not null;
 
     // A drain or a stop: either one starts nothing more, ends the run once nothing is running, and makes its outcome stopped.
@@ -389,7 +391,10 @@ internal sealed class RunSteps
     private void Settle(BuiltTask task, IReadOnlyList<TaskChange> changes)
     {
         _slots.GiveBack(task);
-        _givenBack.AddRange(task.HeldLimits);
+        foreach (var limit in task.HeldLimits)
+        {
+            _held.LimitGivenBack(limit);
+        }
         foreach (var change in changes)
         {
             Apply(task, change);
@@ -546,15 +551,14 @@ internal sealed class RunSteps
     /// since every task holds a slot of the max running tasks and none after that point could start.
     /// </summary>
     /// <remarks>
-    /// A ready task held by a full limit is not tried until a task gives that limit back, which starts the same tasks in the same
-    /// order as trying it each time: no slot of a limit is freed during a walk, so a limit full when the task was turned away is
-    /// still full.
+    /// A ready task a full limit turned away is held, and tried again only once a limit it holds has been given back and every
+    /// limit it holds has room, merged by position with the other ready tasks, as <see cref="HeldTasks"/> says. That starts the
+    /// same tasks in the same order as trying it each time: a task one of whose limits is full would be turned away again.
     /// </remarks>
     private void StartWhatFits(DateTimeOffset now)
     {
-        TryAgainWhatWasHeldByLimitsGivenBack();
-        List<int> tried = [];
-        foreach (var position in _ready)
+        _held.BeginWalk();
+        while (NextToTry() is var (position, wasHeld))
         {
             var task = _graph.TaskAt(position);
             var answer = _slots.Take(task);
@@ -563,35 +567,44 @@ internal sealed class RunSteps
                 break;
             }
 
-            tried.Add(position);
+            if (!wasHeld)
+            {
+                _ready.Remove(position);
+            }
+
             if (answer is SlotsAnswer.Took)
             {
+                if (wasHeld)
+                {
+                    _held.StartedFirst();
+                }
+
                 // Moved at once, not after the walk, so the snapshot with each start counts only the slots taken so far.
                 Apply(task, InstanceOf(task).Start(now));
                 _step!.Starts.Add(task);
             }
             else
             {
-                _heldBy[_slots.FullLimitOf(task)].Add(position);
+                _held.Hold(task, _slots.FullLimitOf(task));
             }
         }
 
-        // The ready set cannot change while it is walked, so the tasks tried leave it here: started, or held by a full limit.
-        foreach (var position in tried)
-        {
-            _ready.Remove(position);
-        }
+        _held.EndWalk();
     }
 
-    private void TryAgainWhatWasHeldByLimitsGivenBack()
+    /// <summary>
+    /// The position of the task to try next, the first among the ready tasks and the held tasks that fit, and whether it is held;
+    /// <see langword="null"/> once there is none.
+    /// </summary>
+    private (int Position, bool WasHeld)? NextToTry()
     {
-        foreach (var limit in _givenBack)
+        var held = _held.First();
+        if (_ready.Count > 0 && (held is not { } first || _ready.Min < first))
         {
-            _ready.UnionWith(_heldBy[limit]);
-            _heldBy[limit].Clear();
+            return (_ready.Min, false);
         }
 
-        _givenBack.Clear();
+        return held is { } position ? (position, true) : null;
     }
 
     /// <summary>
