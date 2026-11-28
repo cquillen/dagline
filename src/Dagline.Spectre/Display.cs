@@ -140,7 +140,8 @@ internal sealed class Display(Terminal terminal, TimeProvider clock, Glyphs glyp
         => $"display failed, output continues as plain text: {failure.GetType().Name}: {DisplayText.OneLine(failure.Message)}";
 
     /// <summary>
-    /// Called when the run's token ends the wait for reporters while this one is still busy: the terminal is the operator's again.
+    /// Called when the run drops this reporter while it is still busy, its reporter wait having run out: the terminal is the
+    /// operator's again.
     /// </summary>
     private void Abandon()
     {

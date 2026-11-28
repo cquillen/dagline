@@ -80,10 +80,11 @@ public static class Runner
     /// and <see cref="RunOutcome.Complete"/> when every task succeeded, drain, stop or neither.
     /// </para>
     /// <para>
-    /// Once the run has ended, it waits for its reporters to handle the events still queued for them, for at most 30 seconds on the
-    /// run's clock from the moment <see cref="RunEnded"/> is queued, whether or not it was stopped. A reporter still busy then is
+    /// Once the run has ended, it waits for its reporters to handle the events still queued for them, for at most
+    /// <see cref="RunOptions.ReporterWait"/>, 30 seconds by default, on the run's clock from the moment <see cref="RunEnded"/> is
+    /// queued, whether or not it was stopped. A reporter still busy then is
     /// dropped: the token passed to its <see cref="IReporter.OnEventAsync"/> is cancelled, its remaining events are let go, and the
-    /// result completes without waiting for its call to come back. The run's own token has no part in this wait. A reporter's
+    /// result completes without waiting for its call to come back. The run's own token has no part in this wait: cancelling it once the run has ended does nothing. A reporter's
     /// exception never faults the result either: the reporter is dropped and its error is on <see cref="RunResult.ReporterErrors"/>.
     /// </para>
     /// <para>
@@ -118,8 +119,8 @@ public static class Runner
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="RunConfigurationException">
-    /// <see cref="RunOptions.MaxRunningTasks"/> or a size is below 1, the graph names a limit that the options give no size, or the grace period is below zero
-    /// or above <see cref="uint.MaxValue"/> - 1 milliseconds and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
+    /// <see cref="RunOptions.MaxRunningTasks"/> or a size is below 1, the graph names a limit that the options give no size, or the grace period or the
+    /// reporter wait is below zero or above <see cref="uint.MaxValue"/> - 1 milliseconds and is not <see cref="Timeout.InfiniteTimeSpan"/>. The message lists every problem.
     /// It is thrown at the call: no task has started, no event has been published and no reporter has been called.
     /// </exception>
     /// <exception cref="JournalInUseException">

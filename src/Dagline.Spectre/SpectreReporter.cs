@@ -65,8 +65,8 @@ public static class SpectreReporter
     /// <see cref="RunResult.ReporterErrors"/>; when that happens on a frame of the timer, it is thrown from the next event.
     /// </para>
     /// <para>
-    /// The display also restores the terminal when the token it was handed is cancelled, because the run's own token, cancelled
-    /// after every task had ended, ended the run's wait for reporters while it was still busy. A process that is killed leaves the
+    /// The display also restores the terminal when the token it was handed is cancelled, because the run dropped it while it was
+    /// still busy as <see cref="RunOptions.ReporterWait"/> ran out at the end of the run. A process that is killed leaves the
     /// terminal as it was.
     /// </para>
     /// </remarks>

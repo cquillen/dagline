@@ -110,7 +110,8 @@ public sealed record RunOptions
     /// </summary>
     /// <remarks>
     /// Each reporter has a queue of its own, so the run never waits for one while tasks are running and a slow reporter
-    /// does not hold up another. One that throws is dropped and is on <see cref="RunResult.ReporterErrors"/>.
+    /// does not hold up another. One that throws is dropped and is on <see cref="RunResult.ReporterErrors"/>, and so is one still
+    /// busy when <see cref="ReporterWait"/> runs out at the end of the run.
     /// <see cref="IReporter.OnEventAsync"/> says what a reporter may rely on.
     /// </remarks>
     /// <exception cref="ArgumentNullException">The value set is <see langword="null"/>.</exception>

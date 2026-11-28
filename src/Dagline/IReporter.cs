@@ -24,9 +24,9 @@ public interface IReporter
     /// The run as it is now is <see cref="ISnapshotSource.Current"/> on the source that <see cref="RunStarted"/> carries.
     /// </param>
     /// <param name="cancellationToken">
-    /// A token for the work of handling the event. Each reporter is passed a token of its own. It is cancelled only when the run's
-    /// token, cancelled after every task has ended, ends the wait for reporters at the end of the run while this reporter is still
-    /// busy. The reporter is then dropped.
+    /// A token for the work of handling the event. Each reporter is passed a token of its own. It is cancelled only when the reporter
+    /// is dropped: when it throws, or when it is still busy as <see cref="RunOptions.ReporterWait"/> runs out at the end of the run.
+    /// The run's own token never cancels it.
     /// </param>
     /// <returns>A task that completes when the reporter has handled the event.</returns>
     /// <remarks>
@@ -42,14 +42,15 @@ public interface IReporter
     /// the event and the exception is on <see cref="RunResult.ReporterErrors"/>. The exception is never thrown to the app.
     /// </para>
     /// <para>
-    /// At its end the run waits, with no time bound, until every reporter that was not dropped has handled every event,
-    /// <see cref="RunEnded"/> included. A call that never completes keeps <see cref="Runner.RunAsync"/> from returning
-    /// until the token passed to <see cref="Runner.RunAsync"/> is cancelled, in a run that applied no stop. Each reporter still busy
-    /// is then dropped: the token passed to its call is cancelled, its remaining events are discarded, <see cref="Runner.RunAsync"/>
-    /// returns without waiting for the call to come back, even a call that blocks its thread before it returns a task, and its <see cref="ReporterError"/> on <see cref="RunResult.ReporterErrors"/>
-    /// carries an <see cref="OperationCanceledException"/>. A token cancelled before every task had ended is applied as a stop and
-    /// drops no reporter, and after a stop nothing does: such a run, like a run given no token, waits for its reporters for as long
-    /// as they take. A drain never drops a reporter.
+    /// At its end every run, stopped or not, waits until every reporter that was not dropped has handled every event,
+    /// <see cref="RunEnded"/> included, for at most <see cref="RunOptions.ReporterWait"/>, 30 seconds by default, measured on the
+    /// run's clock from the moment <see cref="RunEnded"/> is queued. Each reporter still busy when it runs out is dropped: the token
+    /// passed to its call is cancelled, its remaining events are let go, the run's result completes without waiting for the call to
+    /// come back, even a call that blocks its thread before it returns a task, and its <see cref="ReporterError"/> on
+    /// <see cref="RunResult.ReporterErrors"/> carries an <see cref="OperationCanceledException"/> and the event it was handling.
+    /// A reporter that had handled every event is left alone. Nothing else ends the wait: not the run's token, which means a stop
+    /// and nothing more, and not a drain. With the reporter wait set to <see cref="Timeout.InfiniteTimeSpan"/>, a call that never
+    /// completes keeps the run's result from completing.
     /// </para>
     /// <para>
     /// A reporter that appears twice in <see cref="RunOptions.Reporters"/> is treated as two reporters:
