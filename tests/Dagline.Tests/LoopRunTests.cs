@@ -107,7 +107,8 @@ public class LoopRunTests
         var onThePool = new RecordingReporter();
         var graph = Chain();
 
-        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [existing], TimeProvider = clock });
+        // The oracle stays on the existing engine: the project's own Runner would follow the engine switch.
+        await global::Dagline.Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [existing], TimeProvider = clock });
         await ScriptedDriver.Start(graph, new RunOptions { Journal = Journal.None, Reporters = [scripted], TimeProvider = clock }).Finish();
         await NewEngine.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [onThePool], TimeProvider = clock });
 
@@ -126,7 +127,7 @@ public class LoopRunTests
         var scripted = new RecordingReporter();
         var graph = Chain();
 
-        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(existingDirectory.Path), Reporters = [existing], TimeProvider = clock });
+        await global::Dagline.Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(existingDirectory.Path), Reporters = [existing], TimeProvider = clock });
         var result = await ScriptedDriver
             .Start(graph, new RunOptions { Journal = Journal.New(newDirectory.Path), Reporters = [scripted], TimeProvider = clock })
             .Finish();
@@ -136,6 +137,18 @@ public class LoopRunTests
         LinesAfterTheHeader(newDirectory).ShouldBe(LinesAfterTheHeader(existingDirectory));
         JournalEntries.Read(TheJournalIn(newDirectory)).ShouldBe(
             ["header", "run started", "started prepare", "settled prepare", "started load", "settled load", "started publish", "settled publish", "run ended"]);
+    }
+
+    [Test]
+    public async Task The_one_call_form_switched_onto_the_new_engine_refuses_a_drain_signal_or_a_token_at_the_call()
+    {
+        using var cancellation = new CancellationTokenSource();
+
+        Should.Throw<NotSupportedException>(() => NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, drain: new DrainSignal()));
+        Should.Throw<NotSupportedException>(
+            () => NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, cancellationToken: cancellation.Token));
+        (await NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, cancellationToken: CancellationToken.None))
+            .Outcome.ShouldBe(RunOutcome.Complete);
     }
 
     [Test]

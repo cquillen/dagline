@@ -148,6 +148,11 @@ public static class Runner
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(options);
 
+        if (options.RunsOnTheNewEngine)
+        {
+            return RunOnTheNewEngineAsync(graph, options, drain, cancellationToken);
+        }
+
         IReporter[] reporters = [.. options.Reporters];
         Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));
 
@@ -155,6 +160,18 @@ public static class Runner
         var journal = options.Journal.Open(settings.TimeProvider);
 
         return RunToEndAsync(graph, settings, journal, reporters, drain, cancellationToken);
+    }
+
+    // The engine switch (spec #139), until the cutover. The new engine takes no drain and no token yet: refusing them at the call
+    // fails a test that relies on them at once, where dropping them would let it pass without a stop or hang until its timeout.
+    private static Task<RunResult> RunOnTheNewEngineAsync(Graph graph, RunOptions options, DrainSignal? drain, CancellationToken cancellationToken)
+    {
+        if (drain is not null || cancellationToken.CanBeCanceled)
+        {
+            throw new NotSupportedException("The new engine takes no drain signal and no cancellation token yet.");
+        }
+
+        return LoopRun.Start(graph, options, ThreadPoolHost.Instance).Result;
     }
 
     // The token is the run's own input, which stops it: the awaits here wait for the run to end however it ends, so none takes it.
