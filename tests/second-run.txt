@@ -6,6 +6,7 @@ Dagline.Spectre.Tests/SmallTerminalTests
 Dagline.Spectre.Tests/StopBannerTests
 Dagline.Tests/ArgumentTests
 Dagline.Tests/BlockingTests
+Dagline.Tests/CheckpointTests
 Dagline.Tests/ConsoleStopTests
 Dagline.Tests/DependencyTests
 Dagline.Tests/FailureSummaryTests
@@ -20,6 +21,7 @@ Dagline.Tests/JournalTests
 Dagline.Tests/LimitTests
 Dagline.Tests/LimitUseTests
 Dagline.Tests/LoopReportTests
+Dagline.Tests/LoopRunCheckpointTests
 Dagline.Tests/LoopRunEndingEarlyTests
 Dagline.Tests/LoopRunTests
 Dagline.Tests/MaxRunningTasksTests

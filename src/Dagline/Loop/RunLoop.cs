@@ -31,11 +31,16 @@ internal sealed class RunLoop
     private readonly StepCore _core;
     private readonly HostedDelivery _delivery;
     private readonly LoopTaskRun _taskRun;
+    private readonly TaskCheckpoints _checkpoints;
     private readonly CancellationTokenSource _tasksTokenSource = new();
     private readonly TaskCompletionSource<RunResult> _result;
     private readonly TimeSpan _gracePeriod;
 
     private RunOutcome? _outcome;
+
+    // The last save the loop took: the only one that can still be waiting for its answer, since the core answers a save in the
+    // input that brings it or in the result of its write, which is the next input.
+    private CheckpointSave? _lastSave;
     private bool _currentIsOutOfDate;
     private CancellationTokenRegistration _hearsTheStop;
     private ITimer? _gracePeriodTimer;
@@ -60,7 +65,8 @@ internal sealed class RunLoop
         var samples = new TaskSamples(graph);
         Source = new CurrentSnapshot(samples);
         _core = new StepCore(graph, settings, journal?.Fold, Source, samples);
-        _taskRun = new LoopTaskRun(Inbox, samples, graph, Source);
+        _checkpoints = new TaskCheckpoints(graph, _core.CheckpointOf);
+        _taskRun = new LoopTaskRun(Inbox, samples, graph, Source, _checkpoints);
 
         // Before the loop's first turn, on the starting thread: nothing else can read or change the core yet.
         Source.Publish(_core.TakeSnapshot(), _core.Sampled);
@@ -126,6 +132,12 @@ internal sealed class RunLoop
                         await Inbox.WaitAsync();
                     }
 
+                    // Kept as soon as it leaves the inbox, so that a fault from here on answers it.
+                    if (input.Kind is InputKind.CheckpointSave)
+                    {
+                        _lastSave = input.Save;
+                    }
+
                     if (input.IsTimed)
                     {
                         now = _clock.GetUtcNow();
@@ -145,7 +157,9 @@ internal sealed class RunLoop
         }
         catch (Exception fault)
         {
-            // A fault in Dagline itself: the app awaiting the result is told, rather than left waiting for ever.
+            // A fault in Dagline itself: the app awaiting the result is told, and so is a task awaiting a save, rather than either
+            // being left waiting for ever. Closing the inbox refuses the saves still queued.
+            _lastSave?.Refuse(fault);
             Inbox.Close();
             LetGoOfTheTokenAndTheTimer();
             _result.TrySetException(fault);
@@ -192,10 +206,29 @@ internal sealed class RunLoop
                 case EffectKind.MarkCurrentOutOfDate:
                     _currentIsOutOfDate = true;
                     break;
+                case EffectKind.AnswerSave:
+                    AnswerSave(effect.Task!, effect.Save!, effect.Refusal);
+                    break;
             }
         }
 
         return written;
+    }
+
+    /// <summary>
+    /// Answers a save: a made save's text is what the task's checkpoint reads back from before the answer resumes the task, and the
+    /// answer resumes it as the host says, never inline on the loop in an app.
+    /// </summary>
+    private void AnswerSave(BuiltTask task, CheckpointSave save, Exception? refusal)
+    {
+        if (refusal is not null)
+        {
+            save.Refuse(refusal);
+            return;
+        }
+
+        _checkpoints.Saved(task, save.Text);
+        save.Made();
     }
 
     private Input Write(IReadOnlyList<JournalEntry> entries, JournalFlush flush)

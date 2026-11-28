@@ -9,7 +9,9 @@ namespace Dagline;
 /// which decides where it runs, and never runs it on the posting thread itself.
 /// </summary>
 /// <remarks>
-/// It is not bounded: a post never waits. Once the loop has gone, the inbox is closed, and what is posted later is let go.
+/// It is not bounded: a post never waits. Once the loop has gone, the inbox is closed, and what is posted later is let go, but for
+/// a checkpoint save, which is refused on the thread that posts it, as is a save still queued when the inbox closes: a task never
+/// waits for ever for a save nothing will read.
 /// </remarks>
 internal sealed class Inbox(IRunHost host)
 {
@@ -25,6 +27,7 @@ internal sealed class Inbox(IRunHost host)
     {
         if (_closed)
         {
+            LetGo(input);
             return;
         }
 
@@ -43,6 +46,19 @@ internal sealed class Inbox(IRunHost host)
         Wake();
     }
 
+    /// <summary>
+    /// Posts a task's checkpoint save, and gives the task that answers it: once the loop has applied it, or at once, refused, when the
+    /// loop has gone. It resumes whoever awaits it as the host's <see cref="IRunHost.CompletionOptions"/> say.
+    /// </summary>
+    /// <param name="task">The task whose checkpoint is saved.</param>
+    /// <param name="text">The checkpoint, or empty to clear it.</param>
+    public Task PostSave(BuiltTask task, string text)
+    {
+        var save = new CheckpointSave(text, host.CompletionOptions);
+        Post(Input.SaveCheckpoint(task, save));
+        return save.Answered;
+    }
+
     /// <summary>Takes the oldest input, if there is one. For the loop alone.</summary>
     public bool TryTake(out Input input) => _queue.TryDequeue(out input);
 
@@ -52,7 +68,10 @@ internal sealed class Inbox(IRunHost host)
     /// </summary>
     public InputPosted WaitAsync() => new(this);
 
-    /// <summary>The loop has gone: from here on nothing reads the inbox, and what was queued and is posted later is let go.</summary>
+    /// <summary>
+    /// The loop has gone: from here on nothing reads the inbox, and what was queued and is posted later is let go, a checkpoint save
+    /// refused.
+    /// </summary>
     public void Close()
     {
         _closed = true;
@@ -62,8 +81,18 @@ internal sealed class Inbox(IRunHost host)
 
     private void LetGoOfQueued()
     {
-        while (_queue.TryDequeue(out _))
+        while (_queue.TryDequeue(out var input))
         {
+            LetGo(input);
+        }
+    }
+
+    /// <summary>Lets go of an input nothing will read: a checkpoint save is refused, and anything else is dropped.</summary>
+    private static void LetGo(in Input input)
+    {
+        if (input.Kind is InputKind.CheckpointSave)
+        {
+            input.Save.RefuseAsTheRunHasEnded(input.Task!);
         }
     }
 

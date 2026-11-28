@@ -39,6 +39,12 @@ internal enum InputKind
     /// </summary>
     ReportersDone,
 
+    /// <summary>
+    /// A task saves its checkpoint, or clears it, with the completion to answer. Timed, since its entry in the journal carries the
+    /// time it was taken. Applied after the run has ended too, while the loop waits for reporters, so that it is answered.
+    /// </summary>
+    CheckpointSave,
+
     /// <summary>The app asks the run to drain: start nothing new, and let the running tasks finish untold.</summary>
     Drain,
 
@@ -58,8 +64,8 @@ internal enum InputKind
 /// <param name="Payload">
 /// What the input carries beyond its task: the <see cref="TaskOutcome"/> of <see cref="InputKind.BodyEnded"/>, the text of a
 /// task's report, the failure of <see cref="InputKind.Written"/>, which is <see langword="null"/> when the write landed, the
-/// <see cref="StopRequester"/> of <see cref="InputKind.Stop"/>, or the <see cref="AskedBeforeTheStart"/> of a
-/// <see cref="InputKind.Start"/> that carries any.
+/// <see cref="StopRequester"/> of <see cref="InputKind.Stop"/>, the <see cref="AskedBeforeTheStart"/> of a
+/// <see cref="InputKind.Start"/> that carries any, or the <see cref="CheckpointSave"/> of <see cref="InputKind.CheckpointSave"/>.
 /// </param>
 internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, object? Payload = null)
 {
@@ -95,6 +101,8 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
     public static Input FailureReported(BuiltTask task, string message, string[] lines)
         => new(InputKind.FailureReported, task, new ReportedFailure(message, lines));
 
+    public static Input SaveCheckpoint(BuiltTask task, CheckpointSave save) => new(InputKind.CheckpointSave, task, save);
+
     /// <summary>The result of a write: <paramref name="failure"/> is what it threw, or <see langword="null"/> when it landed.</summary>
     public static Input Written(Exception? failure) => new(InputKind.Written, Payload: failure);
 
@@ -116,6 +124,9 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
 
     /// <summary>The failure of <see cref="InputKind.FailureReported"/>.</summary>
     public ReportedFailure Failed => (ReportedFailure)Payload!;
+
+    /// <summary>The save of <see cref="InputKind.CheckpointSave"/>.</summary>
+    public CheckpointSave Save => (CheckpointSave)Payload!;
 
     public StopRequester Requester => (StopRequester)Payload!;
 
