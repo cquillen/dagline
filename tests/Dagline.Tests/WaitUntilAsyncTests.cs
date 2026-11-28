@@ -459,7 +459,9 @@ public class WaitUntilAsyncTests
             var jobTask = builder.Task("job", body);
             var reporter = new RecordingReporter();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+            // On the existing engine only: it moves the clock the moment the body's call to wait returns, so it dates the wait by
+            // the call, where the new engine dates it by when the run applies it (ADR 0015, #146).
+            var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
             await clock.NextTimerAsync();
             fake.Advance(interval);
             var result = await run;

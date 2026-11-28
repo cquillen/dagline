@@ -314,7 +314,7 @@ public class LoopReportTests
     }
 
     [Test]
-    public async Task A_wait_carries_the_time_the_loop_applied_it_and_its_task_and_group_stay_running()
+    public async Task A_wait_carries_the_time_the_loop_applied_it_and_its_task_keeps_its_progress_and_stays_running_as_its_group_does()
     {
         var runStart = new DateTimeOffset(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
         var clock = new FakeTimeProvider(runStart);
@@ -329,6 +329,7 @@ public class LoopReportTests
 
         var scope = context.BeginWaiting("job 17 to finish");
         clock.Advance(TimeSpan.FromSeconds(2));
+        context.SetCount(40, 100);
         run.Pump();
         var waiting = run.Current;
         scope.Dispose();
@@ -340,6 +341,7 @@ public class LoopReportTests
         waiting[jobTask.Path].Status.ShouldBe(NodeStatus.Running);
         waiting[jobTask.Path].WaitingSince.ShouldBe(runStart.AddSeconds(2));
         waiting[jobTask.Path].WaitingText.ShouldBe("job 17 to finish");
+        waiting[jobTask.Path].Count.ShouldBe(40);
         waiting[shard.Path].Status.ShouldBe(NodeStatus.Running);
         waiting[shard.Path].Counts[NodeStatus.Running].ShouldBe(1);
         waiting.RunningTasks.InUse.ShouldBe(1);
