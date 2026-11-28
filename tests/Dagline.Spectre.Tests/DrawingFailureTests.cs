@@ -91,39 +91,38 @@ public class DrawingFailureTests
     }
 
     [Test]
-    public async Task A_stop_that_ends_the_wait_for_the_display_restores_the_terminal()
+    public async Task A_display_dropped_when_the_reporter_wait_runs_out_restores_the_terminal()
     {
-        for (var repeat = 0; repeat < 50; repeat++)
+        var builder = new GraphBuilder();
+        builder.Task("work", _ => Task.CompletedTask);
+        using var console = new ScriptedConsole(new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences());
+        var display = SpectreReporter.Create(new SpectreOptions
         {
-            var builder = new GraphBuilder();
-            builder.Task("work", _ => Task.CompletedTask);
-            using var console = new ScriptedConsole(new TestConsole().Size(new Size(80, 24)).EmitAnsiSequences());
-            var display = SpectreReporter.Create(new SpectreOptions
-            {
-                PlainText = TextWriter.Null,
-                Display = DisplayMode.Force,
-                Console = console,
-                TimeProvider = new FakeTimeProvider(DisplayRun.RunStart),
-            });
-            var stuck = new WatchedReporter(new StuckBefore("run ended: complete", display));
-            var watching = new RecordingReporter();
-            using var stop = new CancellationTokenSource();
+            PlainText = TextWriter.Null,
+            Display = DisplayMode.Force,
+            Console = console,
+            TimeProvider = new FakeTimeProvider(DisplayRun.RunStart),
+        });
+        var stuck = new StuckBefore("run ended: complete", display);
+        var runClock = new FakeTimeProvider(DisplayRun.RunStart);
+        var reporterWait = TimeSpan.FromSeconds(30);
+        var run = ScriptedDriver.Start(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, Reporters = [stuck], TimeProvider = runClock, ReporterWait = reporterWait });
+        run.Pump();
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [stuck, watching] }, cancellationToken: stop.Token);
-            await watching.Ended;
-            await stuck.Handled("work: running -> succeeded");
-            var restored = console.NextWrite();
-            await stop.CancelAsync();
-            var result = await run;
-            await restored.WaitAsync(TimeSpan.FromSeconds(30));
-            var screen = Screen.Read(console.Inner.Output, new Size(80, 24));
+        var restored = console.NextWrite();
+        runClock.Advance(reporterWait);
+        var result = await run.Finish();
+        await restored.WaitAsync(TimeSpan.FromSeconds(30));
+        var screen = Screen.Read(console.Inner.Output, new Size(80, 24));
 
-            result.ReporterErrors.ShouldHaveSingleItem().Exception.ShouldBeAssignableTo<OperationCanceledException>();
-            screen.OnAlternateScreen.ShouldBeFalse();
-            screen.CursorVisible.ShouldBeTrue();
-            screen.Modes.ShouldBe(["?1049h", "?25l", "?1049l", "?25h"]);
-        }
+        result.ReporterErrors.ShouldHaveSingleItem().Exception.ShouldBeAssignableTo<OperationCanceledException>();
+        screen.OnAlternateScreen.ShouldBeFalse();
+        screen.CursorVisible.ShouldBeTrue();
+        screen.Modes.ShouldBe(["?1049h", "?25l", "?1049l", "?25h"]);
     }
+
     private static List<string> Lines(StringWriter writer)
         => [.. writer.ToString().Split(writer.NewLine, StringSplitOptions.RemoveEmptyEntries)];
 
