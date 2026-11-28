@@ -181,6 +181,17 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
+    /// Takes a task's progress as its sample held it when frozen, on the new engine, where progress is a sample and not a report
+    /// the instance is given (ADR 0015). Progress is never an event.
+    /// </summary>
+    public void TakeProgress(in ProgressSample progress)
+    {
+        _statusText = progress.StatusText;
+        _count = progress.Count;
+        _total = progress.Total;
+    }
+
+    /// <summary>
     /// Adds a warning, as one line, while the task has fewer than the number kept, and produces <see cref="WarningAdded"/>.
     /// A warning beyond the number kept is only counted, and produces nothing.
     /// </summary>

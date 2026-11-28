@@ -74,7 +74,8 @@ internal sealed class StepCore
     /// journal is recorded as yet: continuing one is still to come.
     /// </param>
     /// <param name="source">The source of snapshots that <see cref="RunStarted"/> hands to reporters.</param>
-    public StepCore(Graph graph, RunSettings settings, JournalFold? journal, ISnapshotSource source)
+    /// <param name="samples">The tasks' samples, which the run's current snapshot reads too; a new set when none is given.</param>
+    public StepCore(Graph graph, RunSettings settings, JournalFold? journal, ISnapshotSource source, TaskSamples? samples = null)
     {
         _graph = graph;
         _source = source;
@@ -86,7 +87,7 @@ internal sealed class StepCore
         _slots = new Slots(graph.LimitNames, settings.Sizes);
         _held = new HeldTasks(graph, _slots);
         _instances = new TaskInstance?[graph.Nodes.Length];
-        Samples = new TaskSamples(graph);
+        Samples = samples ?? new TaskSamples(graph);
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
         {
@@ -100,7 +101,8 @@ internal sealed class StepCore
             graph.Nodes.Select(node => atTheStart[node.Position] ?? _rollUp.SnapshotOf((BuiltGroup)node)),
             graph.Positions,
             _slots,
-            new SnapshotJournal(journal?.NextRun));
+            new SnapshotJournal(journal?.NextRun),
+            Samples);
     }
 
     /// <summary>
@@ -108,6 +110,11 @@ internal sealed class StepCore
     /// and which the core reads as it builds a snapshot.
     /// </summary>
     public TaskSamples Samples { get; }
+
+    /// <summary>
+    /// The positions of the tasks running in the last snapshot built, whose progress a reader of the current snapshot lays over it.
+    /// </summary>
+    public int[] Sampled => _snapshots.Sampled;
 
     /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
     public int SlotTries => _slots.Tries;
@@ -207,6 +214,7 @@ internal sealed class StepCore
     /// </summary>
     private void BodyEnded(BuiltTask task, TaskOutcome ended)
     {
+        FreezeSampleOf(task);
         var changes = InstanceOf(task).Settle(ended, _now);
         if (changes.Count == 0)
         {
@@ -216,6 +224,20 @@ internal sealed class StepCore
         List<JournalEntry> entries = [];
         Settle(task, changes, entries);
         Record(entries, JournalFlush.ToDisk, AfterWrite.Settles);
+    }
+
+    /// <summary>
+    /// Freezes the sample of a running task that is about to stop running, and takes what it holds into the task's instance, so
+    /// that the node of its settle, and every snapshot after it, shows its progress as it was then. Nothing the task reports from
+    /// now on changes it. A task that is not running is left as it is.
+    /// </summary>
+    private void FreezeSampleOf(BuiltTask task)
+    {
+        var instance = InstanceOf(task);
+        if (instance.Status is NodeStatus.Running)
+        {
+            instance.TakeProgress(Samples[task].Freeze());
+        }
     }
 
     /// <summary>

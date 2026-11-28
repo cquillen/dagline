@@ -15,9 +15,11 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples) : ITaskRun
 {
     // Each throw below is a departure from Liskov substitution for the length of the rebuild: the new engine is reachable only
     // from tests, and each member is built by a later part of it (checkpoints).
-    public void SetStatusText(BuiltTask task, string? text) => throw NotYet(nameof(TaskContext.SetStatusText));
+    /// <summary>Overwrites the status text on the task's sample: progress is never posted.</summary>
+    public void SetStatusText(BuiltTask task, string? text) => samples[task].SetStatusText(text);
 
-    public void SetCount(BuiltTask task, long current, long? total) => throw NotYet(nameof(TaskContext.SetCount));
+    /// <summary>Overwrites the count on the task's sample: progress is never posted.</summary>
+    public void SetCount(BuiltTask task, long current, long? total) => samples[task].SetCount(current, total);
 
     /// <summary>Posts a warning that is kept; one beyond the kept is only counted on the task's sample.</summary>
     public void Warn(BuiltTask task, string warning)

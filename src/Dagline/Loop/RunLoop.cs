@@ -53,18 +53,20 @@ internal sealed class RunLoop
         Inbox = new Inbox(host);
         _delivery = new HostedDelivery(reporters, host);
         _result = new TaskCompletionSource<RunResult>(host.CompletionOptions);
-        _core = new StepCore(graph, settings, journal?.Fold, Source);
+        var samples = new TaskSamples(graph);
+        Source = new CurrentSnapshot(samples);
+        _core = new StepCore(graph, settings, journal?.Fold, Source, samples);
         _taskRun = new LoopTaskRun(Inbox, _core.Samples);
 
         // Before the loop's first turn, on the starting thread: nothing else can read or change the core yet.
-        Source.Publish(_core.TakeSnapshot());
+        Source.Publish(_core.TakeSnapshot(), _core.Sampled);
     }
 
     /// <summary>The run's inbox: the only way into the run.</summary>
     public Inbox Inbox { get; }
 
     /// <summary>The run's current snapshot, which the loop writes and anyone may read.</summary>
-    public CurrentSnapshot Source { get; } = new();
+    public CurrentSnapshot Source { get; }
 
     /// <summary>
     /// Completes with the run's result once the run has ended and every reporter has handled every event or been dropped, or faults
@@ -180,7 +182,7 @@ internal sealed class RunLoop
     {
         var snapshot = _core.SnapshotAfter(change);
         _currentIsOutOfDate = false;
-        Source.Publish(snapshot);
+        Source.Publish(snapshot, _core.Sampled);
         _delivery.Publish(runEvent, snapshot);
     }
 
@@ -193,7 +195,7 @@ internal sealed class RunLoop
         if (_currentIsOutOfDate)
         {
             _currentIsOutOfDate = false;
-            Source.Publish(_core.TakeSnapshot());
+            Source.Publish(_core.TakeSnapshot(), _core.Sampled);
         }
     }
 
