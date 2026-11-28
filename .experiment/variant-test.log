@@ -1,0 +1,26 @@
+Running tests from D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Testing.Tests\debug\Dagline.Testing.Tests.dll (net10.0|x64)
+Running tests from D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Tests\debug\Dagline.Tests.dll (net10.0|x64)
+Running tests from D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Spectre.Tests\debug\Dagline.Spectre.Tests.dll (net10.0|x64)
+Running tests from D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Samples.Batch.Tests\debug\Dagline.Samples.Batch.Tests.dll (net10.0|x64)
+D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Samples.Batch.Tests\debug\Dagline.Samples.Batch.Tests.dll (net10.0|x64) passed (3s 877ms)
+D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Tests\debug\Dagline.Tests.dll (net10.0|x64) passed (18s 145ms)
+D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Spectre.Tests\debug\Dagline.Spectre.Tests.dll (net10.0|x64) passed (18s 407ms)
+D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Testing.Tests\debug\Dagline.Testing.Tests.dll (net10.0|x64) passed (20s 667ms)
+
+  In process file artifacts produced:
+    - D:\Code\dagline\.claude\worktrees\snapshot-take\TestResults\Dagline.Samples.Batch.Tests-windows-net10.0-report.html
+    - D:\Code\dagline\.claude\worktrees\snapshot-take\TestResults\Dagline.Tests-windows-net10.0-report.html
+    - D:\Code\dagline\.claude\worktrees\snapshot-take\TestResults\Dagline.Spectre.Tests-windows-net10.0-report.html
+    - D:\Code\dagline\.claude\worktrees\snapshot-take\TestResults\Dagline.Testing.Tests-windows-net10.0-report.html
+
+Test run summary: Passed!
+  D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Samples.Batch.Tests\debug\Dagline.Samples.Batch.Tests.dll (net10.0|x64) passed (3s 877ms)
+  D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Testing.Tests\debug\Dagline.Testing.Tests.dll (net10.0|x64) passed (20s 667ms)
+  D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Spectre.Tests\debug\Dagline.Spectre.Tests.dll (net10.0|x64) passed (18s 407ms)
+  D:\Code\dagline\.claude\worktrees\snapshot-take\artifacts\bin\Dagline.Tests\debug\Dagline.Tests.dll (net10.0|x64) passed (18s 145ms)
+
+  total: 618
+  failed: 0
+  succeeded: 618
+  skipped: 0
+  duration: 21s 233ms
