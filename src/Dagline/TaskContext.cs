@@ -18,8 +18,12 @@ namespace Dagline;
 /// as much as on one that fails. <see cref="Fail"/> ends the task as a reported failure.
 /// </para>
 /// <para>
-/// Everything reported shows in <see cref="ISnapshotSource.Current"/> from the moment the call returns, on the task's
-/// <see cref="NodeSnapshot"/>, while the task is still running. A warning is the only report that is also an event.
+/// Each call hands its report to the run and returns at once. A report other than progress shows in
+/// <see cref="ISnapshotSource.Current"/>, on the task's <see cref="NodeSnapshot"/>, once the run has applied it, which may be a
+/// little after the call has returned, and the time of a warning or a wait is the time the run applied it. Progress is read from
+/// the task whenever the current snapshot is read, so it shows on the next read. A warning is the only report that is also an
+/// event. Progress is the report for a tight loop: beginning a wait or setting the message on every pass of one is misuse, since
+/// the run applies each such report in turn and falls behind the task.
 /// </para>
 /// <para>
 /// A context is safe to call from several threads at once, so a body that fans out needs no lock of its own. Each call is applied
@@ -165,6 +169,8 @@ public sealed class TaskContext
     /// <remarks>
     /// The message shows as <see cref="NodeSnapshot.Message"/> and stays when the task succeeds, so a succeeded task can say
     /// what it did. <see cref="Fail"/> replaces it, and so does an exception that escapes the body when no failure was reported.
+    /// It shows once the run has applied it. Setting it on every pass of a tight loop is misuse: report how far the loop has got
+    /// with <see cref="SetStatusText"/> or <see cref="SetCount"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="message"/> is <see langword="null"/>.</exception>
     public void SetMessage(string message)
@@ -255,8 +261,9 @@ public sealed class TaskContext
     /// work as usual while the task waits.
     /// </para>
     /// <para>
-    /// The marker begins when the task's first open scope opens, with that scope's text and the time on the run's clock,
-    /// and ends when its last open scope closes. Scopes that overlap therefore make one wait, with the text and time of the one
+    /// The marker begins when the task's first open scope opens, with that scope's text, and ends when its last open scope
+    /// closes. Each is applied by the run as it applies every report, and its time is when the run applied it, on the run's clock. Open
+    /// a scope around a whole wait, never on every pass of a tight loop: that is misuse, and makes the run fall behind the task. Scopes that overlap therefore make one wait, with the text and time of the one
     /// that opened first. Each begin and end is published to reporters as a <see cref="WaitingChanged"/>, and while the task
     /// waits its <see cref="NodeSnapshot.WaitingSince"/> and <see cref="NodeSnapshot.WaitingText"/> are set. A task may wait
     /// several times in one run.

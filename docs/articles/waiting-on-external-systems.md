@@ -44,7 +44,7 @@ There is no backoff and no jitter, and tasks that wait at the same interval are 
 
 ## What waiting means
 
-Waiting is a marker on a running task and never a status. The task is running throughout: its dependents, its group and the run outcome are what they would be without the marker, and progress, warnings and the outcome work as usual. The task counts as waiting from the moment it enters the helper until the helper ends, however it ends, time spent inside a check included.
+Waiting is a marker on a running task and never a status. The task is running throughout: its dependents, its group and the run outcome are what they would be without the marker, and progress, warnings and the outcome work as usual. The task counts as waiting from the moment it enters the helper until the helper ends, however it ends, time spent inside a check included. The run applies the wait's beginning and its end as it applies every other report: the task shows as waiting in the run's current snapshot once the run has applied the beginning, which may be a little after the task entered the helper, and <xref:Dagline.NodeSnapshot.WaitingSince> and the time of each <xref:Dagline.WaitingChanged> are when the run applied it.
 
 Reporters see a <xref:Dagline.WaitingChanged> when the wait begins and another when it ends, and while it lasts the task's <xref:Dagline.NodeSnapshot> has <xref:Dagline.NodeSnapshot.WaitingSince> and <xref:Dagline.NodeSnapshot.WaitingText>. [Reporters](reporters.md#waiting-is-a-marker) has the details. The plain-text reporter prints a line at each end of the wait, so a long wait is visible in a log:
 
@@ -137,6 +137,8 @@ using (context.BeginWaiting($"job {job} to finish"))
 This loop is marked exactly as the helper is: the same events, at the same times, and the same snapshot. Take the delay from `context.TimeProvider` and pass the token, as the helper does.
 
 Scopes may overlap. The task waits from the moment its first scope opens until its last one closes, with the text of the first, and a task may wait any number of times in one run. Disposing a scope twice does nothing.
+
+Open the scope around the whole wait, never inside the loop. Beginning and ending a wait on every pass of a tight loop is misuse: each is a report the run applies in turn, so the run falls behind the task. To show how far a loop has got, report [progress](writing-tasks.md#progress-status-text-and-a-count), which is made for that.
 
 ## When the run is stopped
 

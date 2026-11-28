@@ -37,7 +37,7 @@ A run creates one context for each task it starts. The context gives the body:
 
 A task **succeeds** when its body completes without an exception and without having called `Fail`. Otherwise it **fails**: see [Failures](#failures).
 
-Everything a task reports is on its <xref:Dagline.NodeSnapshot> in the snapshot from the moment the call returns. Only a warning is also an event. [Reporters](reporters.md) covers how a reporter reads both.
+Everything a task reports ends up on its <xref:Dagline.NodeSnapshot>, but not always by the time the call returns. Each call hands the report to the run and returns at once, and the run applies the reports of every task one at a time, in the order each task made them. A report shows in the run's current snapshot, `Run.Current` and the snapshot source a reporter reads, **once the run has applied it**, which may be a little after the call has returned. The time of a warning or a wait is the time the run applied it, so the times of the events are always in the order of the events. [Progress](#progress-status-text-and-a-count) is the exception: it is read from the task whenever the current snapshot is read, so it shows **on the next read**. Only a warning is also an event. [Reporters](reporters.md) covers how a reporter reads both.
 
 ## A task captures its services
 
@@ -90,7 +90,9 @@ static async Task CheckAsync(Tenant tenant, EntityStore store, TaskContext conte
 - <xref:Dagline.TaskContext.SetCount*> replaces the count and its total. The total is optional: leave it out for a running tally. A call without a total clears the last one. A negative count or total throws `ArgumentOutOfRangeException`.
 - The text and the count are independent: setting one leaves the other as it was.
 
-Progress shows in the snapshot as <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total>. It is **never an event**, so reporting it often does not flood a reporter: a reporter reads it from the [snapshot source](reporters.md#progress-on-a-timer-the-snapshot-source) when it draws.
+Progress shows in the snapshot as <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total>. It is **never an event**, so reporting it often does not flood a reporter: a reporter reads it from the [snapshot source](reporters.md#progress-on-a-timer-the-snapshot-source) when it draws. It shows on the next read of the current snapshot after the call.
+
+**Progress is the tool for a tight loop.** Setting the status text or the count costs almost nothing and asks no work of the run, so a task can report it millions of times. Every other report is handed to the run, which applies it in turn with the reports of every other task. Beginning and ending a wait, or setting the message, on every pass of a tight loop is misuse: the run falls behind the task, and so does everything that shows the run. Report what changes on every pass as progress, and set the message when there is something to say.
 
 Progress is **frozen when the task settles**. Every later snapshot shows the task's last report, so a failed task still shows how far it got.
 
