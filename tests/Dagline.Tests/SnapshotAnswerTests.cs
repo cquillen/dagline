@@ -205,13 +205,13 @@ public class SnapshotAnswerTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
-        await Task.WhenAll(brokenWait.Started, blankWait.Started);
-        var waiting = source.Current;
+        // Scripted, so that both waits have been applied when the test reads the run.
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
+        var waiting = run.Current;
         brokenWait.Release();
         blankWait.Release();
-        var result = await run;
+        var result = await run.Finish();
 
         result.Snapshot[quiet.Path].Message.ShouldBeNull();
         result.Snapshot[retracted.Path].Message.ShouldBeNull();
