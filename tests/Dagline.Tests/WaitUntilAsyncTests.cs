@@ -5,6 +5,84 @@ namespace Dagline.Tests;
 
 public class WaitUntilAsyncTests
 {
+
+
+    [Test]
+    public async Task Progress_set_inside_a_check_is_in_the_snapshot()
+    {
+        var fake = new FakeTimeProvider(_runStart);
+        var clock = new WatchedClock(fake);
+        var interval = TimeSpan.FromSeconds(30);
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", context => context.WaitUntilAsync(
+            interval,
+            _ =>
+            {
+                context.SetStatusText("job 17 is 40% done");
+                context.SetCount(40, 100);
+                return Task.FromResult(context.TimeProvider.GetUtcNow() > _runStart);
+            },
+            "job 17 to finish"));
+        var reporter = new RecordingReporter();
+
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        run.Pump();
+        await clock.NextTimerAsync();
+        var waiting = run.Current[jobTask.Path];
+        fake.Advance(interval);
+        await run.Finish();
+
+        waiting.WaitingText.ShouldBe("job 17 to finish");
+        waiting.StatusText.ShouldBe("job 17 is 40% done");
+        waiting.Count.ShouldBe(40);
+        waiting.Total.ShouldBe(100);
+    }
+
+
+    [Test]
+    public async Task A_hand_written_loop_inside_a_waiting_scope_is_marked_exactly_as_the_helper_is()
+    {
+        var interval = TimeSpan.FromSeconds(30);
+
+        var (helperLines, helperWaits, helperJob) = await CheckTwice(context => context.WaitUntilAsync(
+            interval,
+            _ => Task.FromResult(context.TimeProvider.GetUtcNow() > _runStart),
+            "job 17 to finish"));
+        var (loopLines, loopWaits, loopJob) = await CheckTwice(async context =>
+        {
+            using (context.BeginWaiting("job 17 to finish"))
+            {
+                while (context.TimeProvider.GetUtcNow() == _runStart)
+                {
+                    await Task.Delay(interval, context.TimeProvider, context.CancellationToken);
+                }
+            }
+        });
+
+        loopLines.ShouldBe(helperLines);
+        loopWaits.ShouldBe(helperWaits);
+        loopJob.ShouldBe(helperJob);
+        helperWaits.Count.ShouldBe(2);
+
+        async Task<(IReadOnlyList<string> Lines, IReadOnlyList<WaitingChanged> Waits, string Job)> CheckTwice(TaskBody body)
+        {
+            var fake = new FakeTimeProvider(_runStart);
+            var clock = new WatchedClock(fake);
+            var builder = new GraphBuilder();
+            var jobTask = builder.Task("job", body);
+            var reporter = new RecordingReporter();
+
+            var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+            run.Pump();
+            await clock.NextTimerAsync();
+            fake.Advance(interval);
+            var result = await run.Finish();
+
+            var job = result.Snapshot[jobTask.Path];
+            return (reporter.Lines, [.. reporter.Events.OfType<WaitingChanged>()], $"{job.Status} {job.WaitingSince} {job.WaitingText} {job.Started:O} {job.Settled:O}");
+        }
+    }
+
     private const int _repeats = 50;
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
@@ -300,6 +378,89 @@ public class WaitUntilAsyncTests
             source.Current[jobTask.Path].ShouldBe(result.Snapshot[jobTask.Path]);
             source.Current[jobTask.Path].WaitingSince.ShouldBeNull();
         }
+    }
+
+    [Test]
+    public async Task Checks_are_one_interval_apart_from_the_end_of_one_check_to_the_start_of_the_next()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var interval = TimeSpan.FromSeconds(30);
+        var checkTakes = TimeSpan.FromSeconds(4);
+        var starts = new List<DateTimeOffset>();
+        var ends = new List<DateTimeOffset>();
+        var builder = new GraphBuilder();
+        builder.Task("job", context => context.WaitUntilAsync(
+            interval,
+            _ =>
+            {
+                starts.Add(clock.GetUtcNow());
+                clock.Advance(checkTakes);
+                ends.Add(clock.GetUtcNow());
+                return Task.FromResult(starts.Count == 3);
+            }));
+        var reporter = new RecordingReporter();
+
+        // Scripted: the first check runs, and moves the clock, before the run applies the wait, which it dates by then.
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        run.Pump();
+        clock.Advance(interval);
+        run.Pump();
+        clock.Advance(interval);
+        var result = await run.Finish();
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        starts.ShouldBe([_runStart, _runStart.AddSeconds(34), _runStart.AddSeconds(68)]);
+        ends.ShouldBe([_runStart.AddSeconds(4), _runStart.AddSeconds(38), _runStart.AddSeconds(72)]);
+        WaitFacts(reporter.Events.OfType<WaitingChanged>().Last())
+            .ShouldBe((_runStart.AddSeconds(72), NodePath.Parse("job"), Waiting: false, null, Since: _runStart.AddSeconds(4)));
+    }
+
+    [Test]
+    public async Task The_task_waits_with_the_helpers_text_from_entry_until_the_helper_ends_and_the_check_gets_the_contexts_token()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var interval = TimeSpan.FromSeconds(30);
+        var tokens = new List<CancellationToken>();
+        TaskContext? kept = null;
+        var builder = new GraphBuilder();
+        var jobTask = builder.Task("job", async context =>
+        {
+            kept = context;
+            await context.WaitUntilAsync(
+                interval,
+                token =>
+                {
+                    tokens.Add(token);
+                    return Task.FromResult(tokens.Count == 2);
+                },
+                "job 17 to finish");
+            context.SetMessage("job 17 finished");
+        });
+        var reporter = new RecordingReporter();
+
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        run.Pump();
+        var duringTheDelay = run.Current[jobTask.Path];
+        clock.Advance(interval);
+        var result = await run.Finish();
+
+        duringTheDelay.WaitingSince.ShouldBe(_runStart);
+        duringTheDelay.WaitingText.ShouldBe("job 17 to finish");
+        tokens.ShouldBe([kept!.CancellationToken, kept.CancellationToken]);
+        result.Snapshot[jobTask.Path].WaitingSince.ShouldBeNull();
+        result.Snapshot[jobTask.Path].Message.ShouldBe("job 17 finished");
+        reporter.Lines.ShouldBe(
+        [
+            "run started",
+            "job: pending -> ready",
+            "job: ready -> running",
+            "waiting job: job 17 to finish",
+            "waited job",
+            "job: running -> succeeded",
+            "run ended: complete",
+        ]);
+        WaitFacts(reporter.Events.OfType<WaitingChanged>().Last())
+            .ShouldBe((_runStart.AddSeconds(30), jobTask.Path, Waiting: false, "job 17 to finish", Since: _runStart));
     }
 
     private static (DateTimeOffset At, NodePath Path, bool Waiting, string? Text, DateTimeOffset Since) WaitFacts(WaitingChanged wait)
