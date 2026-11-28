@@ -9,6 +9,24 @@ internal enum InputKind
     /// <summary>A task's body has ended, with the outcome its end gives.</summary>
     BodyEnded,
 
+    /// <summary>A task added a warning that is kept: one of its first <see cref="TaskSample.Kept"/>, which its sample counts.</summary>
+    WarningKept,
+
+    /// <summary>A task opened a waiting scope, with its text. Always posted: the core ignores it for a task that is not running.</summary>
+    WaitOpened,
+
+    /// <summary>A task closed a waiting scope.</summary>
+    WaitClosed,
+
+    /// <summary>A task set its message.</summary>
+    MessageSet,
+
+    /// <summary>A task added detail lines that are kept, each one line, which its sample counted.</summary>
+    DetailKept,
+
+    /// <summary>A task reported a failure, with its message and the detail lines of it that are kept.</summary>
+    FailureReported,
+
     /// <summary>
     /// The result of the write the last <see cref="EffectKind.Record"/> asked for. The loop gives it to the core next, ahead of
     /// anything in the inbox, and never posts it.
@@ -44,9 +62,10 @@ internal enum InputKind
 /// <param name="Kind">What happened.</param>
 /// <param name="Task">The task it happened to, for an input about a task.</param>
 /// <param name="Payload">
-/// What the input carries beyond its task: the <see cref="TaskOutcome"/> of <see cref="InputKind.BodyEnded"/>, or the failure of
-/// <see cref="InputKind.Written"/>, which is <see langword="null"/> when the write landed, the <see cref="StopRequester"/> of
-/// <see cref="InputKind.Stop"/>, or the <see cref="AskedBeforeTheStart"/> of a <see cref="InputKind.Start"/> that carries any.
+/// What the input carries beyond its task: the <see cref="TaskOutcome"/> of <see cref="InputKind.BodyEnded"/>, the text of a
+/// task's report, the failure of <see cref="InputKind.Written"/>, which is <see langword="null"/> when the write landed, the
+/// <see cref="StopRequester"/> of <see cref="InputKind.Stop"/>, or the <see cref="AskedBeforeTheStart"/> of a
+/// <see cref="InputKind.Start"/> that carries any.
 /// </param>
 internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, object? Payload = null)
 {
@@ -71,12 +90,40 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
 
     public static Input BodyEnded(BuiltTask task, TaskOutcome ended) => new(InputKind.BodyEnded, task, ended);
 
+    public static Input WarningKept(BuiltTask task, string warning) => new(InputKind.WarningKept, task, warning);
+
+    public static Input WaitOpened(BuiltTask task, string? text) => new(InputKind.WaitOpened, task, text);
+
+    public static Input WaitClosed(BuiltTask task) => new(InputKind.WaitClosed, task);
+
+    public static Input MessageSet(BuiltTask task, string message) => new(InputKind.MessageSet, task, message);
+
+    public static Input DetailKept(BuiltTask task, string[] lines) => new(InputKind.DetailKept, task, lines);
+
+    public static Input FailureReported(BuiltTask task, string message, string[] lines)
+        => new(InputKind.FailureReported, task, new ReportedFailure(message, lines));
+
     /// <summary>The result of a write: <paramref name="failure"/> is what it threw, or <see langword="null"/> when it landed.</summary>
     public static Input Written(Exception? failure) => new(InputKind.Written, Payload: failure);
 
     public TaskOutcome Outcome => (TaskOutcome)Payload!;
 
     public Exception? Failure => (Exception?)Payload;
+
+    /// <summary>
+    /// Whether the loop reads the run's clock as it takes the input. A report that is never an event, the message, detail lines
+    /// and a reported failure, carries no time, so a task that reports them often leaves the clock alone.
+    /// </summary>
+    public bool IsTimed => Kind is not (InputKind.MessageSet or InputKind.DetailKept or InputKind.FailureReported);
+
+    /// <summary>The text a task reported, for a report that carries one.</summary>
+    public string? Text => (string?)Payload;
+
+    /// <summary>The detail lines of <see cref="InputKind.DetailKept"/>.</summary>
+    public string[] Lines => (string[])Payload!;
+
+    /// <summary>The failure of <see cref="InputKind.FailureReported"/>.</summary>
+    public ReportedFailure Failed => (ReportedFailure)Payload!;
 
     public StopRequester Requester => (StopRequester)Payload!;
 
@@ -89,3 +136,8 @@ internal sealed record AskedBeforeTheStart(bool Drained, bool Stopped)
 {
     public static AskedBeforeTheStart Nothing { get; } = new(Drained: false, Stopped: false);
 }
+
+/// <summary>A failure a task reported, as <see cref="InputKind.FailureReported"/> carries it.</summary>
+/// <param name="Message">The message the failure replaces the task's with.</param>
+/// <param name="Lines">The detail lines of the failure that are kept, each one line.</param>
+internal sealed record ReportedFailure(string Message, string[] Lines);

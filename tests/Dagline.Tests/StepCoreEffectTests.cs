@@ -177,6 +177,28 @@ public class StepCoreEffectTests
     }
 
     [Test]
+    public void A_report_that_is_an_event_is_published_any_other_marks_the_current_snapshot_out_of_date_and_once_settled_none_gives_anything()
+    {
+        var (graph, prepare, _) = Chain();
+        var core = new StepCore(graph, Settings(graph), journal: null, new UnreadSource());
+        core.Apply(Input.Start, _now);
+
+        Described(core, core.Apply(Input.WarningKept(prepare, "entity 9 has no region"), _now))
+            .ShouldBe(["publish warning prepare: entity 9 has no region"]);
+        Described(core, core.Apply(Input.MessageSet(prepare, "checked 40 entities"), _now)).ShouldBe(["mark the current snapshot out of date"]);
+        Described(core, core.Apply(Input.WaitOpened(prepare, "job 17 to finish"), _now)).ShouldBe(["publish waiting prepare: job 17 to finish"]);
+        Described(core, core.Apply(Input.WaitOpened(prepare, "job 18 to finish"), _now)).ShouldBe(["mark the current snapshot out of date"]);
+        core.Apply(Input.BodyEnded(prepare, TaskOutcome.Succeeded), _now);
+
+        core.Apply(Input.WarningKept(prepare, "a late warning"), _now).ShouldBeEmpty();
+        core.Apply(Input.MessageSet(prepare, "a late message"), _now).ShouldBeEmpty();
+        core.Apply(Input.DetailKept(prepare, ["a late line"]), _now).ShouldBeEmpty();
+        core.Apply(Input.FailureReported(prepare, "a late failure", []), _now).ShouldBeEmpty();
+        core.Apply(Input.WaitOpened(prepare, "a late wait"), _now).ShouldBeEmpty();
+        core.Apply(Input.WaitClosed(prepare), _now).ShouldBeEmpty();
+    }
+
+    [Test]
     public void A_stop_signals_the_tasks_and_starts_the_grace_period_before_the_stop_is_published()
     {
         var (graph, _, _) = Chain();
@@ -258,6 +280,7 @@ public class StepCoreEffectTests
                 EffectKind.SignalTheTasks => "signal the tasks",
                 EffectKind.StartGracePeriod => "start the grace period",
                 EffectKind.EndRun => $"end the run: {effect.Outcome.ToString().ToLowerInvariant()}",
+                EffectKind.MarkCurrentOutOfDate => "mark the current snapshot out of date",
                 _ => effect.Kind.ToString(),
             });
         }

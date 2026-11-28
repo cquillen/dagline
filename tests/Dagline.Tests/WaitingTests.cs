@@ -24,7 +24,9 @@ public class WaitingTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        // On the existing engine only: it moves the clock the moment the body's call to wait returns, so it dates the wait by the
+        // call, where the new engine dates it by when the run applies it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         await trigger.Started;
         clock.Advance(TimeSpan.FromSeconds(2));
         trigger.Release();
@@ -68,7 +70,9 @@ public class WaitingTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        // On the existing engine only: it reads the wait in the current snapshot the moment the body's call returns, which the
+        // new engine does not promise, since a wait shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         var source = await reporter.Source;
         await poll.Started;
         var waiting = source.Current[jobTask.Path];
@@ -108,7 +112,9 @@ public class WaitingTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        // On the existing engine only: it reads the wait in the current snapshot the moment the body's call returns, which the
+        // new engine does not promise, since a wait shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         var source = await reporter.Source;
         await firstOpen.Started;
         clock.Advance(TimeSpan.FromSeconds(10));
@@ -189,7 +195,9 @@ public class WaitingTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads the wait in the current snapshot the moment the body's call returns, which the
+        // new engine does not promise, since a wait shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         await stillOpen.Started;
         var waiting = source.Current[jobTask.Path];
@@ -253,7 +261,9 @@ public class WaitingTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads the wait in the current snapshot the moment the body's call returns, which the
+        // new engine does not promise, since a wait shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         await poll.Started;
         var waiting = source.Current;
@@ -327,7 +337,9 @@ public class WaitingTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads the wait in the current snapshot the moment the body's call returns, which the
+        // new engine does not promise, since a wait shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         await poll.Started;
         var waiting = source.Current[jobTask.Path];
