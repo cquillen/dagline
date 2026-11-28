@@ -7,9 +7,10 @@ namespace Dagline.Testing;
 /// <para>
 /// A run of the harness is a real run through Dagline's public API, a <see cref="ScriptedRun"/> that the harness pumps inside the
 /// call, on a graph of one task at the root with default <see cref="RunOptions"/> except for the journal, the clock, an
-/// unlimited <see cref="RunOptions.GracePeriod"/> and a reporter of the harness's own that watches the run. The task body sees
-/// exactly what it would in a real run, so a test proves what a real run will do. The body starts on the thread that calls the
-/// run method, inside the call, and every await in it that resumes on its context comes back to the harness's pump.
+/// unlimited <see cref="RunOptions.GracePeriod"/> and <see cref="RunOptions.ReporterWait"/>, and a reporter of the harness's own
+/// that watches the run. The task body sees exactly what it would in a real run, so a test proves what a real run will do. The
+/// body starts on the thread that calls the run method, inside the call, and every await in it that resumes on its context comes
+/// back to the harness's pump.
 /// </para>
 /// <para>
 /// With no clock passed to <see cref="For"/>, every run is on a clock of the harness's own, one for its life, on which time moves
@@ -217,6 +218,10 @@ public sealed class TaskHarness : IAsyncDisposable
             TimeProvider = _passedClock ?? _defaultClock,
             GracePeriod = Timeout.InfiniteTimeSpan,
             Reporters = [watcher],
+
+            // The harness's one reporter never blocks, so nothing is gained by a limit, and a limit's timer on an instant clock
+            // passed in would fire at once on the thread pool and could drop the reporter before it heard the run's last events.
+            ReporterWait = Timeout.InfiniteTimeSpan,
         };
 
         var scripted = ScriptedRun.Start(builder.Build(), options, _passedClock is null ? _defaultClock : null, cancellationToken);
