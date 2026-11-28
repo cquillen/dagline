@@ -53,10 +53,10 @@ public sealed class TaskContext
 {
     private const int _checkpointBytes = 4096;
 
-    private readonly Run _run;
+    private readonly ITaskRun _run;
     private readonly BuiltTask _task;
 
-    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider, CancellationToken cancellationToken)
+    internal TaskContext(ITaskRun run, BuiltTask task, TimeProvider timeProvider, CancellationToken cancellationToken)
     {
         _run = run;
         _task = task;
@@ -452,15 +452,7 @@ public sealed class TaskContext
             return Task.FromCanceled(cancellationToken);
         }
 
-        try
-        {
-            _run.ChangeCheckpoint(_task, text);
-            return Task.CompletedTask;
-        }
-        catch (Exception refused) when (refused is InvalidOperationException or JournalWriteException)
-        {
-            return Task.FromException(refused);
-        }
+        return _run.SaveCheckpointAsync(_task, text);
     }
 
     private async Task CheckUntilDone(

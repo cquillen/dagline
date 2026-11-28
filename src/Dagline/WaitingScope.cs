@@ -6,11 +6,11 @@ namespace Dagline;
 /// </summary>
 internal sealed class WaitingScope : IDisposable
 {
-    private readonly Run? _run;
+    private readonly ITaskRun? _run;
     private readonly BuiltTask _task;
     private int _closed;
 
-    public WaitingScope(Run? run, BuiltTask task)
+    public WaitingScope(ITaskRun? run, BuiltTask task)
     {
         _run = run;
         _task = task;
