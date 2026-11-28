@@ -102,6 +102,12 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
 
     public Exception? Failure => (Exception?)Payload;
 
+    /// <summary>
+    /// Whether the loop reads the run's clock as it takes the input. A report that is never an event, the message, detail lines
+    /// and a reported failure, carries no time, so a task that reports them often leaves the clock alone.
+    /// </summary>
+    public bool IsTimed => Kind is not (InputKind.MessageSet or InputKind.DetailKept or InputKind.FailureReported);
+
     /// <summary>The text a task reported, for a report that carries one.</summary>
     public string? Text => (string?)Payload;
 

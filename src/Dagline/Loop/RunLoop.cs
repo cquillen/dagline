@@ -11,8 +11,8 @@ namespace Dagline;
 /// <para>
 /// The run's life is the loop's control flow: read, decide, carry out, repeat; then, once the core has ended the run, wait for
 /// the reporters, still reading the inbox, and return. The loop awaits only its inbox: the reporters being done reaches it as an
-/// input. It reads the run's clock once for each input it takes from the inbox, and the result of a write, the next input after a
-/// record, is given to the core with no time, ahead of anything in the inbox.
+/// input. It reads the run's clock once for each timed input it takes from the inbox (see <see cref="Input.IsTimed"/>), and the
+/// result of a write, the next input after a record, is given to the core with no time, ahead of anything in the inbox.
 /// </para>
 /// <para>
 /// Each turn of the loop is run by the host: the first when the run starts, and each after the loop finds its inbox empty, when an
@@ -126,7 +126,10 @@ internal sealed class RunLoop
                         await Inbox.WaitAsync();
                     }
 
-                    now = _clock.GetUtcNow();
+                    if (input.IsTimed)
+                    {
+                        now = _clock.GetUtcNow();
+                    }
                 }
 
                 if (input.Kind is InputKind.ReportersDone)

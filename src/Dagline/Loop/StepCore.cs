@@ -156,7 +156,7 @@ internal sealed class StepCore
     /// <param name="input">The input. While a write is under way, the only input allowed is its result.</param>
     /// <param name="now">
     /// When the loop took the input. The result of a write continues the step the write is part of, which keeps its time, so the
-    /// time given with it is not read.
+    /// time given with it is not read, nor is the time of an input that is not <see cref="Input.IsTimed"/>.
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// The input is not one the core takes now: a fault in Dagline, which faults the run.
@@ -175,7 +175,10 @@ internal sealed class StepCore
             return _effects;
         }
 
-        _now = now;
+        if (input.IsTimed)
+        {
+            _now = now;
+        }
         switch (input.Kind)
         {
             case InputKind.Start:
