@@ -6,14 +6,16 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// A post returns at once, so what a task reports as an input shows in the run's current snapshot once the loop has applied it,
-/// not when the call returns. A checkpoint, not yet built, throws <see cref="NotSupportedException"/>, so that a test run on the new
-/// engine fails where it calls it, rather than passing over a save the run never made.
+/// not when the call returns. A checkpoint save is an input too, answered once the loop has applied it, and the checkpoint reads back
+/// from a cell the loop writes as it answers.
 /// </remarks>
 /// <param name="inbox">The run's inbox, to which the inputs are posted.</param>
 /// <param name="samples">The tasks' samples, which the reports that are samples overwrite.</param>
 /// <param name="graph">The graph the run runs.</param>
 /// <param name="source">The run's current snapshot, from which a dependency's status is read.</param>
-internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples, Graph graph, CurrentSnapshot source) : ITaskRun
+/// <param name="checkpoints">The tasks' checkpoints, as the loop last answered their saves.</param>
+internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples, Graph graph, CurrentSnapshot source, TaskCheckpoints checkpoints)
+    : ITaskRun
 {
     /// <summary>Overwrites the status text on the task's sample: progress is never posted.</summary>
     public void SetStatusText(BuiltTask task, string? text) => samples[task].SetStatusText(text);
@@ -62,11 +64,14 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples, Graph graph,
 
     public void CloseWaitingScope(BuiltTask task) => inbox.Post(Input.WaitClosed(task));
 
-    // Each throw below is a departure from Liskov substitution for the length of the rebuild: the new engine is reachable only
-    // from tests, and checkpoints are built by a later part of it.
-    public string CheckpointOf(BuiltTask task) => throw NotYet(nameof(TaskContext.Checkpoint));
+    /// <summary>The task's checkpoint as of the last save the loop answered: a save reads back once it has completed.</summary>
+    public string CheckpointOf(BuiltTask task) => checkpoints[task];
 
-    public Task SaveCheckpointAsync(BuiltTask task, string text) => throw NotYet(nameof(TaskContext.SaveCheckpointAsync));
+    /// <summary>
+    /// Posts the save and returns at once, blocking no thread: the task completes once the loop has made the save, its entry written
+    /// when the run is on a journal, or faults with what refused it. Once the run has ended, it is refused on this thread.
+    /// </summary>
+    public Task SaveCheckpointAsync(BuiltTask task, string text) => inbox.PostSave(task, text);
 
     /// <summary>
     /// The status of a node the task depends on, as of the last snapshot the loop published: the status of a dependency changes only
@@ -83,6 +88,4 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples, Graph graph,
         var kept = samples[task].KeepDetail(lines.Length);
         return kept == lines.Length ? lines : lines[..kept];
     }
-
-    private static NotSupportedException NotYet(string member) => new($"The new engine does not yet take {member} from a task.");
 }

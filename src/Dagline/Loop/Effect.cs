@@ -39,6 +39,12 @@ internal enum EffectKind
     /// loop rebuilds it when it next finds its inbox empty, so a task that reports in a tight loop costs one rebuild, not one each.
     /// </summary>
     MarkCurrentOutOfDate,
+
+    /// <summary>
+    /// Answers a task's checkpoint save: made, once its entry is written, when the run is on a journal, and then the task's checkpoint
+    /// reads back the saved text before the answer resumes the task; or refused, with the refusal the effect carries.
+    /// </summary>
+    AnswerSave,
 }
 
 /// <summary>
@@ -49,10 +55,12 @@ internal enum EffectKind
 /// <param name="Kind">What to carry out.</param>
 /// <param name="Event">The event to publish, for <see cref="EffectKind.Publish"/>.</param>
 /// <param name="Change">What the event changed in the run's snapshot, for <see cref="EffectKind.Publish"/>.</param>
-/// <param name="Task">The task whose body to start, for <see cref="EffectKind.StartBody"/>.</param>
+/// <param name="Task">The task whose body to start, for <see cref="EffectKind.StartBody"/>, or whose save to answer.</param>
 /// <param name="Entries">The entries to write, for <see cref="EffectKind.Record"/>.</param>
 /// <param name="Flush">Whether the entries are flushed to the disk, for <see cref="EffectKind.Record"/>.</param>
 /// <param name="Outcome">The run outcome, for <see cref="EffectKind.EndRun"/>.</param>
+/// <param name="Save">The save to answer, for <see cref="EffectKind.AnswerSave"/>.</param>
+/// <param name="Refusal">What refuses the save, for <see cref="EffectKind.AnswerSave"/>: <see langword="null"/> when it is made.</param>
 internal readonly record struct Effect(
     EffectKind Kind,
     RunEvent? Event = null,
@@ -60,7 +68,9 @@ internal readonly record struct Effect(
     BuiltTask? Task = null,
     IReadOnlyList<JournalEntry>? Entries = null,
     JournalFlush Flush = JournalFlush.None,
-    RunOutcome Outcome = default)
+    RunOutcome Outcome = default,
+    CheckpointSave? Save = null,
+    Exception? Refusal = null)
 {
     public static Effect CloseJournal { get; } = new(EffectKind.CloseJournal);
 
@@ -76,4 +86,9 @@ internal readonly record struct Effect(
     public static Effect StartBody(BuiltTask task) => new(EffectKind.StartBody, Task: task);
 
     public static Effect EndRun(RunOutcome outcome) => new(EffectKind.EndRun, Outcome: outcome);
+
+    public static Effect SaveMade(BuiltTask task, CheckpointSave save) => new(EffectKind.AnswerSave, Task: task, Save: save);
+
+    public static Effect SaveRefused(BuiltTask task, CheckpointSave save, Exception refusal)
+        => new(EffectKind.AnswerSave, Task: task, Save: save, Refusal: refusal);
 }

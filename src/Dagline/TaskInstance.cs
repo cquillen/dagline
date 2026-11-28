@@ -328,6 +328,14 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
+    /// What refuses a change of the task's checkpoint now: <see langword="null"/> while it is running, and otherwise the exception
+    /// to answer the change with, since the task has settled, or the run has let go of it.
+    /// </summary>
+    public InvalidOperationException? CheckpointChangeRefusal() => IsRunning ? null : new InvalidOperationException(
+        $"The task '{task.Path}' cannot change its checkpoint: it is {NameText.Of(Status)}, "
+        + "so the run no longer keeps anything it does. A task changes its checkpoint only while it is running.");
+
+    /// <summary>
     /// Replaces the task's checkpoint with <paramref name="text"/>, which clears it when empty. Unlike a report, it throws on a task
     /// that is not running, since a caller must never believe a checkpoint was kept when it was not.
     /// </summary>
@@ -338,11 +346,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
     public bool ChangeCheckpoint(string text)
     {
-        if (!IsRunning)
+        if (CheckpointChangeRefusal() is { } refusal)
         {
-            throw new InvalidOperationException(
-                $"The task '{task.Path}' cannot change its checkpoint: it is {NameText.Of(Status)}, "
-                + "so the run no longer keeps anything it does. A task changes its checkpoint only while it is running.");
+            throw refusal;
         }
 
         if (text.Length == 0 && Checkpoint.Length == 0)

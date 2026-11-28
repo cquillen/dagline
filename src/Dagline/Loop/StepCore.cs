@@ -36,6 +36,7 @@ internal sealed class StepCore
         Settles,
         Starts,
         End,
+        Save,
     }
 
     // Where the run is in its life: the one answer to "may anything start?" and "has the run ended?". The snapshot's milestones
@@ -81,6 +82,9 @@ internal sealed class StepCore
     private readonly List<BuiltTask> _settling = [];
     private readonly List<BuiltTask> _starting = [];
 
+    // The checkpoint save whose entry the write under way records, and its task.
+    private (BuiltTask Task, CheckpointSave Save)? _saving;
+
     private AfterWrite _afterWrite;
     private Life _life;
     private AskedBeforeTheStart _askedBeforeTheStart = AskedBeforeTheStart.Nothing;
@@ -119,7 +123,7 @@ internal sealed class StepCore
         {
             var instance = _continuation.EarlierSuccessOf(task) is { } recorded
                 ? TaskInstance.EarlierSuccess(task, recorded)
-                : new TaskInstance(task);
+                : new TaskInstance(task, journal?.CheckpointAt(task.Path) ?? "");
             _instances[task.Position] = instance;
             atTheStart[task.Position] = instance.ToNodeSnapshot();
         }
@@ -148,6 +152,12 @@ internal sealed class StepCore
     /// The positions of the tasks running in the last snapshot built, whose progress a reader of the current snapshot lays over it.
     /// </summary>
     public int[] Sampled => _snapshots.Sampled;
+
+    /// <summary>
+    /// The checkpoint of a task as the core holds it: before the run starts, what a continued journal hands back, or empty. The
+    /// task's context reads it back from <see cref="TaskCheckpoints"/>, which the loop writes as it answers each save.
+    /// </summary>
+    public string CheckpointOf(BuiltTask task) => InstanceOf(task).Checkpoint;
 
     /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
     public int SlotTries => _slots.Tries;
@@ -181,7 +191,8 @@ internal sealed class StepCore
             return _effects;
         }
 
-        if (HasEnded)
+        // A save is answered whenever it comes, so that a task never waits for ever: after the end it is refused.
+        if (HasEnded && input.Kind is not InputKind.CheckpointSave)
         {
             return _effects;
         }
@@ -215,6 +226,9 @@ internal sealed class StepCore
                 break;
             case InputKind.FailureReported:
                 Report(input.Task!, InstanceOf(input.Task!).Fail(input.Failed.Message, input.Failed.Lines));
+                break;
+            case InputKind.CheckpointSave:
+                SaveCheckpoint(input.Task!, input.Save);
                 break;
             case InputKind.Drain:
                 Drain();
@@ -629,6 +643,42 @@ internal sealed class StepCore
         _effects.Add(Effect.EndRun(outcome));
     }
 
+    /// <summary>
+    /// A task saves its checkpoint, or clears it. A task that is not running, since it has settled or the run has let go of it, is
+    /// refused. A clearing of no checkpoint is made at once and writes nothing. Any other save is recorded, flushed, as the run's
+    /// durability says, and made once that write lands; with no journal, at once. A save is in no event and no snapshot.
+    /// </summary>
+    private void SaveCheckpoint(BuiltTask task, CheckpointSave save)
+    {
+        var instance = InstanceOf(task);
+        if (instance.CheckpointChangeRefusal() is { } refusal)
+        {
+            _effects.Add(Effect.SaveRefused(task, save, refusal));
+            return;
+        }
+
+        if (!instance.ChangeCheckpoint(save.Text))
+        {
+            _effects.Add(Effect.SaveMade(task, save));
+            return;
+        }
+
+        _saving = (task, save);
+        Record(_onAJournal ? [EntryOf(task, save.Text)] : [], JournalFlush.ToDisk, AfterWrite.Save);
+    }
+
+    private JournalEntry EntryOf(BuiltTask task, string checkpoint)
+        => checkpoint.Length == 0
+            ? new CheckpointClearedEntry(task.Path.ToString(), _now)
+            : new CheckpointSavedEntry(task.Path.ToString(), _now, checkpoint);
+
+    private void AfterTheSaveIsWritten()
+    {
+        var (task, save) = _saving!.Value;
+        _saving = null;
+        _effects.Add(Effect.SaveMade(task, save));
+    }
+
     /// <summary>Applies the drain and the stop already asked for when the run started, the drain first, each as if asked for then.</summary>
     private void ApplyWhatWasAskedBeforeTheStart()
     {
@@ -784,6 +834,9 @@ internal sealed class StepCore
                 break;
             case AfterWrite.End:
                 AfterTheEndIsWritten();
+                break;
+            case AfterWrite.Save:
+                AfterTheSaveIsWritten();
                 break;
         }
     }
