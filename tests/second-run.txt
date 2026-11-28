@@ -29,12 +29,14 @@ Dagline.Tests/JournalListingTests
 Dagline.Tests/JournalTests
 Dagline.Tests/LimitTests
 Dagline.Tests/LimitUseTests
+Dagline.Tests/LoopPlainTextReporterTests
 Dagline.Tests/LoopReportTests
 Dagline.Tests/LoopRunEndingEarlyTests
 Dagline.Tests/LoopRunReporterWaitTests
 Dagline.Tests/LoopRunTests
 Dagline.Tests/MaxRunningTasksTests
 Dagline.Tests/MessageAndDetailTests
+Dagline.Tests/PlainTextReporterTests
 Dagline.Tests/ProgressTests
 Dagline.Tests/ReportedFailureTests
 Dagline.Tests/ReporterTests

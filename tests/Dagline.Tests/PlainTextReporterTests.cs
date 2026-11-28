@@ -172,7 +172,9 @@ public class PlainTextReporterTests
             return Task.CompletedTask;
         });
 
-        await Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
+        // On the existing engine only: it moves the clock inside the wait's call, so it dates the wait by the call, where the new
+        // engine dates it by when the run applies it (ADR 0015); LoopPlainTextReporterTests prints the same on the new engine.
+        await global::Dagline.Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
 
         Lines(writer).ShouldBe(
         [
