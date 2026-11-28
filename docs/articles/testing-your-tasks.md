@@ -261,7 +261,7 @@ var result = await Runner.RunAsync(graph, new RunOptions
 });
 ```
 
-Once the clock is past its guard it refuses to make the timer, and the run still returns its result: the wait runs out at once, and each reporter dropped then has the `ClockGuardException` as the inner exception of its error.
+Once the clock is past its guard it refuses to make the timer, and the run still returns its result: the wait runs out at once, and each reporter dropped then has the `ClockGuardException` as the inner exception of its error. The grace period after a stop is measured on the same clock and meets the same guard: on an `InstantClock` a limited grace period runs out as soon as the thread pool runs its timer, and once the clock is past its guard a stop with tasks still running ends the grace period at once, the run letting go of those tasks, rather than faulting the run.
 
 ## Scripting a whole run
 

@@ -369,7 +369,8 @@ internal sealed class JournalFile : IDisposable
 
         try
         {
-            return JsonSerializer.Deserialize(line, JournalJson.Default.JournalEntry);
+            var entry = JsonSerializer.Deserialize(line, JournalJson.Default.JournalEntry);
+            return entry is RunEndedEntry { IsOneARunRecords: false } ? null : entry;
         }
         catch (JsonException)
         {

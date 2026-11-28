@@ -76,7 +76,8 @@ public sealed record RunOptions
     /// it: not a drain, and not the app's token cancelled after a stop that Dagline asked for. When it runs out with tasks still
     /// running, the run publishes <see cref="GraceEnded"/>,
     /// records each of those tasks as <see cref="NodeStatus.Cancelled"/> in declaration order and lets go of it: the run returns
-    /// while its body may still be running.
+    /// while its body may still be running. A <see cref="TimeProvider"/> that throws instead of making the grace period's timer
+    /// makes the grace period run out at once, as if it had, rather than faulting the run.
     /// </para>
     /// <para>
     /// <see cref="TimeSpan.Zero"/> lets go of the running tasks at once, in the step that applies the stop.

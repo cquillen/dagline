@@ -210,11 +210,7 @@ internal sealed class RunLoop
                     _host.Signal(_tasksTokenSource);
                     break;
                 case EffectKind.StartGracePeriod:
-                    _gracePeriodTimer = _clock.CreateTimer(
-                        static loop => ((RunLoop)loop!).Inbox.Post(Input.GracePeriodOver),
-                        this,
-                        _gracePeriod,
-                        Timeout.InfiniteTimeSpan);
+                    StartGracePeriod();
                     break;
                 case EffectKind.EndRun:
                     End(effect.Outcome, effect.JournalError);
@@ -318,6 +314,28 @@ internal sealed class RunLoop
         }
 
         Inbox.Post(Input.BodyEnded(task, outcome));
+    }
+
+    /// <summary>
+    /// Starts the grace period's timer on the run's clock; its running out is an input. A clock that refuses the timer ends the grace
+    /// period at once, as the input that follows, so the stop is still published before the grace end.
+    /// </summary>
+    private void StartGracePeriod()
+    {
+        try
+        {
+            _gracePeriodTimer = _clock.CreateTimer(
+                static loop => ((RunLoop)loop!).Inbox.Post(Input.GracePeriodOver),
+                this,
+                _gracePeriod,
+                Timeout.InfiniteTimeSpan);
+        }
+        catch (Exception)
+        {
+            // The clock is the app's code, and one that refuses a timer, as the instant clock does past its guard, must not fault
+            // the run: the grace period it cannot measure runs out at once, as the reporter wait's does.
+            Inbox.Post(Input.GracePeriodOver);
+        }
     }
 
     /// <summary>

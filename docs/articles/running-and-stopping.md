@@ -43,7 +43,7 @@ Console.WriteLine($"{run.Current.Counts[NodeStatus.Running]} tasks running");
 var result = await run.Result;
 ```
 
-- <xref:Dagline.Run.Current> is the run as it is now. It answers as soon as `Start` returns, before anything has been published, and is the final snapshot once the run has ended. Reading it never waits for the run, a task or a reporter.
+- <xref:Dagline.Run.Current> is the run as it is now. It answers as soon as `Start` returns, before anything has been published, and is the final snapshot once the run has ended. Reading it never waits for the run, a task or a reporter. A report a task makes shows in it once the run has applied it, which may be a little after the task's call has returned, and a task's progress shows on the next read.
 - <xref:Dagline.Run.Result> completes with the run's result once it has ended. It is the same task `RunAsync` returns, and the same task every time you read it.
 - <xref:Dagline.Run.Drain> and <xref:Dagline.Run.Stop> [end the run early](#ending-a-run-early).
 
@@ -277,7 +277,7 @@ The wait ends in one of two ways:
 - **The last running task ends.** The run ends at once, before the grace period is over.
 - **The grace period runs out** with tasks still running.
 
-Nothing else ends it: cancelling the token again and requesting a drain change nothing. An operator who cannot wait kills the process, which the journal survives.
+Nothing else ends it: cancelling the token again and requesting a drain change nothing. A clock that refuses to make the grace period's timer, as `InstantClock` from `Dagline.Testing` does once it is past its guard, makes the grace period run out at once. An operator who cannot wait kills the process, which the journal survives.
 
 When the grace period runs out, the run publishes a <xref:Dagline.GraceEnded> event. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: the run's result completes while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
 

@@ -66,7 +66,7 @@ A settled task leaves an **outcome** behind: its status, and what the task chose
 
 A failure is one of two kinds. A **reported failure** is one the task declared itself, because it found a problem. An **unexpected failure** is one it did not declare: an exception escaped its code. Both fail the task and block what requires it. They are told apart so that "the data is bad" never reads like "the code broke".
 
-While it runs, a task can also report **progress**: a line of status text, a count, or both. Progress is live only. It shows how far a task has got and is not part of its outcome.
+While it runs, a task can also report **progress**: a line of status text, a count, or both. Progress is live only. It shows how far a task has got and is not part of its outcome. It is also the one report made for a tight loop: it costs almost nothing, while beginning a wait or setting the message on every pass of a loop is misuse, as the run applies each such report in turn and falls behind.
 
 More in [Writing tasks](writing-tasks.md). Definitions: [Outcomes](../../GLOSSARY.md#outcomes).
 
@@ -117,7 +117,7 @@ Dagline never writes to the console. What is shown of a run is the work of **rep
 A reporter is given two things:
 
 - **Events.** An event is a record of one thing that happened, with the time it happened: the run started, a task changed status, a task added a warning, a task began or stopped waiting, a group settled, a drain or a stop was requested, the grace period ran out, the run ended. Every reporter receives the same events in the same order, causes before effects.
-- **Snapshots.** A snapshot is everything Dagline knows about the run at one instant: every node with its status and what is attached to it, and the counts across the run. One comes with each event, and a reporter can ask for the run as it is now at any time.
+- **Snapshots.** A snapshot is everything Dagline knows about the run at one instant: every node with its status and what is attached to it, and the counts across the run. One comes with each event, and a reporter can ask for the run as it is now at any time. That is the run as the run has applied it: a report a task makes shows in it once the run has applied it, which may be a little after the task's call has returned, and progress shows on the next read.
 
 Events say what just happened and the snapshot says where things stand, so a reporter never has to piece that together from the events. Once a run has ended, a reporter shows a **summary** from the final snapshot, and your app gets that same snapshot back with the result of the run.
 

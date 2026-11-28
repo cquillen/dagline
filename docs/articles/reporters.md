@@ -328,7 +328,7 @@ public sealed class TickingReporter(TextWriter writer, TimeProvider timeProvider
 
 What to know about the source:
 
-- **`Current` is the run as it is now.** It may be ahead of the events the reporter has been handed so far: a reporter still handling `RunStarted` can read a `Current` in which every task has already succeeded.
+- **`Current` is the run as it is now.** It may be ahead of the events the reporter has been handed so far: a reporter still handling `RunStarted` can read a `Current` in which every task has already succeeded. It is the run as the run has applied it: a report a task makes shows here once the run has applied it, which may be a little after the task's call has returned, and progress shows on the next read after the task reported it. A task that begins a wait or sets its message in a tight loop misuses them, and makes the run, and so `Current`, fall behind it: progress is the tool for that.
 - **Each read is one consistent snapshot.** Read `Current` once per draw and take everything from that one snapshot. Two reads may give two different instants.
 - **Reading never waits for a task or a reporter**, and is safe from any thread.
 - **Progress is here and nowhere else.** A running task's <xref:Dagline.NodeSnapshot.StatusText>, <xref:Dagline.NodeSnapshot.Count> and <xref:Dagline.NodeSnapshot.Total> are as the task last reported them. Once the task has settled they stay as it left them.
