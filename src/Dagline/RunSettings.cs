@@ -12,7 +12,7 @@ internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeP
     /// How long the run waits for its reporters once its end is queued for them: zero or more, or
     /// <see cref="Timeout.InfiniteTimeSpan"/>. Only the new engine reads it.
     /// </summary>
-    public TimeSpan ReporterWait { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan ReporterWait { get; init; }
 
     /// <summary>
     /// Checks the options of a run of <paramref name="graph"/> and reads its settings from them. This is the one place

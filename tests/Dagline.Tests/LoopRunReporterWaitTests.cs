@@ -40,7 +40,7 @@ public class LoopRunReporterWaitTests
     }
 
     [Test]
-    public async Task A_dropped_reporter_whose_call_comes_back_later_keeps_the_error_of_the_drop_and_is_handed_nothing_more()
+    public async Task A_dropped_reporter_whose_call_comes_back_later_throwing_is_handed_nothing_more_and_changes_nothing()
     {
         var clock = new FakeTimeProvider(_runStart);
         var busy = new HeldReporter("prepare: ready -> running");
@@ -220,7 +220,7 @@ public class LoopRunReporterWaitTests
     {
         var clock = new FakeTimeProvider(_runStart);
         var slow = new HeldReporter("run ended: complete");
-        var run = ScriptedDriver.Start(Chain(), Options(clock, slow) with { ReporterWait = Timeout.InfiniteTimeSpan });
+        var run = ScriptedDriver.Start(Chain(), Options(clock, slow).WithReporterWait(Timeout.InfiniteTimeSpan));
         run.Pump();
 
         clock.Advance(TimeSpan.FromDays(400));
@@ -302,7 +302,7 @@ public class LoopRunReporterWaitTests
     }
 
     private static RunOptions Options(FakeTimeProvider clock, params IReporter[] reporters)
-        => new() { Journal = Journal.None, Reporters = reporters, TimeProvider = clock, ReporterWait = _reporterWait };
+        => new RunOptions { Journal = Journal.None, Reporters = reporters, TimeProvider = clock }.WithReporterWait(_reporterWait);
 
     /// <summary>
     /// Keeps a line and the token for every event it is handed, and holds the call for the event whose line is
