@@ -30,8 +30,9 @@ public sealed class JournalWriteException : DaglineException
     }
 
     /// <summary>
-    /// The run as it was when the save was refused: the run's current snapshot as of the events published before the refusal, so
-    /// it never shows the stop that the failed write leads to.
+    /// The run as it was when the save was refused: the run's current snapshot as of the events published before the refusal. For
+    /// a save whose own write failed, that is before the stop the failure leads to, so the snapshot has no stop from it; a save
+    /// refused after an earlier write failed comes after that stop, and its snapshot has it.
     /// </summary>
     public Snapshot Snapshot { get; }
 }
