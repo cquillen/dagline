@@ -242,6 +242,29 @@ public class StepCoreEffectTests
         ]);
     }
 
+    [Test]
+    public void A_start_write_that_fails_starts_no_body_and_the_stop_in_its_place_writes_nothing_before_the_end()
+    {
+        var (graph, prepare, _) = Chain();
+        var core = new StepCore(graph, Settings(graph), JournalFold.Of(new HeaderEntry(1, "journal", _now), []), new UnreadSource());
+        core.Apply(Input.Start, _now);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(
+            ["publish run started", "publish prepare: pending -> ready", "record started prepare, not flushed"]);
+
+        var effects = Described(core, core.Apply(Input.Written(new IOException("disk full")), default));
+
+        effects.ShouldBe(
+        [
+            "signal the tasks",
+            "publish stop requested",
+            "close the journal",
+            "publish run ended: JournalWriteException",
+            "end the run: stopped",
+        ]);
+        var ended = core.TakeSnapshot();
+        (ended[prepare.Path].Status, ended.RunningTasks.InUse, ended.Outcome).ShouldBe((NodeStatus.Ready, 0, null));
+    }
+
     private static (Graph Graph, BuiltTask Prepare, BuiltTask Load) Chain()
     {
         var builder = new GraphBuilder();

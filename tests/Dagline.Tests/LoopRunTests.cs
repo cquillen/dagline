@@ -245,6 +245,20 @@ public class LoopRunTests
         run.InboxIsClosed.ShouldBeTrue();
     }
 
+    [Test]
+    public async Task A_fault_inside_the_loop_lets_go_of_the_journal_so_that_a_later_run_can_continue_it()
+    {
+        using var temporary = new TemporaryDirectory();
+        var clock = new CountingClock { FailAtRead = 3 };
+        var run = ScriptedDriver.Start(Chain(), new RunOptions { Journal = Journal.New(temporary.Path), TimeProvider = clock });
+
+        run.Pump();
+
+        await Should.ThrowAsync<InvalidOperationException>(run.Result);
+        var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
+        listed.Ending.ShouldBe(JournalEnding.Died);
+    }
+
     private static Graph Chain()
     {
         var builder = new GraphBuilder();
