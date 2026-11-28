@@ -53,6 +53,9 @@ internal sealed class StepCore
     private readonly string _user = Environment.UserName;
     private readonly string _machine = Environment.MachineName;
 
+    // The tasks running now, whose samples' counts beyond the kept are taken as each change is closed.
+    private readonly HashSet<int> _running = [];
+
     // Reused at every settle, so working out what follows from it allocates no collection of its own.
     private readonly SortedSet<int> _dependents = [];
     private readonly List<BuiltTask> _becomingReady = [];
@@ -234,9 +237,31 @@ internal sealed class StepCore
     private void FreezeSampleOf(BuiltTask task)
     {
         var instance = InstanceOf(task);
-        if (instance.Status is NodeStatus.Running)
+        if (instance.Status is not NodeStatus.Running)
         {
-            instance.TakeProgress(Samples[task].Freeze());
+            return;
+        }
+
+        var sample = Samples[task];
+        instance.TakeProgress(sample.Freeze());
+        instance.TakeCountsBeyondKept(sample.WarningsBeyondKept, sample.DetailBeyondKept);
+        _running.Remove(task.Position);
+    }
+
+    /// <summary>
+    /// Takes each running task's counts beyond the kept from its sample into its instance and the roll-up, so that the change being
+    /// closed shows the task's warning count and its groups' as one. Only the loop applies these counts, as it builds a snapshot.
+    /// </summary>
+    private void TakeCountsBeyondKept()
+    {
+        foreach (var position in _running)
+        {
+            var sample = Samples[position];
+            var instance = _instances[position]!;
+            if (instance.TakeCountsBeyondKept(sample.WarningsBeyondKept, sample.DetailBeyondKept))
+            {
+                Apply(_graph.TaskAt(position), new TaskChange(Task: null, Event: null));
+            }
         }
     }
 
@@ -331,6 +356,7 @@ internal sealed class StepCore
 
                 // Moved at once, not after the walk, so the snapshot with each start counts only the slots taken so far.
                 var change = InstanceOf(task).Start(_now);
+                _running.Add(position);
                 Apply(task, change);
                 Hold(change.Event!);
                 _starting.Add(task);
@@ -545,6 +571,7 @@ internal sealed class StepCore
     /// <summary>What has changed in the snapshot since the last event, which from now on is part of the snapshot built next.</summary>
     private SnapshotChange ChangeSinceLastEvent()
     {
+        TakeCountsBeyondKept();
         _rollUp.HandOverChanged(_snapshots);
         return _snapshots.Close(_milestones, _rollUp.RunCounts);
     }

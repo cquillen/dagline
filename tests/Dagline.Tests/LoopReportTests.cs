@@ -262,4 +262,53 @@ public class LoopReportTests
         afterTheLateReports.ShouldBeSameAs(settled);
         result.Snapshot[loadTask.Path].ShouldBeSameAs(settled);
     }
+
+    [Test]
+    public async Task A_count_beyond_the_kept_shows_only_once_the_kept_are_applied_and_a_tasks_warning_count_and_its_groups_always_agree()
+    {
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var loadTask = shard.Task("load", load.Body);
+        var reporter = new RecordingReporter();
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
+        var context = await load.Started;
+
+        for (var entity = 1; entity <= 103; entity++)
+        {
+            context.AddWarning($"entity {entity} has no region");
+            context.AddDetail($"entity {entity}: missing owner");
+        }
+
+        var beforeTheLoop = run.Current;
+        run.Pump();
+        var onceApplied = run.Current;
+        load.Release();
+        var result = await run.Finish();
+
+        foreach (var snapshot in reporter.Snapshots.Append(beforeTheLoop).Append(onceApplied))
+        {
+            var task = snapshot[loadTask.Path];
+            snapshot[shard.Path].WarningCount.ShouldBe(task.WarningCount);
+            if (task.Warnings.Count < 100)
+            {
+                task.WarningsOmitted.ShouldBe(0);
+            }
+
+            if (task.Detail.Count < 100)
+            {
+                task.DetailOmitted.ShouldBe(0);
+            }
+        }
+
+        beforeTheLoop[loadTask.Path].WarningCount.ShouldBe(0);
+        (onceApplied[loadTask.Path].Warnings.Count, onceApplied[loadTask.Path].WarningsOmitted).ShouldBe((100, 3));
+        (onceApplied[loadTask.Path].Detail.Count, onceApplied[loadTask.Path].DetailOmitted).ShouldBe((100, 3));
+        reporter.Events.OfType<WarningAdded>().Count().ShouldBe(100);
+        result.Snapshot[loadTask.Path].WarningsOmitted.ShouldBe(3);
+        result.Snapshot[loadTask.Path].DetailOmitted.ShouldBe(3);
+        result.Snapshot[shard.Path].WarningCount.ShouldBe(103);
+        result.Snapshot.WarningCount.ShouldBe(103);
+    }
 }

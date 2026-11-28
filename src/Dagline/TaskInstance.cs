@@ -37,6 +37,8 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     private int _detailOmitted;
     private IReadOnlyList<string> _warnings = [];
     private int _warningsOmitted;
+    private int _warningsBeyondKeptTaken;
+    private int _detailBeyondKeptTaken;
     private string? _statusText;
     private long? _count;
     private long? _total;
@@ -189,6 +191,33 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         _statusText = progress.StatusText;
         _count = progress.Count;
         _total = progress.Total;
+    }
+
+    /// <summary>
+    /// Takes the counts of warnings and detail lines beyond the kept from the task's sample, on the new engine, where they are
+    /// counted on the task's side (ADR 0015). A count is taken only once every kept line of its kind has been applied, so a node
+    /// never shows lines omitted before it lists the kept ones. Each adds to what is omitted: an unexpected failure's lines are
+    /// counted here too, as the task settles.
+    /// </summary>
+    /// <returns>Whether either count changed what the task holds.</returns>
+    public bool TakeCountsBeyondKept(int warnings, int detail)
+    {
+        var changed = false;
+        if (_warnings.Count >= _kept && warnings != _warningsBeyondKeptTaken)
+        {
+            _warningsOmitted += warnings - _warningsBeyondKeptTaken;
+            _warningsBeyondKeptTaken = warnings;
+            changed = true;
+        }
+
+        if (_detail.Count >= _kept && detail != _detailBeyondKeptTaken)
+        {
+            _detailOmitted += detail - _detailBeyondKeptTaken;
+            _detailBeyondKeptTaken = detail;
+            changed = true;
+        }
+
+        return changed;
     }
 
     /// <summary>
