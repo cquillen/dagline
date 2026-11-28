@@ -81,7 +81,7 @@ public class SummaryTests
     }
 
     [Test]
-    public async Task A_run_that_ended_with_an_error_says_so_and_why_in_place_of_a_run_outcome()
+    public async Task An_unrecorded_run_says_so_and_gives_the_error_under_its_outcome()
     {
         using var temporary = new TemporaryDirectory();
         var builder = new GraphBuilder();
@@ -89,13 +89,33 @@ public class SummaryTests
         var journal = JournalWriteFailure.SettleOf("load").WithMessage("disk full").In(Journal.New(temporary.Path));
 
         await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20, new RunOptions { Journal = journal });
-        var error = await Should.ThrowAsync<JournalWriteException>(display.Run);
+        var result = await display.Run;
 
         display.Summary.ShouldBe(
         [
             new string('─', 60),
-            $"Run ended with an error  0s · journal {error.Snapshot.Journal!.Id} · run 1",
-            "    The run's journal can no longer be written: disk full",
+            $"Run unrecorded  0s · journal {result.Snapshot.Journal!.Id} · run 1",
+            "    The journal could no longer be written, so it is missing some of this run: disk full",
+            "✓ 1 succeeded",
+        ]);
+    }
+
+    [Test]
+    public async Task A_run_whose_end_alone_could_not_be_written_keeps_its_outcome_and_says_the_journal_lists_it_as_died()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var journal = JournalWriteFailure.EndOfRun().WithMessage("disk full").In(Journal.New(temporary.Path));
+
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20, new RunOptions { Journal = journal });
+        var result = await display.Run;
+
+        display.Summary.ShouldBe(
+        [
+            new string('─', 60),
+            $"Run complete  0s · journal {result.Snapshot.Journal!.Id} · run 1",
+            "    The run's end could not be written, so the journal lists this run as died: disk full",
             "✓ 1 succeeded",
         ]);
     }

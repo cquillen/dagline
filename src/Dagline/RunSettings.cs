@@ -19,7 +19,7 @@ internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeP
     /// the options are checked: every problem found is gathered into one exception.
     /// </summary>
     /// <exception cref="RunConfigurationException">
-    /// The max running tasks or a size is below 1, the graph names a limit that has no size, or the grace period is not allowed.
+    /// The max running tasks or a size is below 1, the graph names a limit that has no size, or the grace period or the reporter wait is not allowed.
     /// </exception>
     public static RunSettings From(Graph graph, RunOptions options)
     {
@@ -27,6 +27,11 @@ internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeP
         if (GracePeriodRules.ProblemWith(options.GracePeriod) is { } gracePeriodProblem)
         {
             problems.Add(gracePeriodProblem);
+        }
+
+        if (ClockWaitRules.ProblemWith("The reporter wait", options.ReporterWait) is { } reporterWaitProblem)
+        {
+            problems.Add(reporterWaitProblem);
         }
 
         return problems.Count > 0

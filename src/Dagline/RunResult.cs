@@ -7,14 +7,12 @@ public sealed class RunResult
         RunOutcome outcome,
         Snapshot snapshot,
         IReadOnlyList<ReporterError> reporterErrors,
-        Exception? journalError = null,
-        JournalWriteException? unrecorded = null)
+        Exception? journalError)
     {
         Outcome = outcome;
         Snapshot = snapshot;
         ReporterErrors = reporterErrors;
         JournalError = journalError;
-        Unrecorded = unrecorded;
     }
 
     /// <summary>How the run ended. <see cref="RunOutcomeExtensions.ToExitCode"/> maps it to a process exit code.</summary>
@@ -36,17 +34,14 @@ public sealed class RunResult
     public IReadOnlyList<ReporterError> ReporterErrors { get; }
 
     /// <summary>
-    /// The file system's failure that stopped the run's journal, or <see langword="null"/> when every write landed:
-    /// the cause of <see cref="Unrecorded"/> when the run ended unrecorded, and otherwise the failure of its end entry alone, which
-    /// leaves the run the outcome it reached. Internal until #153 makes it public.
+    /// The file system's failure that stopped the run's journal, the same as <see cref="RunEnded.JournalError"/>: an
+    /// <see cref="IOException"/>, or an <see cref="UnauthorizedAccessException"/> when the process may no longer write the file.
+    /// <see langword="null"/> when every write landed, and always <see langword="null"/> for a run with no journal.
     /// </summary>
-    internal Exception? JournalError { get; }
-
-    /// <summary>
-    /// The exception the run ended with when its journal could no longer be written, the same one its
-    /// <see cref="RunEnded"/> carried: the run outcome unrecorded, which takes precedence over <see cref="Outcome"/>, the outcome
-    /// the run would otherwise have reached. <see langword="null"/> otherwise. Until #153 makes unrecorded a run
-    /// outcome, <see cref="Run.Result"/> throws it.
-    /// </summary>
-    internal JournalWriteException? Unrecorded { get; }
+    /// <remarks>
+    /// When it is set, <see cref="Outcome"/> is <see cref="RunOutcome.Unrecorded"/>, unless only the entry for the run's end could
+    /// not be written: every settle is then on disk and the run keeps the outcome it reached, though the journal lists it as
+    /// <see cref="JournalEnding.Died"/>. Either way the journal can be continued once the cause is fixed.
+    /// </remarks>
+    public Exception? JournalError { get; }
 }

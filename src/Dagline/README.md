@@ -38,7 +38,7 @@ var result = await run.Result;
 return result.Outcome.ToExitCode();
 ```
 
-`store` requires `load`, so it starts only once `load` has succeeded. `Runner.Start` returns the run, which the app can drain, stop, read and await. `ConsoleStop.Hook(run)` turns the first Ctrl+C into a drain, which lets the running tasks finish, and a second Ctrl+C or a SIGTERM into a stop, which tells them to end, and `ToExitCode()` maps the run outcome to 0 (complete), 1 (incomplete) or 2 (drained or stopped). A [journal](https://cquillen.github.io/dagline/articles/journals.html) in place of `Journal.None` lets a later run carry on where a stopped one left off.
+`store` requires `load`, so it starts only once `load` has succeeded. `Runner.Start` returns the run, which the app can drain, stop, read and await. `ConsoleStop.Hook(run)` turns the first Ctrl+C into a drain, which lets the running tasks finish, and a second Ctrl+C or a SIGTERM into a stop, which tells them to end, and `ToExitCode()` maps the run outcome to 0 (complete), 1 (incomplete), 2 (drained or stopped) or 3 (unrecorded: the journal could no longer be written). A [journal](https://cquillen.github.io/dagline/articles/journals.html) in place of `Journal.None` lets a later run carry on where a stopped one left off.
 
 ## Learn more
 

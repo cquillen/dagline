@@ -27,11 +27,11 @@ An **event** is a record of one thing that happened in the run, with the time it
 | <xref:Dagline.DrainRequested> | When the run applies a drain, at most once per run, and never once a stop has been applied. From then on nothing starts, and the running tasks finish as they would. | Nothing beyond its time: a drain only comes from the app. |
 | <xref:Dagline.StopRequested> | When the run applies a stop, at most once per run, after `DrainRequested` when a drain came first. From then on nothing starts. | Who asked, `By`: the app by cancelling the run's token, or Dagline when a journal write failed. The grace period: how long the run will wait for its running tasks. `Timeout.InfiniteTimeSpan` means it waits until they have ended. |
 | <xref:Dagline.GraceEnded> | When the grace period runs out after a stop with tasks still running, at most once per run. Never when the last running task ended in time. | Nothing beyond its time: only the grace period running out ends the wait. The tasks left behind follow, each cancelled. |
-| <xref:Dagline.RunEnded> | Last, once per run. | Exactly one of the run outcome and an error: a run whose journal could no longer be written ends with a `JournalWriteException` in `Error` and a null `Outcome`. |
+| <xref:Dagline.RunEnded> | Last, once per run. | The run outcome, always, and the journal's error beside it in `JournalError` when a write failed: a run whose journal could no longer be written ends unrecorded. |
 
 An event carries everything needed to print a line about it, so a reporter that prints a line per event looks nothing up.
 
-Nothing an event carries is ever null, except the text of a wait the task gave none for, and one of the outcome and the error of <xref:Dagline.RunEnded>. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.DrainState>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
+Nothing an event carries is ever null, except the text of a wait the task gave none for, and the journal's error of a <xref:Dagline.RunEnded> when every write landed. Only Dagline creates events. The event types are records, so two events with the same values are equal, but their constructors are internal and their properties are get-only: a reporter reads an event and never makes or changes one. The same holds for what the snapshot and the result hand you, such as <xref:Dagline.LimitUse>, <xref:Dagline.DrainState>, <xref:Dagline.StopState>, <xref:Dagline.BlockedTasks>, <xref:Dagline.Dependency> and <xref:Dagline.ReporterError>, and for <xref:Dagline.GraphProblem>. To test a reporter, run a small graph with it as one of the run's reporters, and assert on what it wrote.
 
 ### The order within one step
 
@@ -180,7 +180,7 @@ A run that continues a [journal](journals.md) begins with its earlier successes 
 
 An earlier success keeps its whole outcome, warnings included, so `WarningCount` and `WithWarnings` cover every task in the graph. A reporter that lists warnings in its summary lists <xref:Dagline.Snapshot.WithWarningsInThisRun>, and can count those of earlier runs, which an earlier summary listed, from <xref:Dagline.Snapshot.EarlierSuccessesWithWarnings>.
 
-A run whose journal can no longer be written is stopped by Dagline: `StopRequested` has `By` set to `StopRequester.Dagline`, unless the app had already asked for a stop, whose `StopRequested` stays the only one, with `By` set to `StopRequester.App`. Either way `RunEnded` carries the `JournalWriteException` in `Error` with no run outcome. The final snapshot has an end time and no `Outcome`.
+A run whose journal can no longer be written is stopped by Dagline: `StopRequested` has `By` set to `StopRequester.Dagline`, unless the app had already asked for a stop, whose `StopRequested` stays the only one, with `By` set to `StopRequester.App`. Either way `RunEnded` carries the run outcome unrecorded, with the file system's failure in `JournalError`, and the final snapshot's `Outcome` is unrecorded too. When only the run's end could not be written, `RunEnded` carries the outcome the run reached with the error beside it. The plain-text reporter and the Spectre display each print the stop by Dagline, the end with the error, and a summary that says the journal is missing some of the run, or, after a failed end alone, that the journal lists the run as died.
 
 ## What a reporter may rely on
 
@@ -189,9 +189,9 @@ A run whose journal can no longer be written is stopped by Dagline: `StopRequest
 - **The snapshot matches the event.** The snapshot handed with an event is the run exactly as of that event, even when the reporter is handed the event long after it happened.
 - **The run never waits for a reporter while tasks are running.** Each reporter has a queue of its own. A slow reporter falls behind, and neither the tasks nor the other reporters are held up by it. The queue has no size limit, and the number of events in a run is in proportion to its tasks, so that is all a reporter that falls behind can cost in memory.
 - **A reporter that throws is dropped.** It receives no further call, and the tasks, the run outcome and the other reporters are unaffected. The error is returned with the result of the run and is never thrown at your app: see [When a reporter fails](#when-a-reporter-fails).
-- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound, but cancelling the run's token ends it when the run applied no stop: see [Cancelling the token ends the wait for reporters](#cancelling-the-token-ends-the-wait-for-reporters). Otherwise a call to a reporter that never completes keeps `RunAsync` from returning.
+- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait lasts at most the reporter wait, 30 seconds by default, after which a reporter still busy is dropped: see [The reporter wait](#the-reporter-wait).
 
-The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is cancelled only when the run's token ends the wait for a reporter that is still busy.
+The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is cancelled only when the reporter is dropped: when it throws, or when it is still busy as the reporter wait runs out. The run's own token never cancels it.
 
 ## Writing a reporter
 
@@ -253,18 +253,28 @@ Each entry names the reporter, the event it was handling and the exception. This
 
 The run outcome says how the work went and is not changed by a reporter's failure. Whether a run whose display broke should exit with an error is your app's decision.
 
-### Cancelling the token ends the wait for reporters
+### The reporter wait
 
-A stuck reporter need not hang your process. When every task has ended and the run is waiting for its reporters, cancelling the token passed to `RunAsync` ends that wait. A reporter still busy at that moment is dropped like one that threw:
+The run waits for its reporters once, at its end, whether or not it was stopped, so that the last lines of a stopped run, which say what was cancelled and what was never reached, are printed too. <xref:Dagline.RunOptions.ReporterWait> bounds that wait: 30 seconds by default, measured on the run's `TimeProvider` from the moment `RunEnded` is queued for the reporters. The wait ends as soon as every reporter has handled every event. A reporter still busy when it runs out is dropped like one that threw:
 
-- the `CancellationToken` passed to its `OnEventAsync` is cancelled. Each reporter has a token of its own, never cancelled otherwise, so a reporter that awaits slow output can pass it on. It is already cancelled when `RunAsync` returns, but a callback you register on it runs on the thread pool and the run does not wait for it;
-- its remaining events are discarded, and it gets no further call;
+- the `CancellationToken` passed to its `OnEventAsync` is cancelled. Each reporter has a token of its own, never cancelled otherwise, so a reporter that awaits slow output can pass it on. It is already cancelled when the run's result completes, but a callback you register on it runs on the thread pool and the run does not wait for it;
+- its remaining events are let go, and it gets no further call;
 - `ReporterErrors` has a `ReporterError` naming it, the event it was handling and an `OperationCanceledException`;
-- `RunAsync` returns without waiting for its call to come back, even a call that blocks its thread and never returns a task. Whatever that call does later is ignored.
+- the run's result completes without waiting for its call to come back, even a call that blocks its thread and never returns a task. Whatever that call does later is ignored.
 
-A reporter that had already handled every event is unaffected and is not on the list. A cancellation once the tasks have ended never changes the run outcome. One made just as the run ends is never lost: either the run applies it as a stop, or it ends the wait for reporters.
+A reporter that had already handled every event is left alone, its token never cancelled, and is not on the list. A drop never changes the run outcome.
 
-Only a token cancelled after every task has ended does this. A token cancelled earlier is applied as a stop, and drops no reporter. Once a stop has been applied, by your app or by Dagline, nothing more can drop a hung reporter: the operator kills the process, which the journal survives. A drain never drops a reporter, and a run given no token waits for its reporters with no time bound.
+Nothing else ends the wait. The run's token means a stop and nothing more: cancelling it once the run has ended does nothing, and a drain never drops a reporter.
+
+```csharp
+// Give a slow remote reporter longer to send its last events.
+new RunOptions { Journal = Journal.None, Reporters = [uploader], ReporterWait = TimeSpan.FromMinutes(2) };
+
+// Wait for the reporters however long they take.
+new RunOptions { Journal = Journal.None, Reporters = [uploader], ReporterWait = Timeout.InfiniteTimeSpan };
+```
+
+`TimeSpan.Zero` drops a reporter still busy as soon as the run has ended. A limited reporter wait is at most `uint.MaxValue - 1` milliseconds, about 49.7 days, as for the grace period; anything else below zero or above that is refused before the run starts. On a clock whose timers fire at once, such as `InstantClock` from `Dagline.Testing`, a limited reporter wait runs out almost at once: see [Testing your tasks](testing-your-tasks.md#a-graph-run-on-the-instant-clock-with-reporters).
 
 ## Progress on a timer: the snapshot source
 
@@ -445,7 +455,7 @@ Every line about an event begins with the time of the event, read from the run's
 | `group <path> <status>: <counts>` | The last task beneath a group settles. |
 | `tasks: <counts>` | Nothing has been printed for a minute. |
 | `run ended: <run outcome> in <duration>` | The run ends. The summary follows. |
-| `run ended: journal write failed after <duration>: <message>` | The run ends with an error because its journal could no longer be written. The message is that of the cause. The summary follows. |
+| `run ended: <run outcome> in <duration>: journal write failed: <message>` | The run ends after a journal write failed: unrecorded, or, when only its end could not be written, the outcome it reached. The message is the file system's. The summary follows. |
 
 What to know about them:
 
@@ -469,7 +479,7 @@ What to know about them:
 
 The summary follows the `run ended` line and has no timestamps. A section with nothing in it is left out, so a complete run with no journal and no warnings ends with the counts alone.
 
-1. **The journal**: on a run with a journal, `journal:` and the same text as the line after `run started`.
+1. **The journal**: on a run with a journal, `journal:` and the same text as the line after `run started`. After a failed journal write a line follows it: `unrecorded: the journal is missing some of what this run did`, or, when only the run's end could not be written, `the run's end is not recorded: the journal lists this run as died`.
 2. **The counts**: `tasks:` and the count of tasks per status. The tasks a stopped run never reached are counted here as pending and ready, and are not listed anywhere else.
 3. **The failures**: `failed:` and the number of failed tasks, then each of them in declaration order. The first line of a failure has the path, the kind of failure (`reported` or `unexpected`), when the task failed and how long it had run. Beneath it, each only when there is something to show:
    - `progress:` the progress the task had reported when it failed. It reads `<text>`, `<count>`, `<count> of <total>`, or the text and the count joined by a comma. It is always one line: a line break in the status text is printed as a space.

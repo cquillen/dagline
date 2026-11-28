@@ -82,7 +82,7 @@ public class AsciiTests
     }
 
     [Test]
-    public async Task With_Ascii_set_the_error_a_run_ended_with_is_drawn_in_ASCII()
+    public async Task With_Ascii_set_the_journal_error_an_unrecorded_run_ended_with_is_drawn_in_ASCII()
     {
         using var temporary = new TemporaryDirectory();
         var builder = new GraphBuilder();
@@ -90,8 +90,8 @@ public class AsciiTests
         var journal = JournalWriteFailure.SettleOf("load").WithMessage("disk full — no space").In(Journal.New(temporary.Path));
 
         await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 20, new RunOptions { Journal = journal }, ascii: true);
-        await Should.ThrowAsync<JournalWriteException>(display.Run);
+        await display.Run;
 
-        display.Summary[2].ShouldBe("    The run's journal can no longer be written: disk full ? no space");
+        display.Summary[2].ShouldBe("    The journal could no longer be written, so it is missing some of this run: disk full ? no space");
     }
 }

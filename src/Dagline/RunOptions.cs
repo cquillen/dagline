@@ -110,7 +110,8 @@ public sealed record RunOptions
     /// </summary>
     /// <remarks>
     /// Each reporter has a queue of its own, so the run never waits for one while tasks are running and a slow reporter
-    /// does not hold up another. One that throws is dropped and is on <see cref="RunResult.ReporterErrors"/>.
+    /// does not hold up another. One that throws is dropped and is on <see cref="RunResult.ReporterErrors"/>, and so is one still
+    /// busy when <see cref="ReporterWait"/> runs out at the end of the run.
     /// <see cref="IReporter.OnEventAsync"/> says what a reporter may rely on.
     /// </remarks>
     /// <exception cref="ArgumentNullException">The value set is <see langword="null"/>.</exception>
@@ -126,9 +127,35 @@ public sealed record RunOptions
     = [];
 
     /// <summary>
-    /// The reporter wait: how long a run waits for its reporters once the event that says the run ended is queued, measured on
-    /// <see cref="TimeProvider"/>. 30 seconds by default, or <see cref="Timeout.InfiniteTimeSpan"/> to wait for as long as they
-    /// take. A reporter still busy when it runs out is dropped. Internal until #154 makes it a run option.
+    /// The reporter wait: how long the run waits at its end for its reporters to handle the events still queued for them.
+    /// The default is 30 seconds.
     /// </summary>
-    internal TimeSpan ReporterWait { get; init; } = TimeSpan.FromSeconds(30);
+    /// <remarks>
+    /// <para>
+    /// Every run waits for its reporters once, at its end, stopped or not, so that their last lines are printed. The wait is
+    /// measured on <see cref="TimeProvider"/> from the moment the event that says the run ended, <see cref="RunEnded"/>, is queued
+    /// for the reporters, and it ends early once every reporter has handled every event. A reporter still busy when it runs out
+    /// is dropped: the token of its calls is cancelled, the events still queued for it are let go, and the run returns without
+    /// waiting for the call in progress, with the reporter on <see cref="RunResult.ReporterErrors"/>, its error an
+    /// <see cref="OperationCanceledException"/> naming the event it was handling. A reporter that had handled every event is left
+    /// alone, and its token is never cancelled. The run's cancellation token has no part in the wait: cancelling it once the run has
+    /// ended does nothing.
+    /// </para>
+    /// <para>
+    /// A run with no reporter still busy at its end makes no timer for the wait. <see cref="TimeSpan.Zero"/> drops a reporter still
+    /// busy as soon as the run's end is queued. <see cref="Timeout.InfiniteTimeSpan"/> waits for as long as the reporters take.
+    /// On a clock whose timers fire at once, such as the instant clock of <c>Dagline.Testing</c>, a limited wait runs out at once,
+    /// so set it to <see cref="Timeout.InfiniteTimeSpan"/> on such a clock to let every reporter finish.
+    /// A limited reporter wait is at most <see cref="uint.MaxValue"/> - 1 milliseconds, about 49.7 days: the longest timer a
+    /// <see cref="System.TimeProvider"/> can create. Any other value below zero, and any value above that limit, is refused by
+    /// <see cref="Runner.Start"/> with <see cref="RunConfigurationException"/> before the run exists, together with every other
+    /// problem the options have.
+    /// </para>
+    /// <para>
+    /// If the clock refuses to make the wait's timer, by throwing from <see cref="System.TimeProvider.CreateTimer"/>, the wait
+    /// runs out at once: each reporter still busy is dropped, and its error's
+    /// <see cref="Exception.InnerException"/> is what the clock threw. The run still returns its result.
+    /// </para>
+    /// </remarks>
+    public TimeSpan ReporterWait { get; init; } = TimeSpan.FromSeconds(30);
 }

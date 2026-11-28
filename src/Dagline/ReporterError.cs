@@ -24,6 +24,8 @@ public sealed record ReporterError
 
     /// <summary>
     /// What the reporter threw from <see cref="IReporter.OnEventAsync"/>, or what the <see cref="ValueTask"/> it returned faulted with.
+    /// For a reporter still busy when <see cref="RunOptions.ReporterWait"/> ran out, an <see cref="OperationCanceledException"/>,
+    /// whose <see cref="Exception.InnerException"/> is what the run's clock threw when it refused to make the wait's timer, if it did.
     /// </summary>
     public Exception Exception { get; }
 }

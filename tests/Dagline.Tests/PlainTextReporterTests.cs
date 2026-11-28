@@ -945,7 +945,7 @@ public class PlainTextReporterTests
             // the reporter is called for the events on one thread while its own timer fires on this one.
             // The clock steps on until the run returns, so an unlimited reporter wait keeps a reporter that has
             // fallen behind from being dropped once the run's end is queued.
-            var options = Options(clock, new PlainTextReporter(writer, clock)).WithReporterWait(Timeout.InfiniteTimeSpan);
+            var options = Options(clock, new PlainTextReporter(writer, clock)) with { ReporterWait = Timeout.InfiniteTimeSpan };
             var run = Runner.RunAsync(builder.Build(), options);
             await clock.AdvanceUntilAsync(run, TimeSpan.FromMinutes(1));
             await run;

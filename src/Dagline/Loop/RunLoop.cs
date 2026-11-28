@@ -40,7 +40,6 @@ internal sealed class RunLoop
 
     private RunOutcome? _outcome;
     private Exception? _journalError;
-    private JournalWriteException? _unrecorded;
 
     // The last save the loop took: the only one that can still be waiting for its answer, since the core answers a save in the
     // input that brings it or in the result of its write, which is the next input.
@@ -157,7 +156,7 @@ internal sealed class RunLoop
                 if (input.Kind is InputKind.ReporterWaitOver)
                 {
                     // Dropping the busy reporters finishes them, so the reporters being done is the input that follows.
-                    _delivery.DropTheBusy();
+                    _delivery.DropTheBusy(cause: null);
                     continue;
                 }
 
@@ -166,7 +165,7 @@ internal sealed class RunLoop
 
             Inbox.Close();
             _reporterWaitTimer?.Dispose();
-            _result.TrySetResult(new RunResult(_outcome!.Value, Source.Current, _delivery.Errors, _journalError, _unrecorded));
+            _result.TrySetResult(new RunResult(_outcome!.Value, Source.Current, _delivery.Errors, _journalError));
         }
         catch (Exception fault)
         {
@@ -218,13 +217,13 @@ internal sealed class RunLoop
                         Timeout.InfiniteTimeSpan);
                     break;
                 case EffectKind.EndRun:
-                    End(effect.Outcome, effect.JournalError, effect.Unrecorded);
+                    End(effect.Outcome, effect.JournalError);
                     break;
                 case EffectKind.MarkCurrentOutOfDate:
                     _currentIsOutOfDate = true;
                     break;
                 case EffectKind.AnswerSave:
-                    AnswerSave(effect.Task!, effect.Save!, effect.Refusal);
+                    AnswerSave(effect.Task!, effect.Save!, effect.Refusal, effect.JournalError);
                     break;
             }
         }
@@ -234,13 +233,20 @@ internal sealed class RunLoop
 
     /// <summary>
     /// Answers a save: a made save's text is what the task's checkpoint reads back from before the answer resumes the task, and the
-    /// answer resumes it as the host says, never inline on the loop in an app.
+    /// answer resumes it as the host says, never inline on the loop in an app. A save the journal could not take is refused with a
+    /// <see cref="JournalWriteException"/> holding the current snapshot, as of the events published before it.
     /// </summary>
-    private void AnswerSave(BuiltTask task, CheckpointSave save, Exception? refusal)
+    private void AnswerSave(BuiltTask task, CheckpointSave save, Exception? refusal, Exception? notWritten)
     {
         if (refusal is not null)
         {
             save.Refuse(refusal);
+            return;
+        }
+
+        if (notWritten is not null)
+        {
+            save.Refuse(new JournalWriteException(notWritten, Source.Current));
             return;
         }
 
@@ -268,13 +274,6 @@ internal sealed class RunLoop
     private void Publish(RunEvent runEvent, SnapshotChange change)
     {
         var snapshot = _core.SnapshotAfter(change);
-
-        // Until #153 makes unrecorded a run outcome: the exception an unrecorded run's end carries holds the final snapshot.
-        if (runEvent is RunEnded { Error: JournalWriteException unrecorded })
-        {
-            unrecorded.Holds(snapshot);
-        }
-
         _currentIsOutOfDate = false;
         Source.Publish(snapshot, _core.Sampled);
         _delivery.Publish(runEvent, snapshot);
@@ -334,21 +333,32 @@ internal sealed class RunLoop
     /// <summary>
     /// The run has ended: no event follows, and the loop waits for the reporters to be done, as an input, for at most the reporter
     /// wait, which starts now, on the run's clock, the event that says the run ended being queued. Its running out is an input too.
+    /// With nothing to wait for, no timer is made, so a run with no busy reporter asks nothing more of its clock.
     /// </summary>
-    private void End(RunOutcome outcome, Exception? journalError, JournalWriteException? unrecorded)
+    private void End(RunOutcome outcome, Exception? journalError)
     {
         _outcome = outcome;
         _journalError = journalError;
-        _unrecorded = unrecorded;
         LetGoOfTheTokenAndTheTimer();
-        _delivery.Complete(() => Inbox.Post(Input.ReportersDone));
-        if (_reporterWait != Timeout.InfiniteTimeSpan)
+        var nothingToWaitFor = _delivery.Complete(() => Inbox.Post(Input.ReportersDone));
+        if (nothingToWaitFor || ClockWaitRules.IsUnlimited(_reporterWait))
+        {
+            return;
+        }
+
+        try
         {
             _reporterWaitTimer = _clock.CreateTimer(
                 static loop => ((RunLoop)loop!).Inbox.Post(Input.ReporterWaitOver),
                 this,
                 _reporterWait,
                 Timeout.InfiniteTimeSpan);
+        }
+        catch (Exception refused)
+        {
+            // The clock is the app's code, and one that refuses a timer, as the instant clock does past its guard, must not fault
+            // a run that has ended: the wait it cannot measure runs out at once, and the drops carry the clock's refusal.
+            _delivery.DropTheBusy(refused);
         }
     }
 }

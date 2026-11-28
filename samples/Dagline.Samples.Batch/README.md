@@ -34,10 +34,10 @@ A run without `--fault` is the operator having fixed things. Before each run the
 | 0 | Every task succeeded. |
 | 1 | The run ended with a task that did not succeed. |
 | 2 | The run was stopped. |
+| 3 | A journal write failed, so the journal is missing some of the run. The display's summary gives the error. |
 | 64 | A bad option, a graph that fails to build, options the run refuses, or a journal that is in use or cannot be opened. The message is on standard error. |
-| 70 | A journal write failed. The message is on standard error. |
 
-Codes 0, 1 and 2 come from `RunOutcome.ToExitCode()`, a mapping Dagline keeps stable in every release. Codes 64 and 70 are the sample's own. What the sample prints is for people and may change: a script should go by the exit code alone, as CI does.
+Codes 0 to 3 come from `RunOutcome.ToExitCode()`, a mapping Dagline keeps stable in every release. Code 64 is the sample's own. What the sample prints is for people and may change: a script should go by the exit code alone, as CI does.
 
 ## Things to try
 

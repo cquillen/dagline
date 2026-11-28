@@ -270,7 +270,7 @@ public class PlainTextJournalTests
     }
 
     [Test]
-    public async Task A_stop_Dagline_asked_for_and_a_run_that_ended_with_an_error_each_read_as_a_failed_journal_write()
+    public async Task A_stop_Dagline_asked_for_and_an_unrecorded_end_each_read_as_a_failed_journal_write_and_the_summary_says_so()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -292,7 +292,7 @@ public class PlainTextJournalTests
             fails.Release();
             await reporter.Handled("stop requested");
             running.Throw(new OperationCanceledException());
-            var id = (await Should.ThrowAsync<JournalWriteException>(run)).Snapshot.Journal!.Id;
+            var id = (await run).Snapshot.Journal!.Id;
 
             Lines(writer).ShouldBe(
             [
@@ -303,8 +303,9 @@ public class PlainTextJournalTests
                 "2026-11-11T04:12:05Z succeeded fails in 5.0s",
                 "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting up to 30.0s for 1 running task",
                 "2026-11-11T04:12:05Z cancelled running in 5.0s",
-                "2026-11-11T04:12:05Z run ended: journal write failed after 5.0s: disk full",
+                "2026-11-11T04:12:05Z run ended: unrecorded in 5.0s: journal write failed: disk full",
                 $"journal: {id} run 1",
+                "unrecorded: the journal is missing some of what this run did",
                 "tasks: 1 succeeded, 1 cancelled",
                 "cancelled: 1",
                 "  running at 2026-11-11T04:12:05Z after 5.0s",
@@ -337,7 +338,7 @@ public class PlainTextJournalTests
             fails.Release();
             await reporter.Handled("stop requested");
             running.Release();
-            var id = (await Should.ThrowAsync<JournalWriteException>(run)).Snapshot.Journal!.Id;
+            var id = (await run).Snapshot.Journal!.Id;
 
             Lines(writer).ShouldBe(
             [
@@ -348,11 +349,40 @@ public class PlainTextJournalTests
                 "2026-11-11T04:12:05Z succeeded fails in 5.0s",
                 "2026-11-11T04:12:05Z stop requested by Dagline, journal write failed: waiting for 1 running task",
                 "2026-11-11T04:12:05Z succeeded running in 5.0s",
-                "2026-11-11T04:12:05Z run ended: journal write failed after 5.0s: disk full",
+                "2026-11-11T04:12:05Z run ended: unrecorded in 5.0s: journal write failed: disk full",
                 $"journal: {id} run 1",
+                "unrecorded: the journal is missing some of what this run did",
                 "tasks: 2 succeeded",
             ]);
         }
+    }
+
+    [Test]
+    public async Task A_run_whose_end_alone_could_not_be_written_reads_as_its_outcome_with_the_error_and_the_summary_says_it_is_listed_as_died()
+    {
+        using var temporary = new TemporaryDirectory();
+        var clock = new FakeTimeProvider(_firstRunStart);
+        var writer = new StringWriter();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var journal = JournalWriteFailure.EndOfRun().WithMessage("disk full").In(QuickJournal.New(temporary.Path));
+
+        var result = await Runner.RunAsync(
+            builder.Build(),
+            new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [new PlainTextReporter(writer, clock)] });
+        var id = result.Snapshot.Journal!.Id;
+
+        Lines(writer).ShouldBe(
+        [
+            "2026-11-11T04:12:00Z run started: 1 task",
+            $"2026-11-11T04:12:00Z journal {id} run 1",
+            "2026-11-11T04:12:00Z started load",
+            "2026-11-11T04:12:00Z succeeded load in 0.0s",
+            "2026-11-11T04:12:00Z run ended: complete in 0.0s: journal write failed: disk full",
+            $"journal: {id} run 1",
+            "the run's end is not recorded: the journal lists this run as died",
+            "tasks: 1 succeeded",
+        ]);
     }
 
     /// <summary>What was written, one entry for each line, without the line break that ends the last one.</summary>

@@ -9,10 +9,6 @@ namespace Dagline.Tests;
 /// no end entry, so the journal lists it as died. Each test is one scripted run that fails one write through the journal write
 /// hook, so none is repeated.
 /// </summary>
-/// <remarks>
-/// Until the cutover (#153) the outcome unrecorded is held internally, on <see cref="RunResult.Unrecorded"/>, and the run's end
-/// carries the <see cref="JournalWriteException"/> in place of a run outcome, until #153.
-/// </remarks>
 public class LoopRunFailedWriteTests
 {
     private static readonly DateTimeOffset _runStart = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -37,7 +33,7 @@ public class LoopRunFailedWriteTests
             "load: running -> succeeded",
             "publish: pending -> ready",
             "stop requested",
-            "run ended: JournalWriteException",
+            "run ended: unrecorded",
         ]);
         reporter.Events.OfType<StopRequested>().Single().By.ShouldBe(StopRequester.Dagline);
         ShouldHaveEndedUnrecorded(result, reporter);
@@ -68,7 +64,7 @@ public class LoopRunFailedWriteTests
             "load: running -> succeeded",
             "output/publish: pending -> ready",
             "stop requested",
-            "run ended: JournalWriteException",
+            "run ended: unrecorded",
         ]);
         ShouldHaveEndedUnrecorded(result, reporter);
         var task = result.Snapshot[publish.Path];
@@ -100,7 +96,7 @@ public class LoopRunFailedWriteTests
             "load: pending -> ready",
             "store: pending -> ready",
             "stop requested",
-            "run ended: JournalWriteException",
+            "run ended: unrecorded",
         ]);
         reporter.Events.OfType<StopRequested>().Single().By.ShouldBe(StopRequester.Dagline);
         ShouldHaveEndedUnrecorded(result, reporter);
@@ -145,6 +141,7 @@ public class LoopRunFailedWriteTests
         stoppedWhenAnswered.ShouldBe(false);
         var thrown = thrownToTheTask.ShouldBeOfType<JournalWriteException>();
         thrown.InnerException.ShouldBeOfType<IOException>();
+        (thrown.Snapshot[saves.Path].Status, thrown.Snapshot.Stop).ShouldBe((NodeStatus.Running, null));
         readBack.ShouldBe("");
         reporter.Lines.ShouldBe(
         [
@@ -153,7 +150,7 @@ public class LoopRunFailedWriteTests
             "saves: ready -> running",
             "stop requested",
             "saves: running -> failed",
-            "run ended: JournalWriteException",
+            "run ended: unrecorded",
         ]);
         reporter.Events.OfType<StopRequested>().Single().By.ShouldBe(StopRequester.Dagline);
         ShouldHaveEndedUnrecorded(result, reporter);
@@ -206,11 +203,10 @@ public class LoopRunFailedWriteTests
         var result = await ScriptedDriver.Start(builder.Build(), Options(journal, reporter)).Finish();
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
-        result.Unrecorded.ShouldBeNull();
         result.JournalError.ShouldBeOfType<IOException>();
         result.Snapshot.Outcome.ShouldBe(RunOutcome.Complete);
         var ended = reporter.Events.OfType<RunEnded>().Single();
-        (ended.Outcome, ended.Error).ShouldBe((RunOutcome.Complete, null));
+        (ended.Outcome, ended.JournalError).ShouldBe((RunOutcome.Complete, result.JournalError));
         reporter.Events.OfType<StopRequested>().ShouldBeEmpty();
         JournalEntries.Read(TheJournalIn(temporary)).ShouldBe(
             ["header", "run started", "started load", "settled load", "started publish", "settled publish"]);
@@ -241,13 +237,33 @@ public class LoopRunFailedWriteTests
             "load: ready -> running",
             "stop requested",
             "load: running -> succeeded",
-            "run ended: JournalWriteException",
+            "run ended: unrecorded",
         ]);
         reporter.Events.OfType<StopRequested>().Single().By.ShouldBe(StopRequester.App);
         result.Snapshot.Stop!.By.ShouldBe(StopRequester.App);
         ShouldHaveEndedUnrecorded(result, reporter);
         JournalEntries.Read(TheJournalIn(temporary)).ShouldBe(["header", "run started", "started load"]);
         await ShouldBeListedAsDiedAndFree(temporary);
+    }
+
+    [Test]
+    public async Task An_unrecorded_run_s_result_carries_the_reporter_errors()
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+        var broken = new InvalidOperationException("broken reporter");
+        var failing = new ReporterThatFailsAtTheEnd(broken);
+        var journal = JournalWriteFailure.SettleOf("load").In(Journal.New(temporary.Path));
+        var options = Options(journal, reporter) with { Reporters = [reporter, failing] };
+
+        var result = await ScriptedDriver.Start(builder.Build(), options).Finish();
+
+        ShouldHaveEndedUnrecorded(result, reporter);
+        var error = result.ReporterErrors.ShouldHaveSingleItem();
+        (error.Reporter, error.Exception).ShouldBe((failing, broken));
+        error.Event.ShouldBeOfType<RunEnded>().Outcome.ShouldBe(RunOutcome.Unrecorded);
     }
 
     private static RunOptions Options(Journal journal, RecordingReporter reporter, TimeSpan? gracePeriod = null)
@@ -260,19 +276,17 @@ public class LoopRunFailedWriteTests
         };
 
     /// <summary>
-    /// The run ended unrecorded: its result holds the file system's failure, its end carries the same exception in place of a run
-    /// outcome, and its final snapshot has an end and no run outcome.
+    /// The run ended unrecorded: its result, its end and its final snapshot each have the run outcome unrecorded, and its result
+    /// and its end each carry the file system's failure.
     /// </summary>
     private static void ShouldHaveEndedUnrecorded(RunResult result, RecordingReporter reporter)
     {
-        var unrecorded = result.Unrecorded.ShouldNotBeNull();
-        unrecorded.InnerException.ShouldBeOfType<IOException>();
-        result.JournalError.ShouldBe(unrecorded.InnerException);
+        result.Outcome.ShouldBe(RunOutcome.Unrecorded);
+        result.JournalError.ShouldBeOfType<IOException>();
         var ended = reporter.Events.OfType<RunEnded>().Single();
-        (ended.Outcome, ended.Error).ShouldBe((null, unrecorded));
-        unrecorded.Snapshot.ShouldBe(result.Snapshot);
+        (ended.Outcome, ended.JournalError).ShouldBe((RunOutcome.Unrecorded, result.JournalError));
         result.Snapshot.Ended.ShouldNotBeNull();
-        result.Snapshot.Outcome.ShouldBeNull();
+        result.Snapshot.Outcome.ShouldBe(RunOutcome.Unrecorded);
     }
 
     /// <summary>The journal holds no end, so it is listed as died, and the run has let go of it, so it is not in use.</summary>
@@ -284,4 +298,11 @@ public class LoopRunFailedWriteTests
     }
 
     private static string TheJournalIn(TemporaryDirectory temporary) => Directory.GetFiles(temporary.Path, "*.journal").Single();
+
+    /// <summary>A reporter that throws <paramref name="broken"/> when it is handed the run's end, and handles every other event.</summary>
+    private sealed class ReporterThatFailsAtTheEnd(Exception broken) : IReporter
+    {
+        public ValueTask OnEventAsync(RunEvent runEvent, Snapshot snapshot, CancellationToken cancellationToken)
+            => runEvent is RunEnded ? throw broken : ValueTask.CompletedTask;
+    }
 }

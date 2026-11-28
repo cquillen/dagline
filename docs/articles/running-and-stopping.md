@@ -61,6 +61,7 @@ Each call on the run only hands the request to the run and returns at once, from
 | `TimeProvider` | `TimeProvider.System` | The clock of the run. |
 | `GracePeriod` | 30 seconds | How long a stopped run waits for its running tasks. See [the grace period](#the-grace-period). |
 | `Reporters` | no reporters | What watches the run. |
+| `ReporterWait` | 30 seconds | How long the run waits for its reporters at its end. See [the reporter wait](reporters.md#the-reporter-wait). |
 
 ### Journal
 
@@ -93,7 +94,7 @@ A reporter is something that presents a run to people while it happens. Each rep
 
 The list is read once when the run starts. A reporter cannot change the run, and Dagline itself never writes to the console: what your app prints is up to you and your reporters.
 
-The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Create()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
+The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. At its end, stopped or not, the run waits for its reporters to catch up, for at most <xref:Dagline.RunOptions.ReporterWait>: 30 seconds by default, measured on the run's `TimeProvider`, or `Timeout.InfiniteTimeSpan` to wait for as long as they take. A reporter still busy when it runs out is dropped, so a hung reporter never keeps your process from exiting. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Create()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
 
 ## Sizing the max running tasks and limits
 
@@ -322,21 +323,18 @@ A run on a [journal](journals.md) writes to it all through the run. If a write f
 - Neither a drain nor your token cancelled shortens that wait.
 - Nothing more starts. A task whose start could not be written does not start, and stays ready. The dependents of a task whose settle could not be written become ready and do not start.
 - Nothing more is written to the journal. Events still describe what happens, so reporters show the run to its end, but none of it is recorded.
-- The run ends with an error and no run outcome: <xref:Dagline.RunEnded> carries a <xref:Dagline.JournalWriteException> in `Error`, with `Outcome` null, and `RunAsync` throws that exception once reporters have handled every event. Its `Snapshot` is the final snapshot, which has an end time and no run outcome, and its inner exception is the file system's own: an `IOException`, or an `UnauthorizedAccessException` when the process may no longer write the file. `ReporterErrors` is not available.
-- A checkpoint save that fails, or that comes after a failed write, throws `JournalWriteException` to the task that called it, with the snapshot as of that save.
-- The one exception is the last write of a run, its end. By then the run outcome is decided and nothing is left to stop, so `RunEnded` carries the outcome and `RunAsync` returns it as usual. Only the journal shows the failure: it has no end recorded.
+- The run ends with the run outcome **unrecorded**, and nothing is thrown. Unrecorded takes precedence over the other three: a run whose last settle could not be written is not called complete. <xref:Dagline.RunEnded> carries it in `Outcome`, with the file system's failure beside it in `JournalError`: an `IOException`, or an `UnauthorizedAccessException` when the process may no longer write the file. The run's result, the same as ever, carries the same outcome and error in <xref:Dagline.RunResult.Outcome> and <xref:Dagline.RunResult.JournalError>, its reporter errors and its final snapshot, whose `Outcome` is unrecorded too.
+- A checkpoint save that fails, or that comes after a failed write, throws <xref:Dagline.JournalWriteException> to the task that called it, with the snapshot as of that save. It is the only place the exception is thrown.
+- The one exception is the last write of a run, its end. By then every settle is on disk and nothing is left to stop, so the run keeps the outcome it reached, and `RunEnded` and the result carry the error beside it in `JournalError`. The journal has no end recorded.
 
 ```csharp
-try
+var result = await Runner.RunAsync(graph, options, cancellationToken);
+if (result.JournalError is { } failed)
 {
-    var result = await Runner.RunAsync(graph, options, cancellationToken);
-    return result.Outcome.ToExitCode();
+    Console.Error.WriteLine($"The journal could not be written: {failed.Message}");
 }
-catch (JournalWriteException failed)
-{
-    Console.Error.WriteLine($"{failed.Message} ({failed.Snapshot.Counts[NodeStatus.Succeeded]} tasks had succeeded)");
-    return 3;
-}
+
+return result.Outcome.ToExitCode();
 ```
 
 The journal has no end recorded, so <xref:Dagline.Journals.ListAsync*> lists it as `Died`. Once the cause is fixed it can be continued like any other, keeping every success that was recorded before the failure.
@@ -350,8 +348,9 @@ Dagline never sets the exit code of your process. <xref:Dagline.RunOutcomeExtens
 | Complete | 0 |
 | Incomplete | 1 |
 | Stopped | 2 |
+| Unrecorded | 3 |
 
-The mapping is stable: these three codes keep their meaning in every release, so a script that calls your app can rely on them. See [Compatibility](compatibility.md).
+The mapping is stable: these codes keep their meaning in every release, so a script that calls your app can rely on them. Unrecorded was added after 0.1.0, as code 3, and 0, 1 and 2 kept their meaning. See [Compatibility](compatibility.md).
 
 ## Errors before a run starts
 
@@ -362,7 +361,8 @@ The mapping is stable: these three codes keep their meaning in every release, so
 - `MaxRunningTasks` is below 1,
 - a size in `Limits` is below 1,
 - the graph names a limit that `Limits` gives no size,
-- the grace period is below zero or above about 49.7 days (`uint.MaxValue - 1` milliseconds), and is not `Timeout.InfiniteTimeSpan`.
+- the grace period is below zero or above about 49.7 days (`uint.MaxValue - 1` milliseconds), and is not `Timeout.InfiniteTimeSpan`,
+- the reporter wait is below zero or above about 49.7 days, and is not `Timeout.InfiniteTimeSpan`.
 
 Its message lists every problem, one to a line, so you can fix them all in one pass:
 

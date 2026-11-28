@@ -28,8 +28,9 @@ Dagline is before 1.0. It runs real work and is tested on every change, but its 
 | Complete | 0 |
 | Incomplete | 1 |
 | Stopped | 2 |
+| Unrecorded | 3 |
 
-A script that calls an app which returns `ToExitCode()` can rely on these three codes in every release. Dagline never sets the exit code of your process itself: the mapping is yours to use or not. See [Exit codes](running-and-stopping.md#exit-codes).
+A script that calls an app which returns `ToExitCode()` can rely on these codes in every release. Unrecorded, the run outcome of a run whose journal could no longer be written, was added after 0.1.0 as code 3, and 0, 1 and 2 kept their meaning. Dagline never sets the exit code of your process itself: the mapping is yours to use or not. See [Exit codes](running-and-stopping.md#exit-codes).
 
 ### Journals
 

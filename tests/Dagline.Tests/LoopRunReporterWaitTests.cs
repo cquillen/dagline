@@ -221,7 +221,7 @@ public class LoopRunReporterWaitTests
     {
         var clock = new FakeTimeProvider(_runStart);
         var slow = new HeldReporter("run ended: complete");
-        var run = ScriptedDriver.Start(Chain(), Options(clock, slow).WithReporterWait(Timeout.InfiniteTimeSpan));
+        var run = ScriptedDriver.Start(Chain(), Options(clock, slow) with { ReporterWait = Timeout.InfiniteTimeSpan });
         run.Pump();
 
         clock.Advance(TimeSpan.FromDays(400));
@@ -294,6 +294,76 @@ public class LoopRunReporterWaitTests
         blockedToken.IsCancellationRequested.ShouldBeTrue();
     }
 
+    [Test]
+    [Arguments(-2)]
+    [Arguments(-60_000)]
+    public void A_negative_reporter_wait_is_one_more_problem_refused_before_the_run_exists(int milliseconds)
+    {
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+        var reporterWait = TimeSpan.FromMilliseconds(milliseconds);
+        var options = new RunOptions
+        {
+            Journal = Journal.None,
+            MaxRunningTasks = 0,
+            GracePeriod = TimeSpan.FromSeconds(-1),
+            ReporterWait = reporterWait,
+            Reporters = [reporter],
+        };
+
+        var exception = Should.Throw<RunConfigurationException>(() => Runner.Start(builder.Build(), options));
+
+        exception.Message.Split(Environment.NewLine).ShouldBe(
+        [
+            "The options cannot be used to run the graph:",
+            "- MaxRunningTasks is 0. It must be at least 1.",
+            "- The grace period is -00:00:01. It must be zero or more, or Timeout.InfiniteTimeSpan to wait with no limit.",
+            $"- The reporter wait is {reporterWait}. It must be zero or more, or Timeout.InfiniteTimeSpan to wait with no limit.",
+        ]);
+        reporter.Events.ShouldBeEmpty();
+    }
+
+    [Test]
+    [Arguments(42_949_672_940_001L)]
+    [Arguments(long.MaxValue)]
+    public void A_reporter_wait_beyond_the_timer_maximum_is_refused_before_the_run_exists(long ticks)
+    {
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => Task.CompletedTask);
+        var reporterWait = TimeSpan.FromTicks(ticks);
+        var options = new RunOptions { Journal = Journal.None, ReporterWait = reporterWait };
+
+        var exception = Should.Throw<RunConfigurationException>(() => Runner.Start(builder.Build(), options));
+
+        exception.Message.Split(Environment.NewLine).ShouldBe(
+        [
+            "The options cannot be used to run the graph:",
+            $"- The reporter wait is {reporterWait}. It must be at most 49.17:02:47.2940000, about 49.7 days, or Timeout.InfiniteTimeSpan to wait with no limit.",
+        ]);
+    }
+
+    [Test]
+    public async Task A_reporter_wait_of_zero_drops_a_reporter_still_busy_as_soon_as_the_run_s_end_is_queued()
+    {
+        var clock = new FakeTimeProvider(_runStart);
+        var unpumped = new RecordingReporter();
+        var run = ScriptedDriver.Start(Chain(), Options(clock, unpumped) with { ReporterWait = TimeSpan.Zero });
+
+        while (run.PumpLoop() + run.PumpBodies() > 0)
+        {
+        }
+
+        run.Result.IsCompleted.ShouldBeTrue();
+        var result = await run.Result;
+        result.ReporterErrors.ShouldHaveSingleItem().Reporter.ShouldBeSameAs(unpumped);
+        clock.GetUtcNow().ShouldBe(_runStart);
+    }
+
+    [Test]
+    public void The_reporter_wait_is_30_seconds_by_default()
+        => new RunOptions { Journal = Journal.None }.ReporterWait.ShouldBe(TimeSpan.FromSeconds(30));
+
     private static Graph Chain(PausedBody? prepare = null)
     {
         var builder = new GraphBuilder();
@@ -303,7 +373,7 @@ public class LoopRunReporterWaitTests
     }
 
     private static RunOptions Options(FakeTimeProvider clock, params IReporter[] reporters)
-        => new RunOptions { Journal = Journal.None, Reporters = reporters, TimeProvider = clock }.WithReporterWait(_reporterWait);
+        => new RunOptions { Journal = Journal.None, Reporters = reporters, TimeProvider = clock, ReporterWait = _reporterWait };
 
     /// <summary>
     /// Keeps a line and the token for every event it is handed, and holds the call for the event whose line is
