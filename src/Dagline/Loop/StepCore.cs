@@ -57,10 +57,7 @@ internal sealed class StepCore
     // Reused at every settle, so working out what follows from it allocates no collection of its own.
     private readonly List<BuiltTask> _becomingReady = [];
     private readonly List<BuiltTask> _blocked = [];
-    private readonly Queue<int> _unvisited = new();
-
-    // The nodes a failure has reached, which cannot succeed in this run: a failed or blocked task, and every group that holds one.
-    private readonly bool[] _cannotSucceed;
+    private readonly Func<BuiltTask, bool> _isPending;
 
     // What the write under way holds back: the events it records, whose changes are already closed, the tasks it settles, and the
     // tasks whose bodies start once it lands.
@@ -91,7 +88,7 @@ internal sealed class StepCore
         _slots = new Slots(graph.LimitNames, settings.Sizes);
         _held = new HeldTasks(graph, _slots);
         _dependencies = new UnmetDependencies(graph);
-        _cannotSucceed = new bool[graph.Nodes.Length];
+        _isPending = task => InstanceOf(task).Status is NodeStatus.Pending;
         _instances = new TaskInstance?[graph.Nodes.Length];
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
@@ -266,26 +263,13 @@ internal sealed class StepCore
     }
 
     /// <summary>
-    /// Blocks every pending task that requires a task that has just failed: directly, through a group that holds it, or through a
-    /// task that this blocks, in declaration order. Each records the failed task as its cause, and its settle is held for the
-    /// write that records the failure. A node an earlier failure reached is passed over, with everything that requires it.
+    /// Blocks every pending task the failure of <paramref name="failed"/> reaches, as <see cref="UnmetDependencies.Failed"/> finds
+    /// them, in declaration order. Each records the failed task as its cause, and its settle is held for the write that records the
+    /// failure.
     /// </summary>
     private void Block(BuiltTask failed, List<JournalEntry> entries)
     {
-        Reach(failed);
-        while (_unvisited.TryDequeue(out var position))
-        {
-            foreach (var dependent in _dependencies.RequiringOf(position))
-            {
-                if (!_cannotSucceed[dependent.Position] && InstanceOf(dependent).Status is NodeStatus.Pending)
-                {
-                    _blocked.Add(dependent);
-                    Reach(dependent);
-                }
-            }
-        }
-
-        _blocked.Sort(static (one, other) => one.Position.CompareTo(other.Position));
+        _dependencies.Failed(failed, _isPending, _blocked);
         foreach (var task in _blocked)
         {
             ApplyAndHold(task, InstanceOf(task).Block(failed.Path, _now), entries);
@@ -293,25 +277,6 @@ internal sealed class StepCore
         }
 
         _blocked.Clear();
-    }
-
-    /// <summary>Marks a task that cannot succeed, and each group that holds it, as reached, and queues each not reached before.</summary>
-    private void Reach(BuiltTask task)
-    {
-        ReachNode(task.Position);
-        foreach (var group in task.Groups)
-        {
-            ReachNode(group);
-        }
-
-        void ReachNode(int position)
-        {
-            if (!_cannotSucceed[position])
-            {
-                _cannotSucceed[position] = true;
-                _unvisited.Enqueue(position);
-            }
-        }
     }
 
     /// <summary>
