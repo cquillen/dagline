@@ -551,8 +551,8 @@ internal sealed class RunSteps
     /// since every task holds a slot of the max running tasks and none after that point could start.
     /// </summary>
     /// <remarks>
-    /// A ready task a full limit turned away is held, and tried again only once every limit it holds has room, merged by position
-    /// with the other ready tasks, as <see cref="HeldTasks"/> says. That starts the same tasks in the same order as trying it each
+    /// A ready task a full limit turned away is held, and tried again only once a limit it holds has been given back and every
+    /// limit it holds has room, merged by position with the other ready tasks, as <see cref="HeldTasks"/> says. That starts the same tasks in the same order as trying it each
     /// time: a task one of whose limits is full would be turned away again.
     /// </remarks>
     private void StartWhatFits(DateTimeOffset now)
@@ -585,7 +585,7 @@ internal sealed class RunSteps
             }
             else
             {
-                _held.Hold(task);
+                _held.Hold(task, _slots.FullLimitOf(task));
             }
         }
 

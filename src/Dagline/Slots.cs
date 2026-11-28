@@ -76,7 +76,7 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
             return SlotsAnswer.MaxRunningTasksReached;
         }
 
-        if (AnyIsFull(task.HeldLimits))
+        if (FullLimitAmong(task.HeldLimits.AsSpan()) is not null)
         {
             return SlotsAnswer.LimitFull;
         }
@@ -92,37 +92,29 @@ internal sealed class Slots(ImmutableArray<LimitName> limitNames, LimitSizes siz
         return SlotsAnswer.Took;
     }
 
+    /// <summary>
+    /// The first of <paramref name="limits"/> that is full, each given as its position among <see cref="Graph.LimitNames"/>,
+    /// or <see langword="null"/> when every one has room.
+    /// </summary>
     // A loop, not LINQ: the ready tasks are tried after every settle, and a lambda over the slots would be allocated on each try.
-    private bool AnyIsFull(ImmutableArray<int> limits)
+    public int? FullLimitAmong(ReadOnlySpan<int> limits)
     {
         foreach (var limit in limits)
         {
-            if (IsFull(limit))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>Whether every slot of a limit is in use, given its index in <see cref="Graph.LimitNames"/>.</summary>
-    public bool IsFull(int limit) => LimitUse.AreAllHeld(sizes.Limits[limit], _inUse[limit]);
-
-    /// <summary>The first limit the task holds that is full, which <see cref="Take"/> answered <see cref="SlotsAnswer.LimitFull"/> for.</summary>
-    /// <exception cref="InvalidOperationException">None of the limits the task holds is full.</exception>
-    public int FullLimitOf(BuiltTask task)
-    {
-        foreach (var limit in task.HeldLimits)
-        {
-            if (IsFull(limit))
+            if (LimitUse.AreAllHeld(sizes.Limits[limit], _inUse[limit]))
             {
                 return limit;
             }
         }
 
-        throw new InvalidOperationException($"No limit the task '{task.Path}' holds is full.");
+        return null;
     }
+
+    /// <summary>The first limit the task holds that is full, which <see cref="Take"/> answered <see cref="SlotsAnswer.LimitFull"/> for.</summary>
+    /// <exception cref="InvalidOperationException">None of the limits the task holds is full.</exception>
+    public int FullLimitOf(BuiltTask task)
+        => FullLimitAmong(task.HeldLimits.AsSpan())
+            ?? throw new InvalidOperationException($"No limit the task '{task.Path}' holds is full.");
 
     /// <summary>Gives back the slots a task took when it started.</summary>
     public void GiveBack(BuiltTask task)
