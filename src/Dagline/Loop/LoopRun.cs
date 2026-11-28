@@ -30,14 +30,43 @@ internal sealed class LoopRun
     public Inbox Inbox => _loop.Inbox;
 
     /// <summary>
+    /// Asks the run to drain: it starts nothing new and lets its running tasks finish, untold, however long they take. Asked again,
+    /// during a stop, or once the run has ended, it changes nothing. It posts to the inbox and returns at once.
+    /// </summary>
+    public void Drain() => _loop.Drain();
+
+    /// <summary>
+    /// Asks the run to stop, as cancelling its token does, and the two are one request: it starts nothing new, signals the tasks'
+    /// token and waits the grace period, then lets go of the tasks still running. A drain may come before it. Asked again, or once
+    /// the run has ended, it changes nothing. It posts to the inbox and returns at once.
+    /// </summary>
+    public void Stop() => _loop.Stop(StopRequester.App);
+
+    /// <summary>
     /// Starts a run of <paramref name="graph"/> on the new engine, with <paramref name="host"/> to run its loop, its bodies and its
     /// reporters. The options are checked and the journal opened here, as <see cref="Runner.RunAsync"/> does, so each throws at the
     /// call before anything has happened. The run's first turn is the host's to run.
     /// </summary>
+    /// <param name="graph">The graph to run.</param>
+    /// <param name="options">The options of the run.</param>
+    /// <param name="host">What runs the loop, the bodies and the reporters.</param>
+    /// <param name="drained">
+    /// Whether a drain was already asked for, which goes with the start as a cancelled token does. Only the engine switch passes it,
+    /// for a drain signal already requested, until the cutover removes the signal.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// The app's token: cancelling it is a stop, as <see cref="Stop"/> is. One already cancelled reaches the run with its start, so
+    /// the tasks become ready and none starts. Cancelled after the run has ended, it does nothing.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="RunConfigurationException">The options do not fit the graph.</exception>
-    public static LoopRun Start(Graph graph, RunOptions options, IRunHost host)
+    public static LoopRun Start(
+        Graph graph,
+        RunOptions options,
+        IRunHost host,
+        bool drained = false,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(options);
@@ -49,7 +78,7 @@ internal sealed class LoopRun
         var journal = options.Journal.Open(settings.TimeProvider);
 
         var run = new LoopRun(new RunLoop(graph, settings, reporters, journal, host));
-        run._loop.Start();
+        run._loop.Start(drained, cancellationToken);
         return run;
     }
 }

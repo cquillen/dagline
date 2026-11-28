@@ -3,8 +3,10 @@
 Dagline.Spectre.Tests/ChoosingTests
 Dagline.Spectre.Tests/DrawingTests
 Dagline.Spectre.Tests/SmallTerminalTests
+Dagline.Spectre.Tests/StopBannerTests
 Dagline.Tests/ArgumentTests
 Dagline.Tests/BlockingTests
+Dagline.Tests/ConsoleStopTests
 Dagline.Tests/DependencyTests
 Dagline.Tests/FailureSummaryTests
 Dagline.Tests/GraphTests
@@ -15,6 +17,7 @@ Dagline.Tests/JournalDeletingTests
 Dagline.Tests/LimitTests
 Dagline.Tests/LimitUseTests
 Dagline.Tests/LoopReportTests
+Dagline.Tests/LoopRunEndingEarlyTests
 Dagline.Tests/LoopRunTests
 Dagline.Tests/MaxRunningTasksTests
 Dagline.Tests/MessageAndDetailTests
@@ -22,6 +25,7 @@ Dagline.Tests/ProgressTests
 Dagline.Tests/ReportedFailureTests
 Dagline.Tests/ReporterTests
 Dagline.Tests/RunConfigurationTests
+Dagline.Tests/RunOutcomeTests
 Dagline.Tests/RunTests
 Dagline.Tests/RunTimeTests
 Dagline.Tests/SchedulingTests
@@ -30,6 +34,8 @@ Dagline.Tests/SlotTryTests
 Dagline.Tests/StatusOfTests
 Dagline.Tests/StepCoreEffectTests
 Dagline.Tests/StepOrderTests
+Dagline.Tests/StopAndEndEventTests
 Dagline.Tests/TaskContextTests
+Dagline.Tests/WaitUntilAsyncTests
 Dagline.Tests/WaitingTests
 Dagline.Tests/WarningTests

@@ -18,6 +18,19 @@ internal enum EffectKind
     /// <summary>Closes the journal and lets go of it, so that a later run can continue it. It comes before the run's end is published.</summary>
     CloseJournal,
 
+    /// <summary>
+    /// Signals the token every task sees, through the host, so that no callback a body registered on it runs on the loop. It comes
+    /// before the stop is published, so that the tasks' token is signalled before the run's result is available.
+    /// </summary>
+    SignalTheTasks,
+
+    /// <summary>
+    /// Starts the timer of the run's grace period on the run's clock, whose end reaches the loop as
+    /// <see cref="InputKind.GracePeriodOver"/>. It comes before the stop is published, so that a reporter that hears of the stop
+    /// finds the grace period already running.
+    /// </summary>
+    StartGracePeriod,
+
     /// <summary>The run has ended with a run outcome: the loop waits for its reporters, then returns its result.</summary>
     EndRun,
 
@@ -52,6 +65,9 @@ internal readonly record struct Effect(
     public static Effect CloseJournal { get; } = new(EffectKind.CloseJournal);
 
     public static Effect MarkCurrentOutOfDate { get; } = new(EffectKind.MarkCurrentOutOfDate);
+    public static Effect SignalTheTasks { get; } = new(EffectKind.SignalTheTasks);
+
+    public static Effect StartGracePeriod { get; } = new(EffectKind.StartGracePeriod);
 
     public static Effect Record(IReadOnlyList<JournalEntry> entries, JournalFlush flush) => new(EffectKind.Record, Entries: entries, Flush: flush);
 

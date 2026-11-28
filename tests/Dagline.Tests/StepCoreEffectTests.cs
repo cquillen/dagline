@@ -134,6 +134,50 @@ public class StepCoreEffectTests
         core.Apply(Input.WaitClosed(prepare), _now).ShouldBeEmpty();
     }
 
+    [Test]
+    public void A_stop_signals_the_tasks_and_starts_the_grace_period_before_the_stop_is_published()
+    {
+        var (graph, _, _) = Chain();
+        var core = new StepCore(graph, Settings(graph, TimeSpan.FromMinutes(1)), journal: null, new UnreadSource());
+        Described(core, core.Apply(Input.Start, _now));
+
+        Described(core, core.Apply(Input.Stop(StopRequester.App), _now)).ShouldBe(
+        [
+            "signal the tasks",
+            "start the grace period",
+            "publish stop requested",
+        ]);
+    }
+
+    [Test]
+    public void A_stop_with_a_zero_grace_period_publishes_the_grace_end_before_the_write_of_the_tasks_it_lets_go_of()
+    {
+        var (graph, _, _) = Chain();
+        var core = new StepCore(graph, Settings(graph, TimeSpan.Zero), JournalFold.Of(new HeaderEntry(1, "journal", _now), []), new UnreadSource());
+        core.Apply(Input.Start, _now);
+        core.Apply(Input.Written(null), default);
+        Described(core, core.Apply(Input.Written(null), default));
+
+        Described(core, core.Apply(Input.Stop(StopRequester.App), _now)).ShouldBe(
+        [
+            "signal the tasks",
+            "publish stop requested",
+            "publish grace period over",
+            "record settled prepare, flushed",
+        ]);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(
+        [
+            "publish prepare: running -> cancelled",
+            "record run ended, flushed",
+        ]);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(
+        [
+            "close the journal",
+            "publish run ended: stopped",
+            "end the run: stopped",
+        ]);
+    }
+
     private static (Graph Graph, BuiltTask Prepare, BuiltTask Load) Chain()
     {
         var builder = new GraphBuilder();
@@ -144,6 +188,9 @@ public class StepCoreEffectTests
     }
 
     private static RunSettings Settings(Graph graph) => RunSettings.From(graph, new RunOptions { Journal = Journal.None });
+
+    private static RunSettings Settings(Graph graph, TimeSpan gracePeriod)
+        => RunSettings.From(graph, new RunOptions { Journal = Journal.None, GracePeriod = gracePeriod });
 
     /// <summary>
     /// Each effect in words. The snapshot of each event is built as the loop builds it, in order, since each is built on the one
@@ -166,6 +213,8 @@ public class StepCoreEffectTests
                 EffectKind.Publish => $"publish {EventLine.Describe(effect.Event!)}",
                 EffectKind.StartBody => $"start {effect.Task!.Path}",
                 EffectKind.CloseJournal => "close the journal",
+                EffectKind.SignalTheTasks => "signal the tasks",
+                EffectKind.StartGracePeriod => "start the grace period",
                 EffectKind.EndRun => $"end the run: {effect.Outcome.ToString().ToLowerInvariant()}",
                 EffectKind.MarkCurrentOutOfDate => "mark the current snapshot out of date",
                 _ => effect.Kind.ToString(),

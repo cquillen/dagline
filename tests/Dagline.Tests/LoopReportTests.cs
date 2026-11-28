@@ -350,4 +350,32 @@ public class LoopReportTests
             (runStart.AddSeconds(100), false, runStart.AddSeconds(2)),
         ]);
     }
+
+    [Test]
+    public async Task Progress_is_frozen_when_the_run_lets_go_of_its_task_and_nothing_its_body_reports_afterwards_shows()
+    {
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        var loadTask = builder.Task("load", load.Body);
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, GracePeriod = TimeSpan.Zero });
+        run.Pump();
+        var context = await load.Started;
+
+        context.SetCount(17, 40);
+        run.Stop();
+        run.Pump();
+        var letGo = run.Current[loadTask.Path];
+        context.SetCount(18, 40);
+        context.AddWarning("a late warning");
+        context.SetMessage("a late message");
+        run.Pump();
+        var afterTheLateReports = run.Current[loadTask.Path];
+        load.Release();
+        var result = await run.Finish();
+
+        letGo.Status.ShouldBe(NodeStatus.Cancelled);
+        letGo.Count.ShouldBe(17);
+        afterTheLateReports.ShouldBeSameAs(letGo);
+        result.Snapshot[loadTask.Path].ShouldBeSameAs(letGo);
+    }
 }
