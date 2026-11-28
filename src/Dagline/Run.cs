@@ -86,10 +86,15 @@ public sealed class Run : ISnapshotSource
     internal Inbox Inbox => _loop.Inbox;
 
     /// <summary>
-    /// Starts a run of <paramref name="graph"/> with <paramref name="host"/> to run its loop, its bodies and its reporters. The
-    /// options are checked and the journal opened here, so each throws at the call before anything has happened. The run's first
-    /// turn is the host's to run.
+    /// Starts a run of <paramref name="graph"/> with <paramref name="host"/> to run its loop, its bodies and its reporters. It is
+    /// for <c>Dagline.Testing</c>, whose scripted run passes a host that a test pumps: an app calls <see cref="Runner.Start"/>,
+    /// which is this on a host of Dagline's own that does everything on the thread pool.
     /// </summary>
+    /// <remarks>
+    /// The options are checked and the journal opened here, as for <see cref="Runner.Start"/>, so each throws at the call before
+    /// anything has happened. Nothing of the run has happened when this returns: its first turn is the host's to run, and
+    /// <see cref="Current"/> is the snapshot of a run not yet started.
+    /// </remarks>
     /// <param name="graph">The graph to run.</param>
     /// <param name="options">The options of the run.</param>
     /// <param name="host">What runs the loop, the bodies and the reporters.</param>
@@ -97,13 +102,17 @@ public sealed class Run : ISnapshotSource
     /// The app's token: cancelling it is a stop, as <see cref="Stop"/> is. One already cancelled reaches the run with its start, so
     /// the tasks become ready and none starts. Cancelled after the run has ended, it does nothing.
     /// </param>
-    /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="graph"/>, <paramref name="options"/> or <paramref name="host"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="RunConfigurationException">The options do not fit the graph.</exception>
-    internal static Run Start(Graph graph, RunOptions options, IRunHost host, CancellationToken cancellationToken)
+    /// <exception cref="DaglineException">The journal chosen in <paramref name="options"/> cannot be opened or read, with the exceptions <see cref="Runner.Start"/> names.</exception>
+    public static Run Start(Graph graph, RunOptions options, IRunHost host, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(host);
 
         IReporter[] reporters = [.. options.Reporters];
         Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));

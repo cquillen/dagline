@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Dagline;
+namespace Dagline.Testing;
 
 /// <summary>
 /// A host that runs nothing until it is told to: the loop's turns, the task bodies with whatever their awaits resume, and the
@@ -18,29 +18,37 @@ namespace Dagline;
 /// It signals a token inline, so the callbacks registered on it, and whatever they resume, run on the pumping thread; and the
 /// tasks the loop completes resume their awaiters inline, on the same thread.
 /// </para>
-/// <para>Queuing is safe from any thread. Pumping is for one thread at a time.</para>
+/// <para>
+/// Queuing is safe from any thread, and rings the doorbell it is given, so that a pump waiting in real time wakes. Pumping is for
+/// one thread at a time.
+/// </para>
 /// </remarks>
 internal sealed class ManualHost : IRunHost
 {
     private readonly ConcurrentQueue<Action> _loopTurns = new();
     private readonly ConcurrentQueue<Action> _bodyWork = new();
     private readonly ConcurrentQueue<Action> _reporterWork = new();
+    private readonly Doorbell _doorbell;
     private readonly QueueContext _bodyContext;
     private readonly QueueContext _reporterContext;
 
-    public ManualHost()
+    public ManualHost(Doorbell doorbell)
     {
-        _bodyContext = new QueueContext(_bodyWork);
-        _reporterContext = new QueueContext(_reporterWork);
+        _doorbell = doorbell;
+        _bodyContext = new QueueContext(_bodyWork, doorbell);
+        _reporterContext = new QueueContext(_reporterWork, doorbell);
     }
+
+    /// <summary>Whether anything is queued: a loop turn, a body's work or a reporter's delivery.</summary>
+    public bool HasWork => !_loopTurns.IsEmpty || !_bodyWork.IsEmpty || !_reporterWork.IsEmpty;
 
     public TaskCreationOptions CompletionOptions => TaskCreationOptions.None;
 
-    public void RunLoop(Action turn) => _loopTurns.Enqueue(turn);
+    public void RunLoop(Action turn) => Queue(_loopTurns, turn, _doorbell);
 
-    public void StartBody(Func<Task> body) => _bodyWork.Enqueue(() => _ = body());
+    public void StartBody(Func<Task> body) => Queue(_bodyWork, () => _ = body(), _doorbell);
 
-    public void DeliverToReporter(Func<Task> delivery) => _reporterWork.Enqueue(() => _ = delivery());
+    public void DeliverToReporter(Func<Task> delivery) => Queue(_reporterWork, () => _ = delivery(), _doorbell);
 
     public void Signal(CancellationTokenSource source)
     {
@@ -82,6 +90,12 @@ internal sealed class ManualHost : IRunHost
         return total;
     }
 
+    private static void Queue(ConcurrentQueue<Action> queue, Action work, Doorbell doorbell)
+    {
+        queue.Enqueue(work);
+        doorbell.Ring();
+    }
+
     private static int Run(ConcurrentQueue<Action> queue, SynchronizationContext? context)
     {
         var ran = 0;
@@ -104,9 +118,9 @@ internal sealed class ManualHost : IRunHost
     }
 
     /// <summary>A context whose posts go to one of the host's queues, so that what resumes on it waits for that queue's pump.</summary>
-    private sealed class QueueContext(ConcurrentQueue<Action> queue) : SynchronizationContext
+    private sealed class QueueContext(ConcurrentQueue<Action> queue, Doorbell doorbell) : SynchronizationContext
     {
-        public override void Post(SendOrPostCallback d, object? state) => queue.Enqueue(() => d(state));
+        public override void Post(SendOrPostCallback d, object? state) => Queue(queue, () => d(state), doorbell);
 
         // A send waits for the callback, and nothing runs until the test pumps: a send from the pumping thread runs it in place.
         public override void Send(SendOrPostCallback d, object? state) => d(state);

@@ -39,11 +39,18 @@ Dagline.JournalDurability.HandedToOperatingSystem = 1 -> Dagline.JournalDurabili
 static Dagline.Journal.Continue(string! directory, string! id, Dagline.JournalDurability durability = Dagline.JournalDurability.FlushedToDisk) -> Dagline.Journal!
 static Dagline.Journal.New(string! directory, string? description = null, Dagline.JournalDurability durability = Dagline.JournalDurability.FlushedToDisk) -> Dagline.Journal!
 *REMOVED*static Dagline.ConsoleStop.Hook() -> Dagline.ConsoleStop!
+Dagline.IRunHost
+Dagline.IRunHost.CompletionOptions.get -> System.Threading.Tasks.TaskCreationOptions
+Dagline.IRunHost.DeliverToReporter(System.Func<System.Threading.Tasks.Task!>! delivery) -> void
+Dagline.IRunHost.RunLoop(System.Action! turn) -> void
+Dagline.IRunHost.Signal(System.Threading.CancellationTokenSource! source) -> void
+Dagline.IRunHost.StartBody(System.Func<System.Threading.Tasks.Task!>! body) -> void
 Dagline.Run
 Dagline.Run.Current.get -> Dagline.Snapshot!
 Dagline.Run.Drain() -> void
 Dagline.Run.Result.get -> System.Threading.Tasks.Task<Dagline.RunResult!>!
 Dagline.Run.Stop() -> void
 static Dagline.ConsoleStop.Hook(Dagline.Run! run) -> Dagline.ConsoleStop!
+static Dagline.Run.Start(Dagline.Graph! graph, Dagline.RunOptions! options, Dagline.IRunHost! host, System.Threading.CancellationToken cancellationToken) -> Dagline.Run!
 static Dagline.Runner.RunAsync(Dagline.Graph! graph, Dagline.RunOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.RunResult!>!
 static Dagline.Runner.Start(Dagline.Graph! graph, Dagline.RunOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Dagline.Run!

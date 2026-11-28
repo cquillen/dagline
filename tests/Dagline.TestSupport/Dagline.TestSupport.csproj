@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dagline\Dagline.csproj" />
+    <ProjectReference Include="..\..\src\Dagline.Testing\Dagline.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

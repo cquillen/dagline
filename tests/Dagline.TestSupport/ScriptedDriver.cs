@@ -1,3 +1,5 @@
+using Dagline.Testing;
+
 namespace Dagline.TestSupport;
 
 /// <summary>
@@ -6,20 +8,24 @@ namespace Dagline.TestSupport;
 /// <c>var result = await ScriptedDriver.Start(graph, options).Finish();</c>
 /// </summary>
 /// <remarks>
-/// Pumping until nothing is queued means only that the host's queues are empty. A body is exact only when everything it awaits is
-/// completed by the test or by the run, or resumes on the context it started on: an await that leaves for the thread pool leaves
-/// the pump. It stays here until the testing package has a scripted run of its own (#155).
+/// It is the testing package's <see cref="ScriptedRun"/>, with what only Dagline's own tests may see of the run beside it, and
+/// keeps the shape the scripted tests were written against: <see cref="Finish"/> pumps until nothing is queued and gives the
+/// result as a task. The limits of a scripted run are <see cref="ScriptedRun"/>'s. A run whose options keep the default clock is
+/// on the scripted run's own clock, which only <see cref="Scripted"/> moves.
 /// </remarks>
 public sealed class ScriptedDriver
 {
-    private readonly ManualHost _host;
+    private readonly ScriptedRun _scripted;
     private readonly Run _run;
 
-    private ScriptedDriver(ManualHost host, Run run)
+    private ScriptedDriver(ScriptedRun scripted)
     {
-        _host = host;
-        _run = run;
+        _scripted = scripted;
+        _run = scripted.Run;
     }
+
+    /// <summary>The scripted run underneath, for its clock and its real-time pumps.</summary>
+    public ScriptedRun Scripted => _scripted;
 
     /// <summary>The run, as an app holds it.</summary>
     public Run Run => _run;
@@ -47,8 +53,7 @@ public sealed class ScriptedDriver
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     public static ScriptedDriver Start(Graph graph, RunOptions options, CancellationToken cancellationToken = default)
     {
-        var host = new ManualHost();
-        return new ScriptedDriver(host, Run.Start(graph, options, host, cancellationToken));
+        return new ScriptedDriver(ScriptedRun.Start(graph, options, cancellationToken));
     }
 
     /// <summary>Asks the run to drain. It is applied when the test next pumps the loop.</summary>
@@ -59,19 +64,19 @@ public sealed class ScriptedDriver
 
     /// <summary>Runs everything queued, and everything that queues meanwhile, until nothing is queued.</summary>
     /// <returns>How many items ran.</returns>
-    public int Pump() => _host.Pump();
+    public int Pump() => _scripted.Pump();
 
     /// <summary>Runs the loop's queued turns only.</summary>
     /// <returns>How many turns ran.</returns>
-    public int PumpLoop() => _host.PumpLoop();
+    public int PumpLoop() => _scripted.PumpLoop();
 
     /// <summary>Runs the queued body starts and body continuations only.</summary>
     /// <returns>How many items ran.</returns>
-    public int PumpBodies() => _host.PumpBodies();
+    public int PumpBodies() => _scripted.PumpBodies();
 
     /// <summary>Runs the queued reporter deliveries only.</summary>
     /// <returns>How many items ran.</returns>
-    public int PumpReporters() => _host.PumpReporters();
+    public int PumpReporters() => _scripted.PumpReporters();
 
     /// <summary>Pumps until nothing is queued, and gives the result, which must then be complete.</summary>
     /// <exception cref="InvalidOperationException">
