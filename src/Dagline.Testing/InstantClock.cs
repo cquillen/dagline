@@ -25,7 +25,9 @@ namespace Dagline.Testing;
 /// as the thread pool runs its timer, moving the time forward by the wait: whether a reporter is still busy by then, and so dropped,
 /// is a race. Set the reporter wait to <see cref="Timeout.InfiniteTimeSpan"/> to let every reporter finish. A run with no busy
 /// reporter at its end makes no timer for it, and once the guard is passed a run that does need one still returns its result, each
-/// reporter dropped then carrying the <see cref="ClockGuardException"/>.
+/// reporter dropped then carrying the <see cref="ClockGuardException"/>. The grace period after a stop is measured on the clock
+/// too: a limited one runs out as soon as the thread pool runs its timer, and once the guard is passed a stop with tasks still
+/// running ends the grace period at once, the run letting go of them, and still returns its result.
 /// </para>
 /// <para>
 /// The clock is safe to use from several threads at once.

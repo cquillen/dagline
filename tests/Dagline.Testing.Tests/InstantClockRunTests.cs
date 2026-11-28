@@ -1,3 +1,5 @@
+using Dagline.TestSupport;
+
 namespace Dagline.Testing.Tests;
 
 public class InstantClockRunTests
@@ -72,6 +74,47 @@ public class InstantClockRunTests
         var error = result.ReporterErrors.ShouldHaveSingleItem();
         error.Reporter.ShouldBeSameAs(reporter);
         error.Exception.ShouldBeAssignableTo<OperationCanceledException>().InnerException.ShouldBeOfType<ClockGuardException>();
+    }
+
+    [Test]
+    public async Task A_stop_on_a_clock_past_its_guard_ends_the_grace_period_at_once_and_lets_go_of_the_task_still_running()
+    {
+        var clock = new InstantClock(TimeSpan.FromDays(1));
+        var pastTheGuard = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var neverReleased = new TaskCompletionSource();
+        var builder = new GraphBuilder();
+        builder.Task("long", async context =>
+        {
+            await Task.Delay(TimeSpan.FromDays(2), context.TimeProvider);
+            pastTheGuard.SetResult();
+        });
+        var stubborn = builder.Task("stubborn", async _ =>
+        {
+            started.SetResult();
+            await neverReleased.Task;
+        });
+        var recorder = new RecordingReporter();
+        var run = Runner.Start(
+            builder.Build(),
+            new RunOptions
+            {
+                Journal = Journal.None,
+                TimeProvider = clock,
+                Reporters = [recorder],
+                ReporterWait = Timeout.InfiniteTimeSpan,
+            });
+        await Task.WhenAll(pastTheGuard.Task, started.Task).WaitAsync(TimeSpan.FromSeconds(30));
+
+        run.Stop();
+        var result = await run.Result.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result.Outcome.ShouldBe(RunOutcome.Stopped);
+        result.ReporterErrors.ShouldBeEmpty();
+        result.Snapshot[stubborn.Path].Status.ShouldBe(NodeStatus.Cancelled);
+        result.Snapshot[stubborn.Path].Message.ShouldBe("still running when the run stopped waiting");
+        recorder.Events.Where(e => e is StopRequested or GraceEnded).Select(e => e.GetType())
+            .ShouldBe([typeof(StopRequested), typeof(GraceEnded)]);
     }
 
     [Test]

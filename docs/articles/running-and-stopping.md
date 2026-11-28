@@ -277,7 +277,7 @@ The wait ends in one of two ways:
 - **The last running task ends.** The run ends at once, before the grace period is over.
 - **The grace period runs out** with tasks still running.
 
-Nothing else ends it: cancelling the token again and requesting a drain change nothing. An operator who cannot wait kills the process, which the journal survives.
+Nothing else ends it: cancelling the token again and requesting a drain change nothing. A clock that refuses to make the grace period's timer, as `InstantClock` from `Dagline.Testing` does once it is past its guard, makes the grace period run out at once. An operator who cannot wait kills the process, which the journal survives.
 
 When the grace period runs out, the run publishes a <xref:Dagline.GraceEnded> event. Then each task still running is recorded as **cancelled**, in declaration order, with the message `still running when the run stopped waiting`, and the run **lets go** of it: the run's result completes while that body may still be running, and nothing the body does afterwards changes anything. [Writing tasks](writing-tasks.md#a-task-the-run-has-let-go-of) says what such a task sees. A task that ignores cancellation therefore cannot hang your process.
 
