@@ -78,7 +78,7 @@ public sealed class JournalWriteFailure
     {
         ArgumentNullException.ThrowIfNull(journal);
 
-        return journal.WithFailingWrite(FailureOf);
+        return journal.WithWatchedFile(FailureOf, flushedToDisk: static () => { });
     }
 
     private IOException? FailureOf(string write)
