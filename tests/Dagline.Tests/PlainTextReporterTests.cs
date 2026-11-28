@@ -172,7 +172,9 @@ public class PlainTextReporterTests
             return Task.CompletedTask;
         });
 
-        await Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
+        // On the existing engine only: it moves the clock inside the wait's call, so it dates the wait by the call, where the new
+        // engine dates it by when the run applies it (ADR 0015); LoopPlainTextReporterTests prints the same on the new engine.
+        await global::Dagline.Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
 
         Lines(writer).ShouldBe(
         [
@@ -975,7 +977,10 @@ public class PlainTextReporterTests
 
             // Every step of the clock ends a task and, a minute after the last line, is also due a line of counts:
             // the reporter is called for the events on one thread while its own timer fires on this one.
-            var run = Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
+            // The clock steps on until the run returns, so on the new engine an unlimited reporter wait keeps a reporter that has
+            // fallen behind from being dropped once the run's end is queued.
+            var options = Options(clock, new PlainTextReporter(writer, clock)).WithReporterWait(Timeout.InfiniteTimeSpan);
+            var run = Runner.RunAsync(builder.Build(), options);
             await clock.AdvanceUntilAsync(run, TimeSpan.FromMinutes(1));
             await run;
 

@@ -1,9 +1,12 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Dagline;
 
 /// <summary>
 /// Hands a run's events to its reporters through the run's host, on the new engine. Each reporter has a queue of its own, so
 /// every reporter receives the same events in the same order, and one that is slow or throws holds up neither the loop nor another
-/// reporter. A reporter that throws is dropped: it is handed nothing more, and its error is kept for the run's result.
+/// reporter. A reporter that throws, or that is still busy when the run drops the busy ones at the end of the reporter wait, is
+/// dropped: it is handed nothing more, its token is cancelled, and its error is kept for the run's result.
 /// </summary>
 /// <remarks>
 /// The loop alone publishes and completes. Once it has completed, the delivery says when every reporter has handled every event
@@ -54,6 +57,19 @@ internal sealed class HostedDelivery
         Finished();
     }
 
+    /// <summary>
+    /// Drops every reporter that has not handled every event: the reporter wait has run out. Each is dropped as
+    /// <see cref="HostedReporter.DropIfBusy"/> says, and the delivery then says every reporter is done, without waiting for a call
+    /// still in progress. A reporter that had handled every event is left alone.
+    /// </summary>
+    public void DropTheBusy()
+    {
+        foreach (var reporter in _reporters)
+        {
+            reporter.DropIfBusy();
+        }
+    }
+
     private void Finished()
     {
         if (Interlocked.Decrement(ref _unfinished) == 0)
@@ -66,14 +82,23 @@ internal sealed class HostedDelivery
 /// <summary>
 /// One reporter's queue of events on the new engine, and the delivery that hands them to it in the order published, one call at a
 /// time. The delivery is scheduled through the host when an event finds none scheduled, and runs until the queue is empty.
+/// Every call is handed the same token, which is cancelled only when the reporter is dropped: when it throws, or when it is still
+/// busy as the reporter wait runs out.
 /// </summary>
 /// <param name="reporter">The reporter this queue hands events to.</param>
 /// <param name="host">The run's host, which runs each delivery.</param>
 /// <param name="finished">Called once, when the reporter has handled every event after the queue was completed, or was dropped.</param>
+[SuppressMessage(
+    "Reliability",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The source has no timer and no wait handle is ever taken from it, and a reporter call that was dropped may still hold its token.")]
 internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action finished)
 {
     private readonly Lock _gate = new();
     private readonly Queue<(RunEvent Event, Snapshot Snapshot)> _queue = new();
+    private readonly CancellationTokenSource _dropped = new();
+
+    private RunEvent? _inCall;
 
     private bool _scheduled;
     private bool _completed;
@@ -127,9 +152,8 @@ internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action f
         {
             try
             {
-                // No token is cancelled as yet: dropping a reporter still busy when the reporter wait runs out is still to come.
                 // On the context the host delivers on, so that a delivery under a host a test pumps stays on the pump.
-                await reporter.OnEventAsync(next.Event, next.Snapshot, CancellationToken.None).ConfigureAwait(true);
+                await reporter.OnEventAsync(next.Event, next.Snapshot, _dropped.Token).ConfigureAwait(true);
             }
             catch (Exception exception)
             {
@@ -145,11 +169,13 @@ internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action f
     {
         lock (_gate)
         {
-            if (_queue.TryDequeue(out var next))
+            if (!_finished && _queue.TryDequeue(out var next))
             {
+                _inCall = next.Event;
                 return next;
             }
 
+            _inCall = null;
             _scheduled = false;
             if (!_completed || _finished)
             {
@@ -163,21 +189,60 @@ internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action f
         return null;
     }
 
-    private void Drop(ReporterError error)
+    /// <summary>
+    /// Drops the reporter if it has not handled every event: its error is an <see cref="OperationCanceledException"/> naming the
+    /// event in the call, or the next event when no call is under way, its queued events are let go, and its token is cancelled,
+    /// through the host, before it is said to be finished, so a run that has returned has always cancelled it. A call under way is
+    /// not waited for, and whatever it does once it comes back changes nothing. A reporter that is not busy is left alone.
+    /// </summary>
+    public void DropIfBusy()
     {
         lock (_gate)
         {
-            Error = error;
-            _queue.Clear();
-            _scheduled = false;
             if (_finished)
             {
                 return;
             }
 
-            _finished = true;
+            var runEvent = _inCall ?? (_queue.TryPeek(out var next) ? next.Event : null);
+            LetGo(new ReporterError(reporter, runEvent, new OperationCanceledException(_dropped.Token)));
         }
 
+        SignalAndFinish();
+    }
+
+    private void Drop(ReporterError error)
+    {
+        lock (_gate)
+        {
+            if (_finished)
+            {
+                // Dropped already, at the end of the reporter wait: that error stands, and this one, likely the cancellation, is let go.
+                return;
+            }
+
+            LetGo(error);
+        }
+
+        SignalAndFinish();
+    }
+
+    /// <summary>
+    /// Cancels the dropped reporter's token, through the host, then says it is finished, so a run that has returned has always
+    /// cancelled it. Outside the gate: the host may run the token's callbacks, which are the reporter's code, on this thread.
+    /// </summary>
+    private void SignalAndFinish()
+    {
+        host.Signal(_dropped);
         finished();
+    }
+
+    /// <summary>Keeps the reporter's error and lets go of its queued events: it is finished. Called under the gate.</summary>
+    private void LetGo(ReporterError error)
+    {
+        Error = error;
+        _queue.Clear();
+        _inCall = null;
+        _finished = true;
     }
 }
