@@ -285,7 +285,7 @@ public class LoopRunTests
             if (runEvent is RunEnded)
             {
                 var continued = await ScriptedDriver
-                    .Start(Chain(), new RunOptions { Journal = Journal.Continue(directory, snapshot.Journal!.Id) })
+                    .Start(Chain(), new RunOptions { Journal = Journal.Continue(directory, snapshot.Journal!.Id) }, cancellationToken)
                     .Finish();
                 ContinuedRun = continued.Snapshot.Journal!.Run;
             }
