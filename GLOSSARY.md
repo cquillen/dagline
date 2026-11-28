@@ -239,3 +239,7 @@ _Avoid_: Done, closed, complete
 **Description**:
 Free text the consumer gives a journal when creating it, so that an operator can tell journals apart. It never changes.
 _Avoid_: Label, name, title
+
+**Durability**:
+What a run's journal entries survive, chosen for each run: flushed to the disk, the default, which survives a power cut, or handed to the operating system, which survives a killed process and not a power cut. Entries are written at the same moments under either.
+_Avoid_: Sync mode, write mode, safety level

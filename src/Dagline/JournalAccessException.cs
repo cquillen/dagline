@@ -7,7 +7,7 @@ namespace Dagline;
 /// <remarks>
 /// <para>
 /// The cause may be a permission the process lacks, a path that names something other than a directory, a full disk, or a failure
-/// of the device. A new journal whose first line could not be written and flushed is this too.
+/// of the device. A new journal whose first line could not be written, or flushed when the durability asks for it, is this too.
 /// </para>
 /// <para>
 /// The message names the file or the directory and says what could not be done with it: a directory that cannot be created or

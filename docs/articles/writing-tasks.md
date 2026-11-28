@@ -246,7 +246,7 @@ builder.Task("export", async context =>
 ```
 
 - `Checkpoint` is empty when there is none, and reads back the latest save within a run.
-- `SaveCheckpointAsync` replaces the checkpoint and completes only once it is flushed to the disk. Saving an empty string clears it, and `ClearCheckpointAsync` does the same. Clearing when there is none writes nothing.
+- `SaveCheckpointAsync` replaces the checkpoint and completes only once it is in the journal, flushed to the disk unless the run chose [otherwise](journals.md#durability). Saving an empty string clears it, and `ClearCheckpointAsync` does the same. Clearing when there is none writes nothing.
 - The checkpoint is kept through a failure, a cancellation and a killed process, and discarded when the task succeeds.
 - A save during the grace period after a stop succeeds. One made after the task has settled, or after the run has let go of it, throws `InvalidOperationException`.
 - A checkpoint is private to the task: it is in no event and no snapshot.

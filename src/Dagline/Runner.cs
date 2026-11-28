@@ -86,11 +86,13 @@ public static class Runner
     /// and <see cref="RunOutcome.Complete"/> when every task succeeded, drain, stop or neither.
     /// </para>
     /// <para>
-    /// A run on a journal opens it at the call, before the run exists: a new journal is created with its first line flushed to the disk,
-    /// and one to continue is read in full. The run writes each step's entries before anything else the step does, and flushes every
-    /// settle to the disk before any dependent starts and before its event is published. The run holds the journal for its whole
+    /// A run on a journal opens it at the call, before the run exists: a new journal is created with its first line written, and one to
+    /// continue is read in full. The run writes each step's entries before anything else the step does, and writes every settle before
+    /// any dependent starts and before its event is published. With <see cref="JournalDurability.FlushedToDisk"/>, the default, each
+    /// of those writes but a task's start is flushed to the disk first, and with <see cref="JournalDurability.HandedToOperatingSystem"/>
+    /// none is. The run holds the journal for its whole
     /// life through a lock file beside it, <c>&lt;id&gt;.lock</c>, so that no other run can use it meanwhile. It closes the journal and lets
-    /// go of the lock in the step that ends the run, after flushing the run's end, however the run ends, so a later run can continue it
+    /// go of the lock in the step that ends the run, after writing the run's end, however the run ends, so a later run can continue it
     /// as soon as this task completes. The lock file stays behind, and holds nothing.
     /// </para>
     /// <para>

@@ -21,7 +21,7 @@ A choice only describes what the run will do. Nothing touches the disk until <xr
 
 ### A new journal
 
-<xref:Dagline.Journal.New*> takes a directory and an optional description. The run creates the directory if it is missing, and the journal is one file in it. Its id is generated from the UTC time on the run's clock, a hyphen and six random lowercase hex digits, as in `20261111T041200Z-a3f9c2`, so ids sort by age, can be typed, and never collide between operators. The file is `<id>.journal`.
+<xref:Dagline.Journal.New*> takes a directory, an optional description and an optional [durability](#durability). The run creates the directory if it is missing, and the journal is one file in it. Its id is generated from the UTC time on the run's clock, a hyphen and six random lowercase hex digits, as in `20261111T041200Z-a3f9c2`, so ids sort by age, can be typed, and never collide between operators. The file is `<id>.journal`.
 
 The description is free text that tells journals in the same directory apart, such as the part of the work this one covers. It is fixed when the journal is created, and kept on one line: each line break in it becomes a space, also when a journal written by an earlier version holds one. An empty one counts as none.
 
@@ -36,7 +36,7 @@ Console.WriteLine($"journal {journal.Id} run {journal.Run}: {journal.Description
 
 ### Continuing a journal
 
-<xref:Dagline.Journal.Continue*> takes the directory and an id. The run that continues a journal is its next run: its snapshot carries the same id and description, and a run number one higher.
+<xref:Dagline.Journal.Continue*> takes the directory, an id and an optional [durability](#durability), which each run chooses afresh. The run that continues a journal is its next run: its snapshot carries the same id and description, and a run number one higher.
 
 An id that is not in the id format is refused at once with `ArgumentException`, so an id can never name a file outside the directory. To check an id an operator typed before you use it, call <xref:Dagline.Journals.IsValidId*>, which says whether text is in the id format and never throws:
 
@@ -128,7 +128,7 @@ var publish = builder.Task("publish", PublishAsync).Requires(summary); // keeps 
 
 The rule is applied in dependency order. A task set aside is not an earlier success, so a task that is *after* it is set aside too, while a task that *requires* it keeps its own earlier success.
 
-The run lists the paths it set aside in <xref:Dagline.Snapshot.SetAside>, in declaration order. A set-aside is written to the journal with the start of the run, on disk before any task starts. From then on the task has no success on record, in later runs too, until it succeeds again: if this run is stopped before the task runs, the next run does not bring back the stale success, even though everything the task is after is an earlier success by then.
+The run lists the paths it set aside in <xref:Dagline.Snapshot.SetAside>, in declaration order. A set-aside is written to the journal with the start of the run, before any task starts, and flushed to the disk with it by [default](#durability). From then on the task has no success on record, in later runs too, until it succeeds again: if this run is stopped before the task runs, the next run does not bring back the stale success, even though everything the task is after is an earlier success by then.
 
 Whether a group counts as an earlier success is judged by the graph of this run. A task *after* the group `shards` keeps its success when the journal is continued with the same shards, and loses it when `shards` gained a shard whose tasks have not succeeded.
 
@@ -193,17 +193,34 @@ Dagline never deletes or expires a journal itself. How long a record is kept is 
 
 A journal is one UTF-8 text file with one JSON object per line, appended to and never rewritten. It records each run's start and the earlier successes it set aside, each task's start, each task's settle with its whole outcome, each [checkpoint](writing-tasks.md#checkpoints) saved or cleared, and each run's end. Progress, waiting and the status of a group are never recorded.
 
-Every settle reaches the disk before any task that depends on it starts and before its event is published, and a run's end reaches the disk before `RunAsync` returns. A checkpoint reaches the disk before the save returns. A failure and every task it blocks share one write. A new journal's first line and its first run's start reach the disk before any task starts, and on Unix systems so does the journal's entry in its directory, and the entry of each directory Dagline created for it, so the file itself survives a crash.
+By default every settle is flushed to the disk before any task that depends on it starts and before its event is published, and a run's end before `RunAsync` returns. A checkpoint is flushed before the save returns. A failure and every task it blocks share one write and one flush. A new journal's first line and its first run's start, and a continuing run's start with its set-asides, are flushed before any task starts, and on Unix systems so is the journal's entry in its directory, and the entry of each directory Dagline created for it, so the file itself survives a crash. The entry that says a task started is written but never flushed by itself: a crash can lose it, which costs only history. A run can choose to make none of these flushes: see [Durability](#durability).
 
 The file is readable text, so you can look into it with any tool when something went wrong. Its first line names its format version. A later Dagline reads every format version an earlier release wrote, and an older one refuses a newer version with `JournalFormatException`: see [Compatibility](compatibility.md#journals). The layout of the lines is not an interface for your code: read a journal through `ListAsync` and continue it through `Journal.Continue`. Anyone who can read the directory can read the file, so a task's outcome and its checkpoint must never hold secrets.
 
+## Durability
+
+Each run chooses what its journal's entries survive, with a <xref:Dagline.JournalDurability> passed to `Journal.New` or `Journal.Continue`:
+
+| Durability | What is flushed | A killed process | A crash of the operating system or a power cut |
+| --- | --- | --- | --- |
+| `FlushedToDisk`, the default | every flush described above | loses nothing that was recorded | loses nothing that was recorded, as far as the storage device honours a flush |
+| `HandedToOperatingSystem` | nothing | loses nothing that was recorded | may lose any entry written since the operating system last wrote to the disk |
+
+Under either choice every entry is written at the same moments, in the same order and in the same format: a settle before its dependents start and before its event is published, the run's start and its set-asides before any task starts, a checkpoint before its save returns, and the run's end before the run lets go of the journal. Once written, an entry is in the file for any process that reads it, a listing or a later run included, and the operating system keeps it when the process is killed. `HandedToOperatingSystem` only leaves out the flushes to the disk, of a new journal's first line and its directory's entries too, so a run spends no time waiting on one: each costs roughly 1 to 5 ms on an SSD, seconds over a run of a few thousand tasks.
+
+```csharp
+var journal = Journal.New("journals/export", "all shards", JournalDurability.HandedToOperatingSystem);
+```
+
+The choice is tuning, like a limit's size: it is not recorded, and a run that continues a journal chooses afresh, so a journal written with one choice is listed, continued and cut short at a line exactly as one written with the other. What a power cut may cost under `HandedToOperatingSystem` is a recorded success or a saved checkpoint: the task runs again in the next run, with whatever checkpoint survived, and a task that triggers external work may trigger it again. Choose it where that costs little, such as in tests and short local runs, and keep the default where a task's work must not be repeated. The [task harness](testing-your-tasks.md) chooses it for its own journal.
+
 ## After a crash
 
-When the process is killed, the machine crashes or the power goes, the journal keeps every success and every checkpoint whose entry reached the disk, which by the flushes above is every success that any later work started from and every checkpoint save that returned. Continue it as you would any other: the successes are earlier successes, and every other task runs, a task that was running when the process died included, with its checkpoint handed back.
+When the process is killed, the journal keeps every success and every checkpoint whose entry was written, which by the moments above is every success that any later work started from and every checkpoint save that returned. When the machine crashes or the power goes, it keeps the same with the default [durability](#durability), and with `HandedToOperatingSystem` only those the operating system had written to the disk. Continue it as you would any other: the successes are earlier successes, and every other task runs, a task that was running when the process died included, with its checkpoint handed back.
 
 The process may die in the middle of a write, leaving the last line of the file cut short. A journal opened to continue drops that line and trims the file back to the end of its last whole line before the run appends anything, so the file reads cleanly in every later run. The listing drops it too, without changing the file. A run that died recorded no end, so the listing shows its journal as `Died`.
 
-This promise holds as far as the storage device honours a flush. A disk or controller that acknowledges a write it has only cached can still lose it in a power cut.
+The promise of the default holds as far as the storage device honours a flush. A disk or controller that acknowledges a write it has only cached can still lose it in a power cut.
 
 ## When a journal write fails
 

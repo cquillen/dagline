@@ -203,9 +203,9 @@ internal sealed class Run : ISnapshotSource, ITaskRun
     }
 
     /// <summary>
-    /// Saves a task's checkpoint, or clears it when <paramref name="text"/> is empty. The recorder writes its entry and flushes it to
-    /// the disk under the lock, so that the order of the file is the order of the run's decisions and a save never lands after its
-    /// task's settle.
+    /// Saves a task's checkpoint, or clears it when <paramref name="text"/> is empty. The recorder writes its entry, and flushes it to
+    /// the disk when the journal's durability asks for it, under the lock, so that the order of the file is the order of the run's
+    /// decisions and a save never lands after its task's settle.
     /// </summary>
     /// <remarks>
     /// The save is made before this returns, so the task it returns has already completed or faulted. It faults with an

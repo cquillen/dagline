@@ -378,7 +378,8 @@ public sealed class TaskContext
     public string Checkpoint => _run.CheckpointOf(_task);
 
     /// <summary>
-    /// Saves the task's checkpoint, which replaces any it had, and completes once the checkpoint is flushed to the disk.
+    /// Saves the task's checkpoint, which replaces any it had, and completes once the checkpoint is written to the journal and, with
+    /// the default <see cref="JournalDurability"/>, flushed to the disk.
     /// <c>await context.SaveCheckpointAsync(job.Id);</c>.
     /// </summary>
     /// <param name="text">
@@ -390,13 +391,14 @@ public sealed class TaskContext
     /// <see cref="CancellationToken"/> to a save that records work the task has just started, since a stop would then cancel the save
     /// and a later run would start the work again.
     /// </param>
-    /// <returns>A task that completes once the checkpoint is on disk, and at once for a run with no journal.</returns>
+    /// <returns>A task that completes once the checkpoint is in the journal, and at once for a run with no journal.</returns>
     /// <remarks>
     /// <para>
-    /// The save writes one line to the journal and flushes it to the disk before it completes, so what the task does next can rely on the
-    /// checkpoint surviving a killed process. The flush holds up the run for its length, roughly 1 to 5 ms on an SSD: a checkpoint is for
-    /// milestones, not for progress. The save publishes no event and changes no snapshot. <see cref="Checkpoint"/> reads the new text
-    /// from the moment the save completes.
+    /// The save writes one line to the journal before it completes, so what the task does next can rely on the checkpoint surviving a
+    /// killed process. With <see cref="JournalDurability.FlushedToDisk"/>, the default, the line is flushed to the disk first, so it
+    /// survives a power cut too, and the flush holds up the run for its length, roughly 1 to 5 ms on an SSD: a checkpoint is for
+    /// milestones, not for progress. With <see cref="JournalDurability.HandedToOperatingSystem"/> it is not flushed. The save publishes
+    /// no event and changes no snapshot. <see cref="Checkpoint"/> reads the new text from the moment the save completes.
     /// </para>
     /// <para>
     /// A save made during the grace period, after a stop, succeeds and is handed back in the next run. One made once the task has settled,
@@ -431,10 +433,11 @@ public sealed class TaskContext
     }
 
     /// <summary>
-    /// Clears the task's checkpoint, and completes once the clearing is flushed to the disk. A task with no checkpoint writes nothing.
+    /// Clears the task's checkpoint, and completes once the clearing is written to the journal and, with the default
+    /// <see cref="JournalDurability"/>, flushed to the disk. A task with no checkpoint writes nothing.
     /// </summary>
     /// <param name="cancellationToken">Cancels the clearing only if it is signalled before the clearing begins to write.</param>
-    /// <returns>A task that completes once the clearing is on disk, and at once for a run with no journal or a task with no checkpoint.</returns>
+    /// <returns>A task that completes once the clearing is in the journal, and at once for a run with no journal or a task with no checkpoint.</returns>
     /// <remarks>
     /// Clear the checkpoint before reporting a failure when the external work has failed and a later run should start fresh work
     /// instead of re-attaching to it. It follows the rules of <see cref="SaveCheckpointAsync"/>: it succeeds during the grace period,
