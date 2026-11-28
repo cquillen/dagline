@@ -4,6 +4,8 @@ A journal is one UTF-8 text file with one JSON entry per line. Entries are only 
 
 The promise is this: the entry for a settled task is flushed to disk before any of its dependents starts and before the run ends, and a checkpoint is flushed before its save returns (ADR 0006). So after a killed process, an operating system crash or a power cut, no recorded success and no saved checkpoint is lost. A task recorded as succeeded is an earlier success in the next run, and runs again only if that run sets it aside (ADR 0008). The promise holds as far as the storage device honours a flush.
 
+A run may choose a weaker promise for its journal: each entry is handed to the operating system at the same moments, and is not flushed to the disk. No recorded success and no saved checkpoint is then lost to a killed process, though one may be lost to an operating system crash or a power cut. The choice is made for each run, on its journal choice, as a limit's size is (ADR 0005), and flushing to the disk is the default.
+
 Two more flushes complete the promise. A new journal's place in its directory is made durable before its first run starts any task, which on Linux takes a flush of the directory as well as of the file. And a run flushes the set-asides it makes before it starts any task, so that a success once set aside stays aside even when the process dies before anything settles.
 
 Entries written together share one flush. A failure that blocks a thousand dependents costs one flush, not a thousand. The entry that says a task started is written but not flushed by itself, so a crash can lose it, which costs only history.
@@ -18,13 +20,13 @@ What is recorded:
 
 Progress, waiting, pending and ready are never recorded, and neither is the status of a group, which is derived. Every time is UTC.
 
-When a write fails during a run, because the disk is full or the file is gone, Dagline treats it as a stop: nothing new starts, running tasks are signalled, and the run waits the grace period (ADR 0004). A task that the failing step had already started still starts, and the stop signals it at once. The run then ends with an error and not with a run outcome. A run that can no longer record must not keep starting work, and what it did is not reliably complete, incomplete or stopped. A checkpoint save that fails also throws to the task that called it. Such a run usually cannot record its end either, so the listing shows it as died, the same as a killed process (ADR 0007).
+When a write fails during a run, because the disk is full or the file is gone, Dagline treats it as a stop: nothing new starts, running tasks are signalled, and the run waits the grace period (ADR 0004). The result of a write is known before anything that follows it is decided (ADR 0015), so a settle whose write fails is still published and its dependents still become ready, but none of them starts. The same holds for the entry that says a task started: a body starts only once that entry is written, and when the write fails the task stays ready. The run then ends with the run outcome unrecorded, which takes precedence over the other three. A run that can no longer record must not keep starting work, and what it did is not reliably complete, incomplete or stopped. The one exception is the entry for the run's end: when that write alone fails, every settle is on disk, and the run keeps the outcome it reached, with the error beside it in its result. A checkpoint save that fails throws to the task that called it, and the run throws nothing. Such a run usually cannot record its end either, so the listing shows it as died, the same as a killed process (ADR 0007).
 
 ## Considered options
 
 - **Replacing the whole file on every change.** Rejected because each settle would rewrite everything, because the replace fails on Windows while another program has the file open, and because a file that is replaced cannot also be held as the lock.
 - **An embedded database.** Rejected because it passes native packages on to every consumer and makes the record a binary file, for a few thousand entries that are only ever appended and read in order.
-- **Writing without flushing, or flushing only when the run ends.** Rejected because a crash could then lose a success, and the task would run again after its checkpoint had been discarded.
+- **Writing without flushing, or flushing only when the run ends, as the only behaviour.** Rejected because a crash of the machine could then lose a success, and the task would run again after its checkpoint had been discarded. Writing without flushing to the disk is offered as a choice, as above.
 - **A stable, documented format.** Deferred. The format is documented as readable, and it may change between early releases.
 
 ## Consequences
