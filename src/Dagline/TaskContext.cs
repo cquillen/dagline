@@ -397,8 +397,8 @@ public sealed class TaskContext
     /// The save writes one line to the journal before it completes, so what the task does next can rely on the checkpoint surviving a
     /// killed process. With <see cref="JournalDurability.FlushedToDisk"/>, the default, the line is flushed to the disk first, so it
     /// survives a power cut too, and the flush holds up the run for its length, roughly 1 to 5 ms on an SSD: a checkpoint is for
-    /// milestones, not for progress. With <see cref="JournalDurability.HandedToOperatingSystem"/> it is not flushed. The save publishes no event and changes no snapshot. <see cref="Checkpoint"/> reads the new text
-    /// from the moment the save completes.
+    /// milestones, not for progress. With <see cref="JournalDurability.HandedToOperatingSystem"/> it is not flushed. The save publishes
+    /// no event and changes no snapshot. <see cref="Checkpoint"/> reads the new text from the moment the save completes.
     /// </para>
     /// <para>
     /// A save made during the grace period, after a stop, succeeds and is handed back in the next run. One made once the task has settled,
