@@ -6,8 +6,8 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// A post returns at once, so what a task reports as an input shows in the run's current snapshot once the loop has applied it,
-/// not when the call returns. A member not yet built throws <see cref="NotSupportedException"/>, so that a test run on the new
-/// engine fails where it calls it, rather than passing over a report the run never applied.
+/// not when the call returns. A checkpoint, not yet built, throws <see cref="NotSupportedException"/>, so that a test run on the new
+/// engine fails where it calls it, rather than passing over a save the run never made.
 /// </remarks>
 /// <param name="inbox">The run's inbox, to which the inputs are posted.</param>
 /// <param name="samples">The tasks' samples, which the reports that are samples overwrite.</param>
@@ -15,8 +15,6 @@ namespace Dagline;
 /// <param name="source">The run's current snapshot, from which a dependency's status is read.</param>
 internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples, Graph graph, CurrentSnapshot source) : ITaskRun
 {
-    // Each throw below is a departure from Liskov substitution for the length of the rebuild: the new engine is reachable only
-    // from tests, and each member is built by a later part of it (checkpoints).
     /// <summary>Overwrites the status text on the task's sample: progress is never posted.</summary>
     public void SetStatusText(BuiltTask task, string? text) => samples[task].SetStatusText(text);
 
@@ -64,6 +62,8 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples, Graph graph,
 
     public void CloseWaitingScope(BuiltTask task) => inbox.Post(Input.WaitClosed(task));
 
+    // Each throw below is a departure from Liskov substitution for the length of the rebuild: the new engine is reachable only
+    // from tests, and checkpoints are built by a later part of it.
     public string CheckpointOf(BuiltTask task) => throw NotYet(nameof(TaskContext.Checkpoint));
 
     public Task SaveCheckpointAsync(BuiltTask task, string text) => throw NotYet(nameof(TaskContext.SaveCheckpointAsync));

@@ -63,7 +63,9 @@ public class WaitUntilAsyncTests
             }));
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        // On the existing engine only: it moves the clock the moment the body's call to wait returns, so it dates the wait by the
+        // call, where the new engine dates it by when the run applies it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         for (var delay = 0; delay < 2; delay++)
         {
             (await clock.NextTimerAsync()).ShouldBe(interval);
@@ -134,7 +136,9 @@ public class WaitUntilAsyncTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        // On the existing engine only: it reads the wait in the current snapshot the moment the body's call returns, which the
+        // new engine does not promise, since a wait shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         var source = await reporter.Source;
         await clock.NextTimerAsync();
         duringTheDelay = source.Current[jobTask.Path];
@@ -273,7 +277,9 @@ public class WaitUntilAsyncTests
             "job 17 to finish"));
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        // On the existing engine only: it reads the wait in the current snapshot the moment the body's call returns, which the
+        // new engine does not promise, since a wait shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
         var source = await reporter.Source;
         await clock.NextTimerAsync();
         var waiting = source.Current[jobTask.Path];

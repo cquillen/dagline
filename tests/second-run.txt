@@ -7,8 +7,11 @@ Dagline.Tests/GraphTests
 Dagline.Tests/HeldTaskOrderTests
 Dagline.Tests/JournalDeletingTests
 Dagline.Tests/LimitTests
+Dagline.Tests/LoopReportTests
 Dagline.Tests/LoopRunTests
 Dagline.Tests/MaxRunningTasksTests
+Dagline.Tests/MessageAndDetailTests
+Dagline.Tests/ProgressTests
 Dagline.Tests/ReporterTests
 Dagline.Tests/RunConfigurationTests
 Dagline.Tests/RunTests
@@ -16,3 +19,6 @@ Dagline.Tests/RunTimeTests
 Dagline.Tests/SchedulingTests
 Dagline.Tests/SingleUseTests
 Dagline.Tests/StepCoreEffectTests
+Dagline.Tests/TaskContextTests
+Dagline.Tests/WaitingTests
+Dagline.Tests/WarningTests

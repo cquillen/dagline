@@ -1,4 +1,5 @@
 using Dagline.TestSupport;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Dagline.Tests;
 
@@ -310,5 +311,43 @@ public class LoopReportTests
         result.Snapshot[loadTask.Path].DetailOmitted.ShouldBe(3);
         result.Snapshot[shard.Path].WarningCount.ShouldBe(103);
         result.Snapshot.WarningCount.ShouldBe(103);
+    }
+
+    [Test]
+    public async Task A_wait_carries_the_time_the_loop_applied_it_and_its_task_and_group_stay_running()
+    {
+        var runStart = new DateTimeOffset(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
+        var clock = new FakeTimeProvider(runStart);
+        var job = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var jobTask = shard.Task("job", job.Body);
+        var reporter = new RecordingReporter();
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [reporter] });
+        run.Pump();
+        var context = await job.Started;
+
+        var scope = context.BeginWaiting("job 17 to finish");
+        clock.Advance(TimeSpan.FromSeconds(2));
+        run.Pump();
+        var waiting = run.Current;
+        scope.Dispose();
+        clock.Advance(TimeSpan.FromSeconds(98));
+        run.Pump();
+        job.Release();
+        await run.Finish();
+
+        waiting[jobTask.Path].Status.ShouldBe(NodeStatus.Running);
+        waiting[jobTask.Path].WaitingSince.ShouldBe(runStart.AddSeconds(2));
+        waiting[jobTask.Path].WaitingText.ShouldBe("job 17 to finish");
+        waiting[shard.Path].Status.ShouldBe(NodeStatus.Running);
+        waiting[shard.Path].Counts[NodeStatus.Running].ShouldBe(1);
+        waiting.RunningTasks.InUse.ShouldBe(1);
+        var waits = reporter.Events.OfType<WaitingChanged>().ToList();
+        waits.Select(wait => (wait.At, wait.Waiting, wait.Since)).ShouldBe(
+        [
+            (runStart.AddSeconds(2), true, runStart.AddSeconds(2)),
+            (runStart.AddSeconds(100), false, runStart.AddSeconds(2)),
+        ]);
     }
 }
