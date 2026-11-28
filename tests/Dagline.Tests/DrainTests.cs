@@ -111,7 +111,6 @@ public class DrainTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_drained_run_on_a_journal_is_listed_stopped_and_a_continuing_run_keeps_its_successes_and_runs_the_rest()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -125,14 +124,14 @@ public class DrainTests
             var drain = new DrainSignal();
             var watched = new WatchedReporter(new RecordingReporter());
 
-            var run = Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path), Reporters = [watched] }, drain);
+            var run = Runner.RunAsync(graph, new RunOptions { Journal = QuickJournal.New(temporary.Path), Reporters = [watched] }, drain);
             await load.Started;
             drain.Request();
             await watched.Handled("drain requested");
             load.Release();
             var first = await run;
             var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
-            var next = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, listed.Id) });
+            var next = await Runner.RunAsync(graph, new RunOptions { Journal = QuickJournal.Continue(temporary.Path, listed.Id) });
 
             first.Outcome.ShouldBe(RunOutcome.Stopped);
             first.Snapshot.NeverReached.Select(task => task.Path).ShouldBe([publish.Path]);

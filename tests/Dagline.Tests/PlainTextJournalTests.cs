@@ -270,7 +270,6 @@ public class PlainTextJournalTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_stop_Dagline_asked_for_and_a_run_that_ended_with_an_error_each_read_as_a_failed_journal_write()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -284,7 +283,7 @@ public class PlainTextJournalTests
             builder.Task("fails", fails.Body);
             builder.Task("running", running.Body);
             var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
-            var journal = JournalWriteFailure.SettleOf("fails").WithMessage("disk full").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.SettleOf("fails").WithMessage("disk full").In(QuickJournal.New(temporary.Path));
 
             var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [reporter] });
             await fails.Started;
@@ -315,7 +314,6 @@ public class PlainTextJournalTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_stop_Dagline_asked_for_with_no_grace_period_limit_reads_as_waiting_for_the_running_tasks()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -329,7 +327,7 @@ public class PlainTextJournalTests
             builder.Task("fails", fails.Body);
             builder.Task("running", running.Body);
             var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
-            var journal = JournalWriteFailure.SettleOf("fails").WithMessage("disk full").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.SettleOf("fails").WithMessage("disk full").In(QuickJournal.New(temporary.Path));
             var options = new RunOptions { Journal = journal, GracePeriod = Timeout.InfiniteTimeSpan, TimeProvider = clock, Reporters = [reporter] };
 
             var run = Runner.RunAsync(builder.Build(), options);

@@ -10,7 +10,6 @@ public class FailedJournalWriteTests
     private static readonly TimeSpan _step = TimeSpan.FromSeconds(1);
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_settle_that_cannot_be_written_stops_the_run_and_the_run_ends_with_an_error()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -25,7 +24,7 @@ public class FailedJournalWriteTests
             var later = builder.Task("later", _ => Task.CompletedTask).After(slowTask);
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
-            var journal = JournalWriteFailure.SettleOf("fails").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.SettleOf("fails").In(QuickJournal.New(temporary.Path));
 
             var run = Runner.RunAsync(
                 builder.Build(),
@@ -62,7 +61,6 @@ public class FailedJournalWriteTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task Neither_a_drain_nor_the_apps_token_shortens_the_grace_period_of_a_stop_Dagline_asked_for()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -78,7 +76,7 @@ public class FailedJournalWriteTests
             using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
-            var journal = JournalWriteFailure.SettleOf("fails").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.SettleOf("fails").In(QuickJournal.New(temporary.Path));
 
             var run = Runner.RunAsync(
                 builder.Build(),
@@ -103,7 +101,6 @@ public class FailedJournalWriteTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_checkpoint_save_that_cannot_be_written_throws_to_the_task_stops_the_run_and_the_run_ends_with_an_error()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -132,7 +129,7 @@ public class FailedJournalWriteTests
             var graph = builder.Build();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
-            var journal = JournalWriteFailure.CheckpointSaveOf("saves").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.CheckpointSaveOf("saves").In(QuickJournal.New(temporary.Path));
 
             var run = Runner.RunAsync(graph, new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [watched] });
             var thrownToTheTask = (await saveThrew.Task).ShouldBeOfType<JournalWriteException>();

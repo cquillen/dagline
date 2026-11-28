@@ -20,6 +20,12 @@ namespace Dagline.Testing;
 /// <see cref="DisposeAsync"/> deletes the directory.
 /// </para>
 /// <para>
+/// Every run of the harness, the first and each that continues, chooses <see cref="JournalDurability.HandedToOperatingSystem"/>:
+/// the journal is written at the same moments as in an app, and the task's checkpoint saves and settles are in the file when they
+/// would be, but nothing is flushed to the disk, so a test spends no time waiting on one. The journal lives only as long as the
+/// harness, so a power cut's safety would buy it nothing.
+/// </para>
+/// <para>
 /// A checkpoint passed to <see cref="For"/> is planted in the first run without a run before it to save one: the harness
 /// saves it through <see cref="TaskContext.SaveCheckpointAsync"/> on the task's own context just before it calls the body, so
 /// the body reads it back as <see cref="TaskContext.Checkpoint"/>, and the journal holds it as it would hold the task's own
@@ -210,7 +216,9 @@ public sealed class TaskHarness : IAsyncDisposable
         var watcher = new WaitWatcher(stopAtWait);
         var options = new RunOptions
         {
-            Journal = _journalId is null ? Journal.New(_directory) : Journal.Continue(_directory, _journalId),
+            Journal = _journalId is null
+                ? Journal.New(_directory, durability: JournalDurability.HandedToOperatingSystem)
+                : Journal.Continue(_directory, _journalId, JournalDurability.HandedToOperatingSystem),
             TimeProvider = clock,
             GracePeriod = Timeout.InfiniteTimeSpan,
             Reporters = liveRun is null ? [watcher] : [watcher, liveRun],

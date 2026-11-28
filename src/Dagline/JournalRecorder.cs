@@ -3,7 +3,7 @@ namespace Dagline;
 /// <summary>
 /// All of one run's journal recording: the held file, which entry each change produces, the flush policy, what happens when a
 /// write fails, and closing the file. <see cref="Run"/> makes one for each run and hands it each step before publishing the step's
-/// events, so that an entry is on disk before any reporter hears of its change (ADR 0010).
+/// events, so that an entry is in the file before any reporter hears of its change (ADR 0010).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,13 +33,14 @@ internal abstract class JournalRecorder
 
     /// <summary>
     /// Records the entries of a decided step, in the order of its events, in one write: the run's start and its set-asides, each
-    /// task's start and settle, and the run's end. Every entry but a task's start is flushed, and the entries of a step share one
-    /// flush. When the step ends the run, the file is closed and the journal let go of after the write.
+    /// task's start and settle, and the run's end. Every entry but a task's start asks for a flush, which the file makes only with
+    /// <see cref="JournalDurability.FlushedToDisk"/>, and the entries of a step share one flush. When the step ends the run, the
+    /// file is closed and the journal let go of after the write.
     /// </summary>
     public abstract void Record(Step step);
 
     /// <summary>
-    /// Records a task's checkpoint saved, or cleared when <paramref name="text"/> is empty, flushed to the disk before this returns.
+    /// Records a task's checkpoint saved, or cleared when <paramref name="text"/> is empty, before this returns, asking for a flush.
     /// It reads the clock once, for the entry. A run with no journal records nothing and reads no clock.
     /// </summary>
     /// <returns>

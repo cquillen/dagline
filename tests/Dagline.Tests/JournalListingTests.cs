@@ -80,7 +80,6 @@ public class JournalListingTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_stopped_run_records_a_task_that_succeeds_in_the_grace_period_and_one_it_lets_go_of_as_cancelled()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -98,7 +97,7 @@ public class JournalListingTests
             var clock = new FakeTimeProvider();
             var running = Runner.RunAsync(
                 graph,
-                new RunOptions { Journal = Journal.New(temporary.Path), TimeProvider = clock, Reporters = [watched] },
+                new RunOptions { Journal = QuickJournal.New(temporary.Path), TimeProvider = clock, Reporters = [watched] },
                 cancellationToken: stop.Token);
             await finish.Started;
             await hang.Started;
@@ -108,7 +107,7 @@ public class JournalListingTests
             var first = await running;
             hang.Release();
             var summary = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
-            var next = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
+            var next = await Runner.RunAsync(graph, new RunOptions { Journal = QuickJournal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
 
             summary.Ending.ShouldBe(JournalEnding.Stopped);
             summary.Counts[NodeStatus.Succeeded].ShouldBe(1);
