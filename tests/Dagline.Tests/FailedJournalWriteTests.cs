@@ -7,7 +7,6 @@ public class FailedJournalWriteTests
 {
     private const int _repeats = 50;
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
-    private static readonly TimeSpan _step = TimeSpan.FromSeconds(1);
 
     [Test]
     public async Task A_settle_that_cannot_be_written_stops_the_run_and_the_run_ends_with_an_error()
@@ -33,7 +32,9 @@ public class FailedJournalWriteTests
             await slow.Started;
             fails.Release();
             await watched.Handled("stop requested");
-            await clock.AdvanceUntilAsync(run, _step);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
             var error = await Should.ThrowAsync<JournalWriteException>(run);
 
             error.InnerException.ShouldBeOfType<IOException>();
@@ -89,7 +90,9 @@ public class FailedJournalWriteTests
             await watched.Handled("stop requested");
             drain.Request();
             await stop.CancelAsync();
-            await clock.AdvanceUntilAsync(run, _step);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
             var error = await Should.ThrowAsync<JournalWriteException>(run);
 
             reporter.Lines.ShouldNotContain("drain requested");
@@ -134,7 +137,9 @@ public class FailedJournalWriteTests
             var run = Runner.RunAsync(graph, new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [watched] });
             var thrownToTheTask = (await saveThrew.Task).ShouldBeOfType<JournalWriteException>();
             await watched.Handled("saves: running -> failed");
-            await clock.AdvanceUntilAsync(run, _step);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
             var error = await Should.ThrowAsync<JournalWriteException>(run);
 
             thrownToTheTask.InnerException.ShouldBeOfType<IOException>();
