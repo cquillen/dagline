@@ -65,7 +65,7 @@ public class RunBenchmarks
         _manyReadyAtOnce = NoDependencies(groups: 200, tasksPerGroup: 100);
 
         await Check(_largeGraph, expectedWarnings: 0).ConfigureAwait(false);
-        await Check(_manyReadyAtOnce, expectedWarnings: 0, UnlimitedOptions()).ConfigureAwait(false);
+        await Check(_manyReadyAtOnce, expectedWarnings: 0, NoLimitsOptions()).ConfigureAwait(false);
         await Check(_heldByLimits, expectedWarnings: 0).ConfigureAwait(false);
         await Check(_heldByOneSmallLimit, expectedWarnings: 0, OneSharedLimitOptions()).ConfigureAwait(false);
         await Check(_onAJournal, expectedWarnings: 0, OnAJournal()).ConfigureAwait(false);
@@ -87,7 +87,7 @@ public class RunBenchmarks
 
     /// <summary>20,000 tasks with no dependencies in groups of 100, all made ready by the first step, at the default max running tasks.</summary>
     [Benchmark]
-    public Task<RunOutcome> ManyReadyAtOnce() => Run(_manyReadyAtOnce, UnlimitedOptions());
+    public Task<RunOutcome> ManyReadyAtOnce() => Run(_manyReadyAtOnce, NoLimitsOptions());
 
     /// <summary>160 tasks on a new journal file, each settle flushed to the disk.</summary>
     [Benchmark]
@@ -130,7 +130,7 @@ public class RunBenchmarks
         Reporters = [new PlainTextReporter(TextWriter.Null)],
     };
 
-    private static RunOptions UnlimitedOptions() => new()
+    private static RunOptions NoLimitsOptions() => new()
     {
         Journal = Journal.None,
         Reporters = [new PlainTextReporter(TextWriter.Null)],
