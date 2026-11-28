@@ -281,7 +281,9 @@ public class DrainTests
             await stop.CancelAsync();
             await watched.Handled("stop requested");
             drain.Request();
-            await clock.AdvanceUntilAsync(run, TimeSpan.FromSeconds(1));
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
             var result = await run;
             load.Release();
 
