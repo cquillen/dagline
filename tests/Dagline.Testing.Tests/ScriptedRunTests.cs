@@ -65,6 +65,27 @@ public class ScriptedRunTests
     }
 
     [Test]
+    public void An_export_that_ends_before_the_stop_lets_the_report_start()
+    {
+        var exported = new TaskCompletionSource();
+        var builder = new GraphBuilder();
+        var export = builder.Task("export", async _ => await exported.Task);
+        var report = builder.Task("report", _ => Task.CompletedTask);
+        report.Requires(export);
+
+        var scripted = ScriptedRun.Start(builder.Build(), new RunOptions { Journal = Journal.None });
+        scripted.Pump();
+
+        exported.SetResult();
+        scripted.PumpBodies();
+        scripted.Run.Stop();
+        scripted.PumpLoop();
+
+        scripted.Run.Current[report.Path].Status.ShouldBe(NodeStatus.Running);
+        scripted.Finish(TimeSpan.FromSeconds(10)).Outcome.ShouldBe(RunOutcome.Complete);
+    }
+
+    [Test]
     public void A_report_shows_in_the_current_snapshot_once_the_loop_has_applied_it()
     {
         var release = new TaskCompletionSource();
@@ -153,7 +174,7 @@ public class ScriptedRunTests
 
         var scripted = ScriptedRun.Start(builder.Build(), new RunOptions { Journal = Journal.None });
 
-        Should.Throw<TimeoutException>(() => scripted.Finish(TimeSpan.FromMilliseconds(50)));
+        Should.Throw<TimeoutException>(() => scripted.Finish(TimeSpan.Zero));
         never.SetResult();
         scripted.Finish(_limit).Outcome.ShouldBe(RunOutcome.Complete);
     }

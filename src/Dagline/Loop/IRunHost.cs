@@ -14,8 +14,9 @@ namespace Dagline;
 /// inbox before it returns.
 /// </para>
 /// <para>
-/// A host must never run any of these inline inside the call that asks for it: the call may come from the loop itself, from a
-/// task's thread or from a reporter's, and none of them may run another's code. Each member may be called from any thread.
+/// A host must never run a loop turn, a body or a delivery inline inside the call that asks for it: the call may come from the
+/// loop itself, from a task's thread or from a reporter's, and none of them may run another's code. <see cref="Signal"/> is the
+/// exception: the token reads as cancelled when it returns. Each member may be called from any thread.
 /// </para>
 /// </remarks>
 public interface IRunHost

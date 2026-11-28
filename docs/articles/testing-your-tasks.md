@@ -56,7 +56,7 @@ public async Task The_export_says_what_it_is_waiting_for()
 }
 ```
 
-A run of the harness is a real run through Dagline's public API, a [scripted run](#scripting-a-whole-run) that the harness pumps inside the call: a graph of one task at the root, a journal in a new directory the harness creates under the system's temporary directory, named `dagline-harness-` and random characters (on Unix only you can open it), an unlimited grace period and reporter wait, and a reporter of the harness's own that watches it. The journal is [handed to the operating system](journals.md#durability) and never flushed to the disk, so a test waits on no flush. The body sees exactly what it would see in your app, so a test proves what a real run will do. Nothing runs and nothing touches the disk until the first run. Disposing the harness deletes the directory. Disposing it twice is harmless, and a run after disposal throws `ObjectDisposedException`.
+A run of the harness is a real run through Dagline's public API, a [scripted run](#scripting-a-whole-run) that the harness pumps inside the call: a graph of one task at the root, a journal in a new directory the harness creates under the system's temporary directory, named `dagline-harness-` and random characters (on Unix only you can open it), an unlimited grace period and reporter wait, and a reporter of the harness's own that watches it. The journal is [handed to the operating system](journals.md#durability) and never flushed to the disk, so a test waits on no flush. The body sees exactly what it would see in your app, so a test proves what a real run will do, with one difference: the body starts on the thread that calls the harness, under a synchronization context of the harness's own, so that its awaits come back to the harness. A body that blocks on its own asynchronous work, with `.Result` or `.Wait()`, or on something your test does only after the call returns, hangs under the harness, though it may not in an app. Nothing runs and nothing touches the disk until the first run. Disposing the harness deletes the directory. Disposing it twice is harmless, and a run after disposal throws `ObjectDisposedException`.
 
 An exception the body throws never comes out of the harness: it is the task's unexpected failure and comes back as an outcome, the way a run sees it. An exception from the run itself, such as a journal that cannot be written, comes out of the call unchanged.
 
@@ -286,11 +286,11 @@ public void An_export_that_ends_before_the_stop_lets_the_report_start()
     scripted.PumpLoop();
 
     scripted.Run.Current[report.Path].Status.ShouldBe(NodeStatus.Running);
-    scripted.Finish(TimeSpan.FromSeconds(10)).Outcome.ShouldBe(RunOutcome.Stopped);
+    scripted.Finish(TimeSpan.FromSeconds(10)).Outcome.ShouldBe(RunOutcome.Complete);
 }
 ```
 
-The export's end is posted before the stop, so the run applies it first and starts the report before it applies the stop. `Run` is the run as an app holds it: drain it, stop it, read its `Current` snapshot and its `Result`. A request only posts to the run, and the run applies it when the loop is next pumped. The run's work waits in three queues:
+The export's end is posted before the stop, so the run applies it first and starts the report before it applies the stop. Both tasks succeed, so the run is complete though it was stopped. `Run` is the run as an app holds it: drain it, stop it, read its `Current` snapshot and its `Result`. A request only posts to the run, and the run applies it when the loop is next pumped. The run's work waits in three queues:
 
 | Call | Runs |
 | --- | --- |

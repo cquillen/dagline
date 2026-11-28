@@ -9,8 +9,10 @@ namespace Dagline.Testing;
 /// call, on a graph of one task at the root with default <see cref="RunOptions"/> except for the journal, the clock, an
 /// unlimited <see cref="RunOptions.GracePeriod"/> and <see cref="RunOptions.ReporterWait"/>, and a reporter of the harness's own
 /// that watches the run. The task body sees exactly what it would in a real run, so a test proves what a real run will do. The
-/// body starts on the thread that calls the run method, inside the call, and every await in it that resumes on its context comes
-/// back to the harness's pump.
+/// body starts on the thread that calls the run method, inside the call, under a synchronization context of the harness's own, and
+/// every await in it that resumes on its context comes back to the harness's pump. That is the one difference from an app: a
+/// body that blocks on its own asynchronous work, with <see cref="Task.Wait()"/> or <see cref="Task{TResult}.Result"/>, or on
+/// something the test does only after the call returns, hangs under the harness.
 /// </para>
 /// <para>
 /// With no clock passed to <see cref="For"/>, every run is on a clock of the harness's own, one for its life, on which time moves
