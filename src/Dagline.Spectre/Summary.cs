@@ -10,7 +10,7 @@ internal static class Summary
     /// The summary of a run that has ended: the rule, the outcome and the counts, then each part that has something to show,
     /// each after a blank line.
     /// </summary>
-    /// <param name="ended">The last event of the run, which carries its run outcome or its error.</param>
+    /// <param name="ended">The last event of the run, which carries its run outcome and the journal's error, if any.</param>
     /// <param name="snapshot">The final snapshot, handed with <paramref name="ended"/>.</param>
     /// <param name="width">The width of the console, which the rule above the summary fills.</param>
     /// <param name="glyphs">The glyphs to draw with.</param>
@@ -18,8 +18,7 @@ internal static class Summary
     [
         StyledLine.Of(DisplayText.Repeat(glyphs.Rule, Math.Max(1, width)), Palette.Dim),
         Outcome(ended, snapshot, glyphs),
-        // A run ends with an error only when its journal can no longer be written, and the exception's message says why.
-        .. ended.Error is { } error ? [StyledLine.Of(DisplayText.Indent + glyphs.Text(error.Message), Palette.Failed)] : Array.Empty<StyledLine>(),
+        .. NotRecorded(ended, glyphs),
         Tally.Long(snapshot, glyphs),
         .. NotReached(snapshot),
         .. Part(Failures(snapshot, glyphs)),
@@ -35,13 +34,31 @@ internal static class Summary
             RunOutcome.Complete => StyledLine.Of("Run complete", Palette.Succeeded),
             RunOutcome.Incomplete => StyledLine.Of("Run incomplete", Palette.Failed),
             RunOutcome.Stopped => StyledLine.Of("Run stopped", Palette.Cancelled),
-            _ => StyledLine.Of("Run ended with an error", Palette.Failed),
+            RunOutcome.Unrecorded => StyledLine.Of("Run unrecorded", Palette.Failed),
+            _ => throw new ArgumentOutOfRangeException(nameof(ended), ended.Outcome, "Not a run outcome."),
         };
 
         line = line.Add(DisplayText.Between + DisplayText.Duration((snapshot.Ended ?? ended.At) - snapshot.Started), Palette.Bold);
         return snapshot.Journal is { } journal
             ? line.Add($" {glyphs.Separator} {DisplayText.Journal(journal, glyphs)}", Palette.Dim)
             : line;
+    }
+
+    /// <summary>
+    /// The line under the outcome about a journal that could not be written, with the file system's own message: what it is
+    /// missing, or, when only the run's end could not be written, that it lists the run as died. Nothing when every write landed.
+    /// </summary>
+    private static IEnumerable<StyledLine> NotRecorded(RunEnded ended, Glyphs glyphs)
+    {
+        if (ended.JournalError is not { } error)
+        {
+            return [];
+        }
+
+        var text = ended.Outcome is RunOutcome.Unrecorded
+            ? $"The journal could no longer be written, so it is missing some of this run: {error.Message}"
+            : $"The run's end could not be written, so the journal lists this run as died: {error.Message}";
+        return [StyledLine.Of(DisplayText.Indent + glyphs.Text(text), Palette.Failed)];
     }
 
     /// <summary>A part after the blank line that sets it apart, or nothing at all when it has no lines.</summary>

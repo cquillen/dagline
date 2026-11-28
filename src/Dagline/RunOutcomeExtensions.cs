@@ -4,13 +4,14 @@ namespace Dagline;
 public static class RunOutcomeExtensions
 {
     /// <summary>
-    /// Maps a run outcome to a process exit code: 0 for complete, 1 for incomplete and 2 for stopped.
+    /// Maps a run outcome to a process exit code: 0 for complete, 1 for incomplete, 2 for stopped and 3 for
+    /// unrecorded.
     /// </summary>
     /// <param name="outcome">How the run ended.</param>
     /// <returns>The exit code.</returns>
     /// <remarks>
     /// This is a default the app is free not to use: Dagline never sets the exit code of the process itself.
-    /// The mapping is stable: the three codes keep their meaning in every release, so a script that calls the app can rely on them.
+    /// The mapping is stable: the codes keep their meaning in every release, so a script that calls the app can rely on them.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="outcome"/> is not a defined run outcome.</exception>
     public static int ToExitCode(this RunOutcome outcome) => outcome switch
@@ -18,6 +19,7 @@ public static class RunOutcomeExtensions
         RunOutcome.Complete => 0,
         RunOutcome.Incomplete => 1,
         RunOutcome.Stopped => 2,
+        RunOutcome.Unrecorded => 3,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a run outcome."),
     };
 }

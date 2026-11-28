@@ -64,10 +64,10 @@ internal enum EffectKind
 /// <param name="Outcome">The run outcome, for <see cref="EffectKind.EndRun"/>.</param>
 /// <param name="Save">The save to answer, for <see cref="EffectKind.AnswerSave"/>.</param>
 /// <param name="Refusal">What refuses the save, for <see cref="EffectKind.AnswerSave"/>: <see langword="null"/> when it is made.</param>
-/// <param name="JournalError">The file system's failure of a write, for <see cref="EffectKind.EndRun"/>, if one failed.</param>
-/// <param name="Unrecorded">
-/// What the run ends with when it ends unrecorded, for <see cref="EffectKind.EndRun"/>, which takes precedence over
-/// <paramref name="Outcome"/>; <see langword="null"/> otherwise.
+/// <param name="JournalError">
+/// The file system's failure of a write: for <see cref="EffectKind.EndRun"/>, if one failed, and for
+/// <see cref="EffectKind.AnswerSave"/>, the failure the save is refused with, which the loop wraps in a
+/// <see cref="JournalWriteException"/> holding the current snapshot.
 /// </param>
 internal readonly record struct Effect(
     EffectKind Kind,
@@ -79,8 +79,7 @@ internal readonly record struct Effect(
     RunOutcome Outcome = default,
     CheckpointSave? Save = null,
     Exception? Refusal = null,
-    Exception? JournalError = null,
-    JournalWriteException? Unrecorded = null)
+    Exception? JournalError = null)
 {
     public static Effect CloseJournal { get; } = new(EffectKind.CloseJournal);
 
@@ -95,11 +94,14 @@ internal readonly record struct Effect(
 
     public static Effect StartBody(BuiltTask task) => new(EffectKind.StartBody, Task: task);
 
-    public static Effect EndRun(RunOutcome outcome, Exception? journalError = null, JournalWriteException? unrecorded = null)
-        => new(EffectKind.EndRun, Outcome: outcome, JournalError: journalError, Unrecorded: unrecorded);
+    public static Effect EndRun(RunOutcome outcome, Exception? journalError)
+        => new(EffectKind.EndRun, Outcome: outcome, JournalError: journalError);
 
     public static Effect SaveMade(BuiltTask task, CheckpointSave save) => new(EffectKind.AnswerSave, Task: task, Save: save);
 
     public static Effect SaveRefused(BuiltTask task, CheckpointSave save, Exception refusal)
         => new(EffectKind.AnswerSave, Task: task, Save: save, Refusal: refusal);
+
+    public static Effect SaveNotWritten(BuiltTask task, CheckpointSave save, Exception failure)
+        => new(EffectKind.AnswerSave, Task: task, Save: save, JournalError: failure);
 }

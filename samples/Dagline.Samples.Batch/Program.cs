@@ -168,18 +168,10 @@ catch (DaglineException exception) when (exception is RunConfigurationException 
 // the running tasks are told to end, and the run waits for them for its grace period. One more kills the process.
 using var console = ConsoleStop.Hook(run);
 
-RunResult result;
-try
-{
-    result = await run.Result;
-}
-catch (JournalWriteException exception)
-{
-    await Console.Error.WriteLineAsync(exception.Message);
-    return 70;
-}
+var result = await run.Result;
 
-// 0 when every task succeeded, 1 when one did not, 2 when the run was drained or stopped.
+// 0 when every task succeeded, 1 when one did not, 2 when the run was drained or stopped, 3 when its journal could no longer be
+// written. The display's summary has already given the journal's error.
 return result.Outcome.ToExitCode();
 
 // Each shard's job and its job task share one name, which the faults and the scheduler's Forget use as well.

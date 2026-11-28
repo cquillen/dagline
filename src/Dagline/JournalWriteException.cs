@@ -28,21 +28,8 @@ public sealed class JournalWriteException : DaglineException
     }
 
     /// <summary>
-    /// The exception a run ends with, before the snapshot it holds exists: the run's loop gives it the final
-    /// snapshot with <see cref="Holds"/> as it publishes the <see cref="RunEnded"/> that carries it, before any reporter is handed
-    /// that event. Until #153, whose end carries an outcome and no exception.
-    /// </summary>
-    internal JournalWriteException(Exception innerException)
-        : this(innerException, null!)
-    {
-    }
-
-    /// <summary>
     /// The run as it was: from <see cref="Runner.RunAsync"/> and on <see cref="RunEnded"/>, the final snapshot, which has an end time
     /// and no run outcome; from a checkpoint save, the snapshot as of the failed save.
     /// </summary>
-    public Snapshot Snapshot { get; private set; }
-
-    /// <summary>Gives the exception the final snapshot of the run it ends, the one published with its <see cref="RunEnded"/>.</summary>
-    internal void Holds(Snapshot final) => Snapshot = final;
+    public Snapshot Snapshot { get; }
 }

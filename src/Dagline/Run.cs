@@ -28,7 +28,7 @@ public sealed class Run : ISnapshotSource
     private Run(RunLoop loop)
     {
         _loop = loop;
-        Result = ThrowIfUnrecordedAsync(loop.Result);
+        Result = loop.Result;
     }
 
     /// <summary>
@@ -76,12 +76,6 @@ public sealed class Run : ISnapshotSource
     /// </remarks>
     public void Stop() => _loop.Stop(StopRequester.App);
 
-    /// <summary>
-    /// The run's result as its loop gives it, an unrecorded run's included, which <see cref="Result"/> throws instead. For the
-    /// scripted tests, until unrecorded becomes a run outcome (#153).
-    /// </summary>
-    internal Task<RunResult> ResultEvenIfUnrecorded => _loop.Result;
-
     /// <summary>The run's inbox, which a test reads to see that a loop that faulted has closed it.</summary>
     internal Inbox Inbox => _loop.Inbox;
 
@@ -114,12 +108,5 @@ public sealed class Run : ISnapshotSource
         var run = new Run(new RunLoop(graph, settings, reporters, journal, host));
         run._loop.Start(cancellationToken);
         return run;
-    }
-
-    // Until #153 makes unrecorded a run outcome: an unrecorded run's result throws the exception its end carried, as before.
-    private static async Task<RunResult> ThrowIfUnrecordedAsync(Task<RunResult> ended)
-    {
-        var result = await ended.ConfigureAwait(false);
-        return result.Unrecorded is { } unrecorded ? throw unrecorded : result;
     }
 }

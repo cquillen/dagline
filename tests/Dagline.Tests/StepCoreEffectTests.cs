@@ -258,11 +258,11 @@ public class StepCoreEffectTests
             "signal the tasks",
             "publish stop requested",
             "close the journal",
-            "publish run ended: JournalWriteException",
-            "end the run: stopped",
+            "publish run ended: unrecorded",
+            "end the run: unrecorded",
         ]);
         var ended = core.TakeSnapshot();
-        (ended[prepare.Path].Status, ended.RunningTasks.InUse, ended.Outcome).ShouldBe((NodeStatus.Ready, 0, null));
+        (ended[prepare.Path].Status, ended.RunningTasks.InUse, ended.Outcome).ShouldBe((NodeStatus.Ready, 0, RunOutcome.Unrecorded));
     }
 
     private static (Graph Graph, BuiltTask Prepare, BuiltTask Load) Chain()
