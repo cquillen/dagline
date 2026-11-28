@@ -6,38 +6,23 @@ public class KilledProcessTests
 {
     [Test]
     [NotInParallel(DiskHeavy.Key)]
-    public async Task Every_cut_of_a_real_journal_continues_with_exactly_the_successes_and_checkpoints_whose_entries_were_whole()
-    {
-        using var temporary = new TemporaryDirectory();
-        var work = new Work();
-        var first = new RecordingReporter();
-        var second = new RecordingReporter();
-
-        var firstRun = await Runner.RunAsync(work.Build(Phase.First), Sequential(Journal.New(temporary.Path), first));
-        var id = firstRun.Snapshot.Journal!.Id;
-        var secondRun = await Runner.RunAsync(work.Build(Phase.Second), Sequential(Journal.Continue(temporary.Path, id), second));
-        var journalFile = Directory.GetFiles(temporary.Path, "*.journal").Single();
-        List<Line> lines = [new("header"), .. work.LinesOf(first, Phase.First), .. work.LinesOf(second, Phase.Second)];
-
-        firstRun.Snapshot[work.Notify].BlockedBy.ShouldBe(work.Check);
-        secondRun.Snapshot.SetAside.ShouldBe([work.Summary]);
-        File.ReadAllLines(journalFile).Length.ShouldBe(lines.Count);
-        var cuts = JournalCutter.Cut(journalFile);
-        cuts.Count.ShouldBe((lines.Count * 2) - 1);
-        foreach (var cut in cuts)
-        {
-            await ContinuesAsExpected(cut, lines.Take(cut.WholeLines), work);
-        }
-    }
+    public Task Every_cut_of_a_real_journal_continues_with_exactly_the_successes_and_checkpoints_whose_entries_were_whole()
+        => EveryCutContinuesAsExpected(JournalDurability.FlushedToDisk);
 
     [Test]
-    public async Task A_journal_cut_before_its_run_ended_entry_is_listed_as_died()
+    public Task Every_cut_of_a_journal_handed_to_the_operating_system_continues_exactly_as_one_flushed_to_the_disk()
+        => EveryCutContinuesAsExpected(JournalDurability.HandedToOperatingSystem);
+
+    [Test]
+    [Arguments(JournalDurability.FlushedToDisk)]
+    [Arguments(JournalDurability.HandedToOperatingSystem)]
+    public async Task A_journal_cut_before_its_run_ended_entry_is_listed_as_died(JournalDurability durability)
     {
         using var temporary = new TemporaryDirectory();
         using var copies = new TemporaryDirectory();
         var builder = new GraphBuilder();
         builder.Task("load", _ => Task.CompletedTask);
-        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.New(temporary.Path) });
+        await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.New(temporary.Path, durability: durability) });
         var cuts = JournalCutter.Cut(Directory.GetFiles(temporary.Path, "*.journal").Single());
 
         cuts[^2].WriteTo(copies.Path);
@@ -49,7 +34,9 @@ public class KilledProcessTests
     }
 
     [Test]
-    public async Task A_new_journals_header_and_first_run_are_on_disk_before_any_task_starts()
+    [Arguments(JournalDurability.FlushedToDisk)]
+    [Arguments(JournalDurability.HandedToOperatingSystem)]
+    public async Task A_new_journals_header_and_first_run_are_on_disk_before_any_task_starts(JournalDurability durability)
     {
         using var temporary = new TemporaryDirectory();
         using var copies = new TemporaryDirectory();
@@ -66,17 +53,45 @@ public class KilledProcessTests
         });
         var graph = builder.Build();
 
-        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path, "all shards") });
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path, "all shards", durability) });
         firstRun = false;
         var fromTheCopy = await Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id) });
+            new RunOptions { Journal = Journal.Continue(copies.Path, first.Snapshot.Journal!.Id, durability) });
 
         (fromTheCopy.Snapshot.Journal!.Id, fromTheCopy.Snapshot.Journal.Description, fromTheCopy.Snapshot.Journal.Run)
             .ShouldBe((first.Snapshot.Journal.Id, "all shards", 2));
     }
 
-    private static async Task ContinuesAsExpected(JournalCut cut, IEnumerable<Line> wholeLines, Work work)
+    private static async Task EveryCutContinuesAsExpected(JournalDurability durability)
+    {
+        using var temporary = new TemporaryDirectory();
+        var work = new Work();
+        var first = new RecordingReporter();
+        var second = new RecordingReporter();
+
+        var firstRun = await Runner.RunAsync(
+            work.Build(Phase.First),
+            Sequential(Journal.New(temporary.Path, durability: durability), first));
+        var id = firstRun.Snapshot.Journal!.Id;
+        var secondRun = await Runner.RunAsync(
+            work.Build(Phase.Second),
+            Sequential(Journal.Continue(temporary.Path, id, durability), second));
+        var journalFile = Directory.GetFiles(temporary.Path, "*.journal").Single();
+        List<Line> lines = [new("header"), .. work.LinesOf(first, Phase.First), .. work.LinesOf(second, Phase.Second)];
+
+        firstRun.Snapshot[work.Notify].BlockedBy.ShouldBe(work.Check);
+        secondRun.Snapshot.SetAside.ShouldBe([work.Summary]);
+        File.ReadAllLines(journalFile).Length.ShouldBe(lines.Count);
+        var cuts = JournalCutter.Cut(journalFile);
+        cuts.Count.ShouldBe((lines.Count * 2) - 1);
+        foreach (var cut in cuts)
+        {
+            await ContinuesAsExpected(cut, lines.Take(cut.WholeLines), work, durability);
+        }
+    }
+
+    private static async Task ContinuesAsExpected(JournalCut cut, IEnumerable<Line> wholeLines, Work work, JournalDurability durability)
     {
         using var copy = new TemporaryDirectory();
         var id = Path.GetFileNameWithoutExtension(cut.WriteTo(copy.Path));
@@ -88,7 +103,7 @@ public class KilledProcessTests
 
         var reporter = new RecordingReporter();
         work.CheckpointsSeen.Clear();
-        var continued = await Runner.RunAsync(work.Build(Phase.Continuing), Sequential(Journal.Continue(copy.Path, id), reporter));
+        var continued = await Runner.RunAsync(work.Build(Phase.Continuing), Sequential(Journal.Continue(copy.Path, id, durability), reporter));
 
         var because = $"after a cut at {cut}";
         continued.Outcome.ShouldBe(RunOutcome.Complete, because);
@@ -103,7 +118,7 @@ public class KilledProcessTests
         }
 
         var again = new RecordingReporter();
-        var thirdRun = await Runner.RunAsync(work.Build(Phase.Continuing), Sequential(Journal.Continue(copy.Path, id), again));
+        var thirdRun = await Runner.RunAsync(work.Build(Phase.Continuing), Sequential(Journal.Continue(copy.Path, id, durability), again));
         thirdRun.Outcome.ShouldBe(RunOutcome.Complete, because);
         again.Events.Count.ShouldBe(2, because);
     }

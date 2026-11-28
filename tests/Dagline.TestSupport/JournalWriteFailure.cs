@@ -6,9 +6,9 @@ namespace Dagline.TestSupport;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is the public face of the one internal test hook on <see cref="Journal"/>, which wraps the stream of that journal's file once
+/// It is one public face of the one internal test hook on <see cref="Journal"/>, which wraps the stream of that journal's file once
 /// it is opened, so that the first write holding the chosen entry throws an <see cref="IOException"/>. The hook applies to the one
-/// journal it is put on, so tests running in parallel cannot fail each other's writes.
+/// journal it is put on, so tests running in parallel cannot fail each other's writes. <see cref="JournalFlushes"/> is the other face.
 /// </para>
 /// <para>
 /// A choice names its entry as a <see cref="JournalLine"/>, the only code outside <c>JournalFile</c> that knows how an entry looks in
