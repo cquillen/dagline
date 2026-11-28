@@ -12,13 +12,14 @@ Add the package and give the run the reporter that <xref:Dagline.Spectre.Spectre
 using Dagline;
 using Dagline.Spectre;
 
-using var console = ConsoleStop.Hook();
-
-var result = await Runner.RunAsync(graph, new RunOptions
+var run = Runner.Start(graph, new RunOptions
 {
     Journal = Journal.None,
     Reporters = [SpectreReporter.Create()],
-}, console.Drain, console.Token);
+});
+using var console = ConsoleStop.Hook(run);
+
+var result = await run.Result;
 
 return result.Outcome.ToExitCode();
 ```
@@ -132,14 +133,14 @@ Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a nar
 
 ## Draining and stopping
 
-<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, hooks the console's cancel key and SIGTERM to a drain signal, <xref:Dagline.ConsoleStop.Drain>, and a cancellation token, <xref:Dagline.ConsoleStop.Token>. Pass both to the run and dispose the hook when the run has ended, as `using var` does:
+<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, hooks the console's cancel key and SIGTERM to the run you give it. Hook it once the run has started and dispose the hook when the run has ended, as `using var` does:
 
-- **The first Ctrl+C** requests the drain: the run starts nothing more and lets its running tasks finish, however long they take.
-- **The second Ctrl+C**, or **a SIGTERM** at any time, cancels the token, which stops the run: its running tasks are told to end, and it waits for them for at most its [grace period](running-and-stopping.md#the-grace-period).
-- Both are swallowed, so your process lives on and `RunAsync` returns its result.
-- **After the stop** nothing more is requested and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
+- **The first Ctrl+C** drains the run: it starts nothing more and lets its running tasks finish, however long they take.
+- **The second Ctrl+C**, or **a SIGTERM** at any time, stops the run: its running tasks are told to end, and it waits for them for at most its [grace period](running-and-stopping.md#the-grace-period).
+- Both are swallowed, so your process lives on and the run returns its result.
+- **After the stop** nothing more is asked and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Disposing unhooks both and disposes the token's source, and a Ctrl+C or SIGTERM after that is your app's own business again. The hook listens to nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. Ctrl+C presses are counted by the hook itself, so a `Request` your app makes on `Drain` does not make the next Ctrl+C a stop. The display does not depend on the hook: any drain signal and any token show the banner.
+Disposing unhooks both, and a Ctrl+C or SIGTERM after that is your app's own business again. The hook listens to nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. Ctrl+C presses are counted by the hook itself, so a `Drain` your app asks of the run does not make the next Ctrl+C a stop. The display does not depend on the hook: any drain or stop of the run shows the banner.
 
 ### The banner
 

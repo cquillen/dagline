@@ -4,7 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Dagline.Tests;
 
 /// <summary>
-/// The end of a run on the new engine: the wait for reporters, bounded by the reporter wait on the run's clock, and dropping a
+/// The end of a run: the wait for reporters, bounded by the reporter wait on the run's clock, and dropping a
 /// reporter (ADR 0010, ADR 0015). Each test is one scripted run that makes each thing happen in the order it means, so none is
 /// repeated.
 /// </summary>

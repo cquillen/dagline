@@ -84,9 +84,9 @@ More in [Running and stopping](running-and-stopping.md). Definitions: [Runs](../
 
 A run can be ended early in two ways, and your app decides what asks for each, such as Ctrl+C.
 
-A **drain** is a request, usually from the operator, that the run start nothing new and let its running tasks finish as they would. Your app passes the run a drain signal and requests it. The running tasks are not told, and the run waits for them however long they take.
+A **drain** is a request, usually from the operator, that the run start nothing new and let its running tasks finish as they would. Your app asks the run it holds to drain. The running tasks are not told, and the run waits for them however long they take.
 
-A **stop** is a request, from the operator or from Dagline itself, that the run start nothing new and that its running tasks end now. Your app passes the run a cancellation token and cancels it. Every running task sees its own cancellation token signalled, and the run waits a **grace period**, 30 seconds by default, for them to end cleanly. Only the grace period running out ends that wait. A stop can follow a drain.
+A **stop** is a request, from the operator or from Dagline itself, that the run start nothing new and that its running tasks end now. Your app asks the run it holds to stop, or cancels the cancellation token it passed the run: the two are one request. Every running task sees its own cancellation token signalled, and the run waits a **grace period**, 30 seconds by default, for them to end cleanly. Only the grace period running out ends that wait. A stop can follow a drain.
 
 A task that ends because of the stop, or that is still running when the grace period runs out, is **cancelled**. Cancelled is a settled status, and it never blocks: a task that requires a cancelled one simply stays pending. A task that finished its work in spite of the drain or the stop keeps its real status. Tasks the run never started are never reached: they stay pending or ready, so a later run can see what was left to do.
 

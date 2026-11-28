@@ -943,7 +943,7 @@ public class PlainTextReporterTests
 
             // Every step of the clock ends a task and, a minute after the last line, is also due a line of counts:
             // the reporter is called for the events on one thread while its own timer fires on this one.
-            // The clock steps on until the run returns, so on the new engine an unlimited reporter wait keeps a reporter that has
+            // The clock steps on until the run returns, so an unlimited reporter wait keeps a reporter that has
             // fallen behind from being dropped once the run's end is queued.
             var options = Options(clock, new PlainTextReporter(writer, clock)).WithReporterWait(Timeout.InfiniteTimeSpan);
             var run = Runner.RunAsync(builder.Build(), options);

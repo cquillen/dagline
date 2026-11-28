@@ -4,8 +4,8 @@ using Microsoft.Extensions.Time.Testing;
 namespace Dagline.Tests;
 
 /// <summary>
-/// What the plain-text reporter prints of a run on the new engine, where a report is dated by when the run applies it (ADR 0015).
-/// Each test is one scripted run, which covers on the new engine a plain-text test that stays on the existing one.
+/// What the plain-text reporter prints of a run, where a report is dated by when the run applies it (ADR 0015).
+/// Each test is one scripted run.
 /// </summary>
 public class LoopPlainTextReporterTests
 {

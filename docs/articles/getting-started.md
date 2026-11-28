@@ -73,50 +73,53 @@ A journal is a file that records what each run did, so that a later run can cont
 
 Dagline never picks a journal for you. These few lines are this app's policy, and [Journals](journals.md#the-app-always-chooses) says why the choice is yours.
 
+## Start it
+
+```csharp
+// The run: the display on a terminal, or plain text when output is redirected.
+var run = Runner.Start(graph, new RunOptions
+{
+    Journal = journal,
+    Reporters = [SpectreReporter.Create()],
+});
+```
+
+<xref:Dagline.Runner.Start*> starts the graph and returns the <xref:Dagline.Run> at once: your app can ask it to drain or to stop, read its current snapshot, and await its result. The journal choice is the one option you must set. A reporter shows the run while it happens, and <xref:Dagline.Spectre.SpectreReporter.Create*> gives the right one for where the app runs: the display on a terminal, and timestamped lines of plain text when output is redirected to a file or a build log.
+
+> [!WARNING]
+> While the display is up, your app's own logging must go to a file and not to the console: see [The terminal display](terminal-ui.md#your-apps-own-output).
+
 ## Hook Ctrl+C and SIGTERM
 
 ```csharp
 // The first Ctrl+C drains the run: nothing new starts and the running tasks finish. A second Ctrl+C, or a SIGTERM, stops it:
 // the running tasks are told to end, and the run waits for them for its grace period.
-using var console = ConsoleStop.Hook();
+using var console = ConsoleStop.Hook(run);
 ```
 
-<xref:Dagline.ConsoleStop.Hook*>, in the core package, hooks the console's cancel key and SIGTERM, the signal a service manager or a container runtime sends to ask a process to end. It gives a drain signal, `console.Drain`, and a cancellation token, `console.Token`, to pass to the run:
+<xref:Dagline.ConsoleStop.Hook*>, in the core package, hooks the console's cancel key and SIGTERM, the signal a service manager or a container runtime sends to ask a process to end, to the run:
 
 - The first Ctrl+C **drains** the run: it starts nothing more and lets the running tasks finish, however long they take.
 - A second Ctrl+C, or a SIGTERM at any time, **stops** it: the running tasks see their cancellation token signalled, and the run waits for them to end for at most 30 seconds.
 - After that, a Ctrl+C or SIGTERM is not swallowed, and ends the process: the way out of an app that hangs.
 
-The drain and the stop are swallowed, so the process lives on and your app still gets the run's result. `using` unhooks both when the app ends. Dagline hooks nothing unless your app calls `Hook`.
+The drain and the stop are swallowed, so the process lives on and your app still gets the run's result. `using` unhooks both when the app ends. Dagline hooks nothing unless your app calls `Hook`, and before the run exists a Ctrl+C ends the process as it would anyway.
 
-An app with a trigger of its own, such as a file appearing or a timer, needs no hook. It makes a plain drain signal and requests it from that trigger, or passes a token it already has, such as its host's shutdown token:
+An app with a trigger of its own, such as a file appearing or a timer, needs no hook. It asks the run itself from that trigger, or passes a token it already has, such as its host's shutdown token, when it starts the run:
 
 ```csharp
-var drain = new DrainSignal();
-using var stop = new CancellationTokenSource();
-
 // Later, from wherever the app decides:
-drain.Request();   // let the running tasks finish
-stop.Cancel();     // or have them end now
+run.Drain();   // let the running tasks finish
+run.Stop();    // or have them end now
 ```
 
-A signal made with `new DrainSignal()` holds nothing to release and is not disposable, so it takes no `using`.
-
-## Run it
+## Await the result
 
 ```csharp
-// The run: the display on a terminal, or plain text when output is redirected.
-var result = await Runner.RunAsync(graph, new RunOptions
-{
-    Journal = journal,
-    Reporters = [SpectreReporter.Create()],
-}, console.Drain, console.Token);
+var result = await run.Result;
 ```
 
-<xref:Dagline.Runner.RunAsync*> runs the graph and returns when the run has ended. The journal choice is the one option you must set. A reporter shows the run while it happens, and <xref:Dagline.Spectre.SpectreReporter.Create*> gives the right one for where the app runs: the display on a terminal, and timestamped lines of plain text when output is redirected to a file or a build log.
-
-> [!WARNING]
-> While the display is up, your app's own logging must go to a file and not to the console: see [The terminal display](terminal-ui.md#your-apps-own-output).
+<xref:Dagline.Run.Result> completes when the run has ended and the display has shown its summary. An app that never drains, stops or reads its run can start it and await it in one call, <xref:Dagline.Runner.RunAsync*>.
 
 ## Map the run outcome to an exit code
 

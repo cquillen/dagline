@@ -4,7 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Dagline.Tests;
 
 /// <summary>
-/// What a task says about itself, on the new engine (ADR 0015): a kept warning, a wait, the message, a detail line and a reported
+/// What a task says about itself (ADR 0015): a kept warning, a wait, the message, a detail line and a reported
 /// failure are inputs, applied when the loop takes them, and progress is a sample, read by whoever builds a snapshot. Each test is
 /// scripted on the test's own thread, so it states when the loop applies what.
 /// </summary>

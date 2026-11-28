@@ -4,14 +4,14 @@ using Microsoft.Extensions.Time.Testing;
 namespace Dagline.Tests;
 
 /// <summary>
-/// A journal write that fails, on the new engine (ADR 0015): the core knows the write's result before it decides what follows it,
+/// A journal write that fails (ADR 0015): the core knows the write's result before it decides what follows it,
 /// so nothing starts after a failed write, Dagline applies a stop unless one has been applied, and the run ends unrecorded, with
 /// no end entry, so the journal lists it as died. Each test is one scripted run that fails one write through the journal write
 /// hook, so none is repeated.
 /// </summary>
 /// <remarks>
 /// Until the cutover (#153) the outcome unrecorded is held internally, on <see cref="RunResult.Unrecorded"/>, and the run's end
-/// carries the <see cref="JournalWriteException"/> in place of a run outcome, as on the existing engine.
+/// carries the <see cref="JournalWriteException"/> in place of a run outcome, until #153.
 /// </remarks>
 public class LoopRunFailedWriteTests
 {
