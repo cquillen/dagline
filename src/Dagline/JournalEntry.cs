@@ -111,7 +111,15 @@ internal sealed record TaskSettledEntry(
 /// <summary>A run of the journal ended with a run outcome.</summary>
 /// <param name="Time">When the run ended.</param>
 /// <param name="Outcome">How it ended.</param>
-internal sealed record RunEndedEntry(DateTimeOffset Time, RunOutcome Outcome) : JournalEntry;
+internal sealed record RunEndedEntry(DateTimeOffset Time, RunOutcome Outcome) : JournalEntry
+{
+    /// <summary>
+    /// Whether <see cref="Outcome"/> is one a run records at its end: complete, incomplete or stopped. An unrecorded run never
+    /// writes its end, since its journal could no longer be written, so a line that says one ended unrecorded, or gives a number
+    /// that is no run outcome, was not written by Dagline.
+    /// </summary>
+    public bool IsOneARunRecords => Outcome is RunOutcome.Complete or RunOutcome.Incomplete or RunOutcome.Stopped;
+}
 
 /// <summary>A running task saved a checkpoint, which replaces any it had.</summary>
 /// <param name="Path">The path of the task.</param>

@@ -360,6 +360,33 @@ public class JournalListingTests
     }
 
     [Test]
+    [Arguments("\"Unrecorded\"")]
+    [Arguments("99")]
+    public async Task A_journal_whose_end_entry_gives_an_outcome_no_run_records_is_listed_unreadable_and_cannot_be_continued(string outcome)
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => throw new InvalidOperationException("load failed"));
+        var graph = builder.Build();
+        var healthy = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var edited = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var id = edited.Snapshot.Journal!.Id;
+        var file = temporary.Combine($"{id}.journal");
+        await File.WriteAllTextAsync(
+            file,
+            (await File.ReadAllTextAsync(file)).Replace("\"outcome\":\"Incomplete\"", $"\"outcome\":{outcome}", StringComparison.Ordinal));
+
+        var listed = await Journals.ListAsync(temporary.Path);
+
+        listed.Journals.ShouldHaveSingleItem().Id.ShouldBe(healthy.Snapshot.Journal!.Id);
+        var unreadable = listed.Unreadable.ShouldHaveSingleItem();
+        unreadable.FilePath.ShouldBe(file);
+        unreadable.Exception.ShouldBeOfType<JournalFormatException>();
+        Should.Throw<JournalFormatException>(
+            () => Runner.Start(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) }));
+    }
+
+    [Test]
     public async Task Files_that_are_not_journals_or_were_cut_short_or_overwritten_are_listed_unreadable_in_order_of_their_path()
     {
         using var temporary = new TemporaryDirectory();
