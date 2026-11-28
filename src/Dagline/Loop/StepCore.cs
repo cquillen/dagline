@@ -67,6 +67,9 @@ internal sealed class StepCore
     private readonly string _machine = Environment.MachineName;
     private readonly Continuation _continuation;
 
+    // The tasks running now, whose samples' counts beyond the kept are taken as each change is closed.
+    private readonly HashSet<int> _running = [];
+
     // Reused at every settle, so working out what follows from it allocates no collection of its own.
     private readonly List<BuiltTask> _becomingReady = [];
     private readonly List<BuiltTask> _blocked = [];
@@ -93,7 +96,8 @@ internal sealed class StepCore
     /// graph are counted (<see cref="Continuation"/>).
     /// </param>
     /// <param name="source">The source of snapshots that <see cref="RunStarted"/> hands to reporters.</param>
-    public StepCore(Graph graph, RunSettings settings, JournalFold? journal, ISnapshotSource source)
+    /// <param name="samples">The tasks' samples, which the run's current snapshot reads too; a new set when none is given.</param>
+    public StepCore(Graph graph, RunSettings settings, JournalFold? journal, ISnapshotSource source, TaskSamples? samples = null)
     {
         _graph = graph;
         _source = source;
@@ -109,6 +113,7 @@ internal sealed class StepCore
         _dependencies = new UnmetDependencies(graph);
         _isPending = task => InstanceOf(task).Status is NodeStatus.Pending;
         _instances = new TaskInstance?[graph.Nodes.Length];
+        Samples = samples ?? new TaskSamples(graph);
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
         {
@@ -129,8 +134,20 @@ internal sealed class StepCore
                 SetAside = [.. _continuation.SetAside.Select(task => task.Path)],
                 JournalPathsNotInGraph = _continuation.PathsNotInGraph,
                 JournalPathsNotInGraphUnsucceeded = _continuation.PathsNotInGraphUnsucceeded,
-            });
+            },
+            Samples);
     }
+
+    /// <summary>
+    /// The sample of each task: its progress and its counts beyond the kept, which its context writes from the task's own threads,
+    /// and which the core reads as it builds a snapshot.
+    /// </summary>
+    public TaskSamples Samples { get; }
+
+    /// <summary>
+    /// The positions of the tasks running in the last snapshot built, whose progress a reader of the current snapshot lays over it.
+    /// </summary>
+    public int[] Sampled => _snapshots.Sampled;
 
     /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
     public int SlotTries => _slots.Tries;
@@ -150,7 +167,7 @@ internal sealed class StepCore
     /// <param name="input">The input. While a write is under way, the only input allowed is its result.</param>
     /// <param name="now">
     /// When the loop took the input. The result of a write continues the step the write is part of, which keeps its time, so the
-    /// time given with it is not read.
+    /// time given with it is not read, nor is the time of an input that is not <see cref="Input.IsTimed"/>.
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// The input is not one the core takes now: a fault in Dagline, which faults the run.
@@ -169,7 +186,10 @@ internal sealed class StepCore
             return _effects;
         }
 
-        _now = now;
+        if (input.IsTimed)
+        {
+            _now = now;
+        }
         switch (input.Kind)
         {
             case InputKind.Start:
@@ -177,6 +197,24 @@ internal sealed class StepCore
                 break;
             case InputKind.BodyEnded:
                 BodyEnded(input.Task!, input.Outcome);
+                break;
+            case InputKind.WarningKept:
+                Report(input.Task!, InstanceOf(input.Task!).Warn(input.Text!, _now));
+                break;
+            case InputKind.WaitOpened:
+                Report(input.Task!, InstanceOf(input.Task!).OpenWaitingScope(input.Text, _now));
+                break;
+            case InputKind.WaitClosed:
+                Report(input.Task!, InstanceOf(input.Task!).CloseWaitingScope(_now));
+                break;
+            case InputKind.MessageSet:
+                Report(input.Task!, InstanceOf(input.Task!).SetMessage(input.Text!));
+                break;
+            case InputKind.DetailKept:
+                Report(input.Task!, InstanceOf(input.Task!).AddDetail(input.Lines));
+                break;
+            case InputKind.FailureReported:
+                Report(input.Task!, InstanceOf(input.Task!).Fail(input.Failed.Message, input.Failed.Lines));
                 break;
             case InputKind.Drain:
                 Drain();
@@ -279,6 +317,8 @@ internal sealed class StepCore
     /// </summary>
     private void BodyEnded(BuiltTask task, TaskOutcome ended)
     {
+        FreezeSampleOf(task);
+
         // Only a stop tells the tasks, so only after a stop is a cancellation exception a cancellation: during a drain it is a failure.
         var changes = InstanceOf(task).Settle(HasStopped ? ended.OnceStopped() : ended, _now);
         if (changes.Count == 0)
@@ -294,6 +334,64 @@ internal sealed class StepCore
         }
 
         Record(entries, JournalFlush.ToDisk, AfterWrite.Settles);
+    }
+
+    /// <summary>
+    /// Freezes the sample of a running task that is about to stop running, and takes what it holds into the task's instance, so
+    /// that the node of its settle, and every snapshot after it, shows its progress as it was then. Nothing the task reports from
+    /// now on changes it. A task that is not running is left as it is.
+    /// </summary>
+    private void FreezeSampleOf(BuiltTask task)
+    {
+        var instance = InstanceOf(task);
+        if (instance.Status is not NodeStatus.Running)
+        {
+            return;
+        }
+
+        var sample = Samples[task];
+        instance.TakeProgress(sample.Freeze());
+        instance.TakeCountsBeyondKept(sample.WarningsBeyondKept, sample.DetailBeyondKept);
+        _running.Remove(task.Position);
+    }
+
+    /// <summary>
+    /// Takes each running task's counts beyond the kept from its sample into its instance and the roll-up, so that the change being
+    /// closed shows the task's warning count and its groups' as one. Only the loop applies these counts, as it builds a snapshot.
+    /// </summary>
+    private void TakeCountsBeyondKept()
+    {
+        foreach (var position in _running)
+        {
+            var sample = Samples[position];
+            var instance = _instances[position]!;
+            if (instance.TakeCountsBeyondKept(sample.WarningsBeyondKept, sample.DetailBeyondKept))
+            {
+                Apply(_graph.TaskAt(position), new TaskChange(Task: null, Event: null));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies what a task reported: published when it is an event, and otherwise marking the current snapshot as out of date. A
+    /// report on a task that is not running changes nothing, and gives nothing.
+    /// </summary>
+    private void Report(BuiltTask task, TaskChange? reported)
+    {
+        if (reported is not { } change)
+        {
+            return;
+        }
+
+        Apply(task, change);
+        if (change.Event is { } produced)
+        {
+            Publish(produced);
+        }
+        else
+        {
+            _effects.Add(Effect.MarkCurrentOutOfDate);
+        }
     }
 
     /// <summary>
@@ -421,6 +519,7 @@ internal sealed class StepCore
 
                 // Moved at once, not after the walk, so the snapshot with each start counts only the slots taken so far.
                 var change = InstanceOf(task).Start(_now);
+                _running.Add(position);
                 Apply(task, change);
                 Hold(change.Event!);
                 _starting.Add(task);
@@ -627,6 +726,7 @@ internal sealed class StepCore
         {
             if (InstanceOf(task).Status is NodeStatus.Running)
             {
+                FreezeSampleOf(task);
                 Settle(task, InstanceOf(task).LeaveBehind(_now), entries);
             }
         }
@@ -722,6 +822,7 @@ internal sealed class StepCore
     /// <summary>What has changed in the snapshot since the last event, which from now on is part of the snapshot built next.</summary>
     private SnapshotChange ChangeSinceLastEvent()
     {
+        TakeCountsBeyondKept();
         _rollUp.HandOverChanged(_snapshots);
         return _snapshots.Close(_milestones, _rollUp.RunCounts);
     }

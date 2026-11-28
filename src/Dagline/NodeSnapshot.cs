@@ -14,6 +14,33 @@ public sealed class NodeSnapshot
         Counts = counts;
     }
 
+    // Copies every member, for WithProgress.
+    private NodeSnapshot(NodeSnapshot node)
+    {
+        Path = node.Path;
+        Title = node.Title;
+        IsGroup = node.IsGroup;
+        Dependencies = node.Dependencies;
+        Limits = node.Limits;
+        Status = node.Status;
+        Counts = node.Counts;
+        Failure = node.Failure;
+        BlockedBy = node.BlockedBy;
+        Message = node.Message;
+        Detail = node.Detail;
+        DetailOmitted = node.DetailOmitted;
+        Warnings = node.Warnings;
+        WarningsOmitted = node.WarningsOmitted;
+        WarningsBeneath = node.WarningsBeneath;
+        StatusText = node.StatusText;
+        Count = node.Count;
+        Total = node.Total;
+        WaitingSince = node.WaitingSince;
+        WaitingText = node.WaitingText;
+        Started = node.Started;
+        Settled = node.Settled;
+    }
+
     /// <summary>The identity of the node.</summary>
     public NodePath Path { get; }
 
@@ -250,4 +277,15 @@ public sealed class NodeSnapshot
     /// until the run let go of it, which is when it settled as cancelled.
     /// </remarks>
     public TimeSpan? Ran => Settled - Started;
+
+    /// <summary>
+    /// This node with the progress of <paramref name="sample"/>, and everything else as it is. It is this node itself when its
+    /// progress is already that.
+    /// </summary>
+    internal NodeSnapshot WithProgress(in ProgressSample sample)
+        => HasProgress(sample) ? this : new(this) { StatusText = sample.StatusText, Count = sample.Count, Total = sample.Total };
+
+    /// <summary>Whether this node's progress is that of <paramref name="sample"/>.</summary>
+    internal bool HasProgress(in ProgressSample sample)
+        => string.Equals(StatusText, sample.StatusText, StringComparison.Ordinal) && Count == sample.Count && Total == sample.Total;
 }

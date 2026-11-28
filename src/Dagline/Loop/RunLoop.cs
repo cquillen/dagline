@@ -11,8 +11,8 @@ namespace Dagline;
 /// <para>
 /// The run's life is the loop's control flow: read, decide, carry out, repeat; then, once the core has ended the run, wait for
 /// the reporters, still reading the inbox, and return. The loop awaits only its inbox: the reporters being done reaches it as an
-/// input. It reads the run's clock once for each input it takes from the inbox, and the result of a write, the next input after a
-/// record, is given to the core with no time, ahead of anything in the inbox.
+/// input. It reads the run's clock once for each timed input it takes from the inbox (see <see cref="Input.IsTimed"/>), and the
+/// result of a write, the next input after a record, is given to the core with no time, ahead of anything in the inbox.
 /// </para>
 /// <para>
 /// Each turn of the loop is run by the host: the first when the run starts, and each after the loop finds its inbox empty, when an
@@ -30,12 +30,13 @@ internal sealed class RunLoop
     private readonly JournalFile? _journal;
     private readonly StepCore _core;
     private readonly HostedDelivery _delivery;
-    private readonly LoopTaskRun _taskRun = new();
+    private readonly LoopTaskRun _taskRun;
     private readonly CancellationTokenSource _tasksTokenSource = new();
     private readonly TaskCompletionSource<RunResult> _result;
     private readonly TimeSpan _gracePeriod;
 
     private RunOutcome? _outcome;
+    private bool _currentIsOutOfDate;
     private CancellationTokenRegistration _hearsTheStop;
     private ITimer? _gracePeriodTimer;
 
@@ -56,17 +57,20 @@ internal sealed class RunLoop
         Inbox = new Inbox(host);
         _delivery = new HostedDelivery(reporters, host);
         _result = new TaskCompletionSource<RunResult>(host.CompletionOptions);
-        _core = new StepCore(graph, settings, journal?.Fold, Source);
+        var samples = new TaskSamples(graph);
+        Source = new CurrentSnapshot(samples);
+        _core = new StepCore(graph, settings, journal?.Fold, Source, samples);
+        _taskRun = new LoopTaskRun(Inbox, samples, graph, Source);
 
         // Before the loop's first turn, on the starting thread: nothing else can read or change the core yet.
-        Source.Publish(_core.TakeSnapshot());
+        Source.Publish(_core.TakeSnapshot(), _core.Sampled);
     }
 
     /// <summary>The run's inbox: the only way into the run.</summary>
     public Inbox Inbox { get; }
 
     /// <summary>The run's current snapshot, which the loop writes and anyone may read.</summary>
-    public CurrentSnapshot Source { get; } = new();
+    public CurrentSnapshot Source { get; }
 
     /// <summary>
     /// Completes with the run's result once the run has ended and every reporter has handled every event or been dropped, or faults
@@ -118,10 +122,14 @@ internal sealed class RunLoop
                 {
                     while (!Inbox.TryTake(out input))
                     {
+                        RebuildTheCurrentIfOutOfDate();
                         await Inbox.WaitAsync();
                     }
 
-                    now = _clock.GetUtcNow();
+                    if (input.IsTimed)
+                    {
+                        now = _clock.GetUtcNow();
+                    }
                 }
 
                 if (input.Kind is InputKind.ReportersDone)
@@ -181,6 +189,9 @@ internal sealed class RunLoop
                 case EffectKind.EndRun:
                     End(effect.Outcome);
                     break;
+                case EffectKind.MarkCurrentOutOfDate:
+                    _currentIsOutOfDate = true;
+                    break;
             }
         }
 
@@ -207,8 +218,22 @@ internal sealed class RunLoop
     private void Publish(RunEvent runEvent, SnapshotChange change)
     {
         var snapshot = _core.SnapshotAfter(change);
-        Source.Publish(snapshot);
+        _currentIsOutOfDate = false;
+        Source.Publish(snapshot, _core.Sampled);
         _delivery.Publish(runEvent, snapshot);
+    }
+
+    /// <summary>
+    /// Makes the run as it is now the current snapshot, if something that is not an event has changed it since the last event.
+    /// Called only once the inbox is empty, so a burst of such inputs costs one snapshot.
+    /// </summary>
+    private void RebuildTheCurrentIfOutOfDate()
+    {
+        if (_currentIsOutOfDate)
+        {
+            _currentIsOutOfDate = false;
+            Source.Publish(_core.TakeSnapshot(), _core.Sampled);
+        }
     }
 
     private void StartBody(BuiltTask task)
