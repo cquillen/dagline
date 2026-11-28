@@ -34,9 +34,18 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples) : ITaskRun
 
     public void Fail(BuiltTask task, string message, IEnumerable<string> detail) => throw NotYet(nameof(TaskContext.Fail));
 
-    public bool OpenWaitingScope(BuiltTask task, string? text) => throw NotYet(nameof(TaskContext.BeginWaiting));
+    /// <summary>
+    /// Posts the opening of a waiting scope, always: only the core knows whether the task is still running, and it ignores the
+    /// scope, and its close, for a task that is not.
+    /// </summary>
+    /// <returns><see langword="true"/>, so that closing the scope is posted too.</returns>
+    public bool OpenWaitingScope(BuiltTask task, string? text)
+    {
+        inbox.Post(Input.WaitOpened(task, text));
+        return true;
+    }
 
-    public void CloseWaitingScope(BuiltTask task) => throw NotYet(nameof(TaskContext.BeginWaiting));
+    public void CloseWaitingScope(BuiltTask task) => inbox.Post(Input.WaitClosed(task));
 
     public string CheckpointOf(BuiltTask task) => throw NotYet(nameof(TaskContext.Checkpoint));
 

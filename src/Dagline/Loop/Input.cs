@@ -12,6 +12,12 @@ internal enum InputKind
     /// <summary>A task added a warning that is kept: one of its first <see cref="TaskSample.Kept"/>, which its sample counts.</summary>
     WarningKept,
 
+    /// <summary>A task opened a waiting scope, with its text. Always posted: the core ignores it for a task that is not running.</summary>
+    WaitOpened,
+
+    /// <summary>A task closed a waiting scope.</summary>
+    WaitClosed,
+
     /// <summary>
     /// The result of the write the last <see cref="EffectKind.Record"/> asked for. The loop gives it to the core next, ahead of
     /// anything in the inbox, and never posts it.
@@ -44,6 +50,10 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
     public static Input BodyEnded(BuiltTask task, TaskOutcome ended) => new(InputKind.BodyEnded, task, ended);
 
     public static Input WarningKept(BuiltTask task, string warning) => new(InputKind.WarningKept, task, warning);
+
+    public static Input WaitOpened(BuiltTask task, string? text) => new(InputKind.WaitOpened, task, text);
+
+    public static Input WaitClosed(BuiltTask task) => new(InputKind.WaitClosed, task);
 
     /// <summary>The result of a write: <paramref name="failure"/> is what it threw, or <see langword="null"/> when it landed.</summary>
     public static Input Written(Exception? failure) => new(InputKind.Written, Payload: failure);
