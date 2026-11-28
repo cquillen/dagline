@@ -6,7 +6,7 @@ namespace Dagline;
 /// Hands a run's events to its reporters through the run's host, on the new engine. Each reporter has a queue of its own, so
 /// every reporter receives the same events in the same order, and one that is slow or throws holds up neither the loop nor another
 /// reporter. A reporter that throws, or that is still busy when the run drops the busy ones at the end of the reporter wait, is
-/// dropped: it is handed nothing more, and its error is kept for the run's result.
+/// dropped: it is handed nothing more, its token is cancelled, and its error is kept for the run's result.
 /// </summary>
 /// <remarks>
 /// The loop alone publishes and completes. Once it has completed, the delivery says when every reporter has handled every event
@@ -82,7 +82,8 @@ internal sealed class HostedDelivery
 /// <summary>
 /// One reporter's queue of events on the new engine, and the delivery that hands them to it in the order published, one call at a
 /// time. The delivery is scheduled through the host when an event finds none scheduled, and runs until the queue is empty.
-/// Every call is handed the same token, which is cancelled only when the reporter is dropped while busy.
+/// Every call is handed the same token, which is cancelled only when the reporter is dropped: when it throws, or when it is still
+/// busy as the reporter wait runs out.
 /// </summary>
 /// <param name="reporter">The reporter this queue hands events to.</param>
 /// <param name="host">The run's host, which runs each delivery.</param>
@@ -207,9 +208,7 @@ internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action f
             LetGo(new ReporterError(reporter, runEvent, new OperationCanceledException(_dropped.Token)));
         }
 
-        // Outside the gate: the host may run the token's callbacks, which are the reporter's code, on this thread.
-        host.Signal(_dropped);
-        finished();
+        SignalAndFinish();
     }
 
     private void Drop(ReporterError error)
@@ -225,6 +224,16 @@ internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action f
             LetGo(error);
         }
 
+        SignalAndFinish();
+    }
+
+    /// <summary>
+    /// Cancels the dropped reporter's token, through the host, then says it is finished, so a run that has returned has always
+    /// cancelled it. Outside the gate: the host may run the token's callbacks, which are the reporter's code, on this thread.
+    /// </summary>
+    private void SignalAndFinish()
+    {
+        host.Signal(_dropped);
         finished();
     }
 

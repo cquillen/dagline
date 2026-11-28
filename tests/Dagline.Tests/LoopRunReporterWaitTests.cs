@@ -136,7 +136,7 @@ public class LoopRunReporterWaitTests
     }
 
     [Test]
-    public async Task A_reporter_that_throws_is_dropped_at_once_and_the_run_carries_on_and_returns_without_waiting_the_reporter_wait()
+    public async Task A_reporter_that_throws_is_dropped_at_once_with_its_token_cancelled_and_the_run_carries_on_and_returns_without_waiting_the_reporter_wait()
     {
         var clock = new FakeTimeProvider(_runStart);
         var failure = new InvalidOperationException("the reporter cannot write");
@@ -153,6 +153,7 @@ public class LoopRunReporterWaitTests
         error.Reporter.ShouldBeSameAs(throwing);
         error.Event.ShouldBeSameAs(watching.Events[2]);
         error.Exception.ShouldBeSameAs(failure);
+        throwing.Tokens[^1].IsCancellationRequested.ShouldBeTrue();
         throwing.Lines.ShouldBe(["run started", "prepare: pending -> ready", "prepare: ready -> running"]);
         watching.Lines[^1].ShouldBe("run ended: complete");
     }
