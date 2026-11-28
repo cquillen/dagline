@@ -30,11 +30,12 @@ internal sealed class RunLoop
     private readonly JournalFile? _journal;
     private readonly StepCore _core;
     private readonly HostedDelivery _delivery;
-    private readonly LoopTaskRun _taskRun = new();
+    private readonly LoopTaskRun _taskRun;
     private readonly CancellationTokenSource _tasksTokenSource = new();
     private readonly TaskCompletionSource<RunResult> _result;
 
     private RunOutcome? _outcome;
+    private bool _currentIsOutOfDate;
 
     /// <param name="graph">The graph to run.</param>
     /// <param name="settings">The settings of the run.</param>
@@ -53,6 +54,7 @@ internal sealed class RunLoop
         _delivery = new HostedDelivery(reporters, host);
         _result = new TaskCompletionSource<RunResult>(host.CompletionOptions);
         _core = new StepCore(graph, settings, journal?.Fold, Source);
+        _taskRun = new LoopTaskRun(Inbox, _core.Samples);
 
         // Before the loop's first turn, on the starting thread: nothing else can read or change the core yet.
         Source.Publish(_core.TakeSnapshot());
@@ -95,6 +97,7 @@ internal sealed class RunLoop
                 {
                     while (!Inbox.TryTake(out input))
                     {
+                        RebuildTheCurrentIfOutOfDate();
                         await Inbox.WaitAsync();
                     }
 
@@ -147,6 +150,9 @@ internal sealed class RunLoop
                 case EffectKind.EndRun:
                     End(effect.Outcome);
                     break;
+                case EffectKind.MarkCurrentOutOfDate:
+                    _currentIsOutOfDate = true;
+                    break;
             }
         }
 
@@ -173,8 +179,22 @@ internal sealed class RunLoop
     private void Publish(RunEvent runEvent, SnapshotChange change)
     {
         var snapshot = _core.SnapshotAfter(change);
+        _currentIsOutOfDate = false;
         Source.Publish(snapshot);
         _delivery.Publish(runEvent, snapshot);
+    }
+
+    /// <summary>
+    /// Makes the run as it is now the current snapshot, if something that is not an event has changed it since the last event.
+    /// Called only once the inbox is empty, so a burst of such inputs costs one snapshot.
+    /// </summary>
+    private void RebuildTheCurrentIfOutOfDate()
+    {
+        if (_currentIsOutOfDate)
+        {
+            _currentIsOutOfDate = false;
+            Source.Publish(_core.TakeSnapshot());
+        }
     }
 
     private void StartBody(BuiltTask task)

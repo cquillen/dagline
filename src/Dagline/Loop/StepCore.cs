@@ -86,6 +86,7 @@ internal sealed class StepCore
         _slots = new Slots(graph.LimitNames, settings.Sizes);
         _held = new HeldTasks(graph, _slots);
         _instances = new TaskInstance?[graph.Nodes.Length];
+        Samples = new TaskSamples(graph);
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
         foreach (var task in graph.Tasks)
         {
@@ -101,6 +102,12 @@ internal sealed class StepCore
             _slots,
             new SnapshotJournal(journal?.NextRun));
     }
+
+    /// <summary>
+    /// The sample of each task: its progress and its counts beyond the kept, which its context writes from the task's own threads,
+    /// and which the core reads as it builds a snapshot.
+    /// </summary>
+    public TaskSamples Samples { get; }
 
     /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
     public int SlotTries => _slots.Tries;
@@ -142,6 +149,9 @@ internal sealed class StepCore
                 break;
             case InputKind.BodyEnded:
                 BodyEnded(input.Task!, input.Outcome);
+                break;
+            case InputKind.WarningKept:
+                Report(input.Task!, InstanceOf(input.Task!).Warn(input.Text!, _now));
                 break;
             default:
                 throw new InvalidOperationException($"The step core does not take the input {input.Kind}.");
@@ -191,6 +201,28 @@ internal sealed class StepCore
         List<JournalEntry> entries = [];
         Settle(task, changes, entries);
         Record(entries, JournalFlush.ToDisk, AfterWrite.Settles);
+    }
+
+    /// <summary>
+    /// Applies what a task reported: published when it is an event, and otherwise marking the current snapshot as out of date. A
+    /// report on a task that is not running changes nothing, and gives nothing.
+    /// </summary>
+    private void Report(BuiltTask task, TaskChange? reported)
+    {
+        if (reported is not { } change)
+        {
+            return;
+        }
+
+        Apply(task, change);
+        if (change.Event is { } produced)
+        {
+            Publish(produced);
+        }
+        else
+        {
+            _effects.Add(Effect.MarkCurrentOutOfDate);
+        }
     }
 
     /// <summary>

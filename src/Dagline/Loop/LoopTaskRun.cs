@@ -5,19 +5,28 @@ namespace Dagline;
 /// inbox, applied in the order the task made its calls, or as a sample the task overwrites in a place of its own (ADR 0015).
 /// </summary>
 /// <remarks>
-/// None of a task's reports is taken as yet: a chain of tasks whose bodies report nothing is all the new engine runs so far. Each
-/// member throws <see cref="NotSupportedException"/> until it is built, so that a test run on the new engine that reports fails
-/// where it reports, rather than passing over a report the run never applied.
+/// A post returns at once, so what a task reports as an input shows in the run's current snapshot once the loop has applied it,
+/// not when the call returns. A member not yet built throws <see cref="NotSupportedException"/>, so that a test run on the new
+/// engine fails where it calls it, rather than passing over a report the run never applied.
 /// </remarks>
-internal sealed class LoopTaskRun : ITaskRun
+/// <param name="inbox">The run's inbox, to which the inputs are posted.</param>
+/// <param name="samples">The tasks' samples, which the reports that are samples overwrite.</param>
+internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples) : ITaskRun
 {
     // Each throw below is a departure from Liskov substitution for the length of the rebuild: the new engine is reachable only
-    // from tests, and each member is built by a later part of it (progress, reports and waits; checkpoints; a dependency's status).
+    // from tests, and each member is built by a later part of it (checkpoints).
     public void SetStatusText(BuiltTask task, string? text) => throw NotYet(nameof(TaskContext.SetStatusText));
 
     public void SetCount(BuiltTask task, long current, long? total) => throw NotYet(nameof(TaskContext.SetCount));
 
-    public void Warn(BuiltTask task, string warning) => throw NotYet(nameof(TaskContext.AddWarning));
+    /// <summary>Posts a warning that is kept; one beyond the kept is only counted on the task's sample.</summary>
+    public void Warn(BuiltTask task, string warning)
+    {
+        if (samples[task].KeepWarning())
+        {
+            inbox.Post(Input.WarningKept(task, warning));
+        }
+    }
 
     public void SetMessage(BuiltTask task, string message) => throw NotYet(nameof(TaskContext.SetMessage));
 

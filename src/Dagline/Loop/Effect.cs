@@ -20,6 +20,12 @@ internal enum EffectKind
 
     /// <summary>The run has ended with a run outcome: the loop waits for its reporters, then returns its result.</summary>
     EndRun,
+
+    /// <summary>
+    /// Something that is not an event has changed the run, such as a task's message, so the current snapshot is out of date. The
+    /// loop rebuilds it when it next finds its inbox empty, so a task that reports in a tight loop costs one rebuild, not one each.
+    /// </summary>
+    MarkCurrentOutOfDate,
 }
 
 /// <summary>
@@ -44,6 +50,8 @@ internal readonly record struct Effect(
     RunOutcome Outcome = default)
 {
     public static Effect CloseJournal { get; } = new(EffectKind.CloseJournal);
+
+    public static Effect MarkCurrentOutOfDate { get; } = new(EffectKind.MarkCurrentOutOfDate);
 
     public static Effect Record(IReadOnlyList<JournalEntry> entries, JournalFlush flush) => new(EffectKind.Record, Entries: entries, Flush: flush);
 
