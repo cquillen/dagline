@@ -157,7 +157,7 @@ internal sealed class RunLoop
                 if (input.Kind is InputKind.ReporterWaitOver)
                 {
                     // Dropping the busy reporters finishes them, so the reporters being done is the input that follows.
-                    _delivery.DropTheBusy();
+                    _delivery.DropTheBusy(cause: null);
                     continue;
                 }
 
@@ -334,6 +334,7 @@ internal sealed class RunLoop
     /// <summary>
     /// The run has ended: no event follows, and the loop waits for the reporters to be done, as an input, for at most the reporter
     /// wait, which starts now, on the run's clock, the event that says the run ended being queued. Its running out is an input too.
+    /// With nothing to wait for, no timer is made, so a run with no busy reporter asks nothing more of its clock.
     /// </summary>
     private void End(RunOutcome outcome, Exception? journalError, JournalWriteException? unrecorded)
     {
@@ -341,14 +342,25 @@ internal sealed class RunLoop
         _journalError = journalError;
         _unrecorded = unrecorded;
         LetGoOfTheTokenAndTheTimer();
-        _delivery.Complete(() => Inbox.Post(Input.ReportersDone));
-        if (_reporterWait != Timeout.InfiniteTimeSpan)
+        var nothingToWaitFor = _delivery.Complete(() => Inbox.Post(Input.ReportersDone));
+        if (nothingToWaitFor || ClockWaitRules.IsUnlimited(_reporterWait))
+        {
+            return;
+        }
+
+        try
         {
             _reporterWaitTimer = _clock.CreateTimer(
                 static loop => ((RunLoop)loop!).Inbox.Post(Input.ReporterWaitOver),
                 this,
                 _reporterWait,
                 Timeout.InfiniteTimeSpan);
+        }
+        catch (Exception refused)
+        {
+            // The clock is the app's code, and one that refuses a timer, as the instant clock does past its guard, must not fault
+            // a run that has ended: the wait it cannot measure runs out at once, and the drops carry the clock's refusal.
+            _delivery.DropTheBusy(refused);
         }
     }
 }
