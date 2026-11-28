@@ -1,13 +1,20 @@
 # The test classes CI's second run includes, on the new engine (spec #139); tests/second-run.sh runs them. One class per line,
 # as <test project>/<class>, kept in order. A ticket adds a line for each class it makes pass. The list goes at the cutover.
 Dagline.Spectre.Tests/ChoosingTests
+Dagline.Spectre.Tests/DrawingTests
 Dagline.Spectre.Tests/SmallTerminalTests
 Dagline.Tests/ArgumentTests
+Dagline.Tests/BlockingTests
+Dagline.Tests/DependencyTests
+Dagline.Tests/FailureSummaryTests
 Dagline.Tests/GraphTests
+Dagline.Tests/GroupSettledTests
+Dagline.Tests/GroupTests
 Dagline.Tests/HeldTaskOrderTests
 Dagline.Tests/JournalDeletingTests
 Dagline.Tests/LimitTests
 Dagline.Tests/LoopReportTests
+Dagline.Tests/LimitUseTests
 Dagline.Tests/LoopRunTests
 Dagline.Tests/MaxRunningTasksTests
 Dagline.Tests/MessageAndDetailTests
@@ -18,7 +25,9 @@ Dagline.Tests/RunTests
 Dagline.Tests/RunTimeTests
 Dagline.Tests/SchedulingTests
 Dagline.Tests/SingleUseTests
+Dagline.Tests/SlotTryTests
 Dagline.Tests/StepCoreEffectTests
 Dagline.Tests/TaskContextTests
 Dagline.Tests/WaitingTests
 Dagline.Tests/WarningTests
+Dagline.Tests/StepOrderTests

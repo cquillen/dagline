@@ -41,6 +41,7 @@ internal sealed class StepCore
     private readonly Graph _graph;
     private readonly ISnapshotSource _source;
     private readonly RollUp _rollUp;
+    private readonly UnmetDependencies _dependencies;
     private readonly SortedSet<int> _ready = [];
     private readonly HeldTasks _held;
     private readonly TaskInstance?[] _instances;
@@ -57,8 +58,9 @@ internal sealed class StepCore
     private readonly HashSet<int> _running = [];
 
     // Reused at every settle, so working out what follows from it allocates no collection of its own.
-    private readonly SortedSet<int> _dependents = [];
     private readonly List<BuiltTask> _becomingReady = [];
+    private readonly List<BuiltTask> _blocked = [];
+    private readonly Func<BuiltTask, bool> _isPending;
 
     // What the write under way holds back: the events it records, whose changes are already closed, the tasks it settles, and the
     // tasks whose bodies start once it lands.
@@ -89,6 +91,8 @@ internal sealed class StepCore
             .ToDictionary(limit => limit.First.Text, limit => limit.Second, LimitName.TextComparer);
         _slots = new Slots(graph.LimitNames, settings.Sizes);
         _held = new HeldTasks(graph, _slots);
+        _dependencies = new UnmetDependencies(graph);
+        _isPending = task => InstanceOf(task).Status is NodeStatus.Pending;
         _instances = new TaskInstance?[graph.Nodes.Length];
         Samples = samples ?? new TaskSamples(graph);
         var atTheStart = new NodeSnapshot?[graph.Nodes.Length];
@@ -204,10 +208,33 @@ internal sealed class StepCore
             AfterWrite.RunStart);
     }
 
+    /// <summary>
+    /// The run's start is written: it is published, then each node already settled tells its dependents, the tasks whose
+    /// dependencies are all met become ready, the groups settled so far are announced, and the ready tasks that fit start.
+    /// </summary>
     private void AfterTheRunStartIsWritten()
     {
         Publish(new RunStarted(_now, _source));
-        MakeReady(_graph.Tasks.Select(task => task.Position));
+        foreach (var node in _graph.Nodes)
+        {
+            var status = StatusAt(node.Position);
+            if (status.IsSettled())
+            {
+                _dependencies.Settled(node.Position, status, _becomingReady);
+            }
+        }
+
+        // A task with no dependency is told by no node; one whose last dependency a settled node met is in the list already.
+        foreach (var task in _graph.Tasks)
+        {
+            if (task.Upstreams.IsEmpty)
+            {
+                _becomingReady.Add(task);
+            }
+        }
+
+        MakeReady();
+        AnnounceSettledGroups(_rollUp.TakeSettled());
         StartWhatFits();
     }
 
@@ -226,6 +253,11 @@ internal sealed class StepCore
 
         List<JournalEntry> entries = [];
         Settle(task, changes, entries);
+        if (InstanceOf(task).Status is NodeStatus.Failed)
+        {
+            Block(task, entries);
+        }
+
         Record(entries, JournalFlush.ToDisk, AfterWrite.Settles);
     }
 
@@ -301,28 +333,78 @@ internal sealed class StepCore
 
         foreach (var change in changes)
         {
-            Apply(task, change);
-            if (change.Event is { } produced)
-            {
-                Hold(produced);
-            }
-
-            if (_onAJournal && change.Event is TaskStatusChanged moved && moved.To.IsSettled())
-            {
-                entries.Add(TaskSettledEntry.Of(moved.Node, _now));
-            }
+            ApplyAndHold(task, change, entries);
         }
 
         _settling.Add(task);
     }
 
-    /// <summary>The settles are on disk: they are published, then their dependents whose dependencies are met become ready and those that fit start.</summary>
+    /// <summary>
+    /// Applies a change that the write under way records, holding its event for that write, and adds the entry of a settle.
+    /// </summary>
+    private void ApplyAndHold(BuiltTask task, TaskChange change, List<JournalEntry> entries)
+    {
+        Apply(task, change);
+        if (change.Event is { } produced)
+        {
+            Hold(produced);
+        }
+
+        if (_onAJournal && change.Event is TaskStatusChanged moved && moved.To.IsSettled())
+        {
+            entries.Add(TaskSettledEntry.Of(moved.Node, _now));
+        }
+    }
+
+    /// <summary>
+    /// Blocks every pending task the failure of <paramref name="failed"/> reaches, as <see cref="UnmetDependencies.Failed"/> finds
+    /// them, in declaration order. Each records the failed task as its cause, and its settle is held for the write that records the
+    /// failure.
+    /// </summary>
+    private void Block(BuiltTask failed, List<JournalEntry> entries)
+    {
+        _dependencies.Failed(failed, _isPending, _blocked);
+        foreach (var task in _blocked)
+        {
+            ApplyAndHold(task, InstanceOf(task).Block(failed.Path, _now), entries);
+            _settling.Add(task);
+        }
+
+        _blocked.Clear();
+    }
+
+    /// <summary>
+    /// The settles are on disk: they are published, then each settled task and each group they settled tells its dependents, the
+    /// tasks whose dependencies that met become ready, the groups are announced, the deepest first, and the ready tasks that fit
+    /// start.
+    /// </summary>
     private void AfterTheSettlesAreWritten()
     {
         PublishHeld();
-        MakeReady(DependentsOf(_settling));
+        foreach (var task in _settling)
+        {
+            _dependencies.Settled(task.Position, InstanceOf(task).Status, _becomingReady);
+        }
+
         _settling.Clear();
+        var settledGroups = _rollUp.TakeSettled();
+        foreach (var group in settledGroups)
+        {
+            _dependencies.Settled(group.Position, _rollUp.StatusOf(group.Position), _becomingReady);
+        }
+
+        MakeReady();
+        AnnounceSettledGroups(settledGroups);
         StartWhatFits();
+    }
+
+    /// <summary>Publishes one event for each group settled, in the order given, each with the group's status and counts.</summary>
+    private void AnnounceSettledGroups(IReadOnlyList<BuiltGroup> settledGroups)
+    {
+        foreach (var group in settledGroups)
+        {
+            Publish(new GroupSettled(_now, group.Path, _rollUp.StatusOf(group.Position), _rollUp.CountsOf(group)));
+        }
     }
 
     /// <summary>
@@ -408,22 +490,19 @@ internal sealed class StepCore
     }
 
     /// <summary>
-    /// Makes ready each pending task among <paramref name="candidates"/> whose dependencies are all met. Every candidate is judged
-    /// before any is made ready, as the statuses are before this change.
+    /// Makes ready, in declaration order, each task whose dependencies have all just been met and that is still pending: one a
+    /// failure has blocked stays blocked.
     /// </summary>
-    private void MakeReady(IEnumerable<int> candidates)
+    private void MakeReady()
     {
-        foreach (var position in candidates)
-        {
-            var task = _graph.TaskAt(position);
-            if (InstanceOf(task).Status is NodeStatus.Pending && DependenciesAreMet(task))
-            {
-                _becomingReady.Add(task);
-            }
-        }
-
+        _becomingReady.Sort(static (one, other) => one.Position.CompareTo(other.Position));
         foreach (var task in _becomingReady)
         {
+            if (InstanceOf(task).Status is not NodeStatus.Pending)
+            {
+                continue;
+            }
+
             var change = InstanceOf(task).MakeReady(_now);
             Apply(task, change);
             Publish(change.Event!);
@@ -433,27 +512,9 @@ internal sealed class StepCore
         _becomingReady.Clear();
     }
 
-    private bool DependenciesAreMet(BuiltTask task)
-        => task.Upstreams.All(upstream => StatusAt(upstream.Position).Meets(upstream.Kind));
-
     /// <summary>The status of the node at <paramref name="position"/>: a task's is its instance's, and a group's is the roll-up's.</summary>
     private NodeStatus StatusAt(int position)
         => _instances[position] is { } instance ? instance.Status : _rollUp.StatusOf(position);
-
-    /// <summary>The positions of the tasks, in declaration order, that depend on one of the tasks that have just settled.</summary>
-    private SortedSet<int> DependentsOf(IReadOnlyList<BuiltTask> settled)
-    {
-        _dependents.Clear();
-        foreach (var task in settled)
-        {
-            foreach (var dependent in task.Dependents)
-            {
-                _dependents.Add(dependent);
-            }
-        }
-
-        return _dependents;
-    }
 
     /// <summary>
     /// The run ends when no task is running and none is ready: its end is recorded, flushed, then the journal is closed and the

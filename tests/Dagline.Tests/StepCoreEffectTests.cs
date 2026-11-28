@@ -74,6 +74,35 @@ public class StepCoreEffectTests
     }
 
     [Test]
+    public void A_failure_s_settle_records_the_tasks_it_blocks_in_its_write_and_what_follows_waits_for_its_result()
+    {
+        var builder = new GraphBuilder();
+        var batch = builder.Group("batch");
+        var prepare = batch.Task("prepare", _ => Task.CompletedTask);
+        var load = builder.Task("load", _ => Task.CompletedTask).Requires(prepare);
+        builder.Task("publish", _ => Task.CompletedTask).Requires(load);
+        builder.Task("cleanup", _ => Task.CompletedTask).After(batch);
+        var graph = builder.Build();
+        var core = new StepCore(graph, Settings(graph), JournalFold.Of(new HeaderEntry(1, "journal", _now), []), new UnreadSource());
+        core.Apply(Input.Start, _now);
+        core.Apply(Input.Written(null), default);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(["publish batch/prepare: ready -> running", "start batch/prepare"]);
+
+        var failure = TaskOutcome.UnexpectedFailure(new InvalidOperationException("the store is offline"));
+        Described(core, core.Apply(Input.BodyEnded(graph.TaskAt(1), failure), _now)).ShouldBe(
+            ["record settled batch/prepare, settled load, settled publish, flushed"]);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(
+        [
+            "publish batch/prepare: running -> failed",
+            "publish load: pending -> blocked",
+            "publish publish: pending -> blocked",
+            "publish cleanup: pending -> ready",
+            "publish group batch settled: failed",
+            "record started cleanup, not flushed",
+        ]);
+    }
+
+    [Test]
     public void While_a_write_is_under_way_the_core_takes_no_input_but_its_result()
     {
         var (graph, prepare, _) = Chain();
