@@ -43,7 +43,7 @@ Console.WriteLine($"{run.Current.Counts[NodeStatus.Running]} tasks running");
 var result = await run.Result;
 ```
 
-- <xref:Dagline.Run.Current> is the run as it is now. It answers as soon as `Start` returns, before anything has been published, and is the final snapshot once the run has ended. Reading it never waits for the run, a task or a reporter.
+- <xref:Dagline.Run.Current> is the run as it is now. It answers as soon as `Start` returns, before anything has been published, and is the final snapshot once the run has ended. Reading it never waits for the run, a task or a reporter. A report a task makes shows in it once the run has applied it, which may be a little after the task's call has returned, and a task's progress shows on the next read.
 - <xref:Dagline.Run.Result> completes with the run's result once it has ended. It is the same task `RunAsync` returns, and the same task every time you read it.
 - <xref:Dagline.Run.Drain> and <xref:Dagline.Run.Stop> [end the run early](#ending-a-run-early).
 
