@@ -53,8 +53,7 @@ public class SlotTryTests
     }
 
     /// <summary>
-    /// Gives the step core the inputs a run would, settling each started task as a success in the order the steps started them,
-    /// and takes the snapshot of every event in order, as the run does.
+    /// Gives the step core the inputs a run would, settling each started task as a success in the order the steps started them.
     /// </summary>
     private static (RunOutcome? Outcome, int SlotTries) StepThrough(Graph graph, RunOptions options)
     {
@@ -77,11 +76,6 @@ public class SlotTryTests
         {
             foreach (var step in decided)
             {
-                foreach (var stepEvent in step.Events)
-                {
-                    steps.SnapshotAfter(stepEvent);
-                }
-
                 foreach (var started in step.Starts)
                 {
                     running.Enqueue(started);

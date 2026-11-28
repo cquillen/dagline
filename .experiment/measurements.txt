@@ -1,0 +1,54 @@
+baseline first-step steps=1 events=20017 starts=16 held_bytes=17833824 allocated_bytes=21737008 decide_ms=75.8
+baseline whole-run run=1 ms=670.5 allocated_bytes=313594160 peak_heap_over_start=37196304 peak_heap_after_a_gc=63475344 gen0=85 gen1=5 gen2=1 gc_pause_ms=116.6
+baseline whole-run run=2 ms=478.6 allocated_bytes=313504064 peak_heap_over_start=41416360 peak_heap_after_a_gc=63006008 gen0=85 gen1=3 gen2=0 gc_pause_ms=90.9
+baseline whole-run run=3 ms=478.8 allocated_bytes=312302824 peak_heap_over_start=37068080 peak_heap_after_a_gc=62727592 gen0=87 gen1=4 gen2=1 gc_pause_ms=91.7
+baseline whole-run run=4 ms=293.6 allocated_bytes=309337344 peak_heap_over_start=41443984 peak_heap_after_a_gc=63044216 gen0=83 gen1=3 gen2=0 gc_pause_ms=87.0
+baseline whole-run run=5 ms=346.7 allocated_bytes=308070464 peak_heap_over_start=38953056 peak_heap_after_a_gc=64055424 gen0=76 gen1=13 gen2=1 gc_pause_ms=126.3
+baseline whole-run run=6 ms=214.7 allocated_bytes=307924424 peak_heap_over_start=43169632 peak_heap_after_a_gc=63025784 gen0=82 gen1=3 gen2=0 gc_pause_ms=89.2
+baseline whole-run run=7 ms=269.8 allocated_bytes=308086512 peak_heap_over_start=38281952 peak_heap_after_a_gc=63127392 gen0=83 gen1=5 gen2=1 gc_pause_ms=99.0
+baseline whole-run process_peak_working_set=137674752
+baseline first-step steps=1 events=20017 starts=16 held_bytes=17833832 allocated_bytes=21737008 decide_ms=83.1
+baseline whole-run run=1 ms=639.9 allocated_bytes=313620752 peak_heap_over_start=37330736 peak_heap_after_a_gc=61769056 gen0=86 gen1=4 gen2=1 gc_pause_ms=87.9
+baseline whole-run run=2 ms=474.6 allocated_bytes=312758136 peak_heap_over_start=37774960 peak_heap_after_a_gc=62886856 gen0=84 gen1=5 gen2=1 gc_pause_ms=96.8
+baseline whole-run run=3 ms=289.2 allocated_bytes=310732040 peak_heap_over_start=41542376 peak_heap_after_a_gc=63740264 gen0=85 gen1=3 gen2=0 gc_pause_ms=83.3
+baseline whole-run run=4 ms=326.1 allocated_bytes=307998984 peak_heap_over_start=40513864 peak_heap_after_a_gc=65094080 gen0=81 gen1=5 gen2=1 gc_pause_ms=119.7
+baseline whole-run run=5 ms=273.0 allocated_bytes=308053456 peak_heap_over_start=42408424 peak_heap_after_a_gc=63109744 gen0=81 gen1=5 gen2=1 gc_pause_ms=93.5
+baseline whole-run run=6 ms=283.5 allocated_bytes=307989408 peak_heap_over_start=37306000 peak_heap_after_a_gc=62857968 gen0=81 gen1=6 gen2=1 gc_pause_ms=96.6
+baseline whole-run run=7 ms=218.4 allocated_bytes=307940912 peak_heap_over_start=42344664 peak_heap_after_a_gc=63004424 gen0=81 gen1=4 gen2=0 gc_pause_ms=93.4
+baseline whole-run process_peak_working_set=140869632
+baseline first-step steps=1 events=20017 starts=16 held_bytes=17833824 allocated_bytes=21737008 decide_ms=74.9
+baseline whole-run run=1 ms=687.1 allocated_bytes=313594912 peak_heap_over_start=37340968 peak_heap_after_a_gc=62557504 gen0=84 gen1=5 gen2=1 gc_pause_ms=99.1
+baseline whole-run run=2 ms=519.5 allocated_bytes=313533224 peak_heap_over_start=40927440 peak_heap_after_a_gc=63029432 gen0=86 gen1=3 gen2=0 gc_pause_ms=90.5
+baseline whole-run run=3 ms=500.9 allocated_bytes=313316128 peak_heap_over_start=37947032 peak_heap_after_a_gc=62298992 gen0=85 gen1=5 gen2=1 gc_pause_ms=99.6
+baseline whole-run run=4 ms=277.0 allocated_bytes=309725312 peak_heap_over_start=42530256 peak_heap_after_a_gc=63052864 gen0=80 gen1=4 gen2=0 gc_pause_ms=97.7
+baseline whole-run run=5 ms=275.0 allocated_bytes=308091632 peak_heap_over_start=37857088 peak_heap_after_a_gc=62917736 gen0=83 gen1=4 gen2=1 gc_pause_ms=93.5
+baseline whole-run run=6 ms=210.3 allocated_bytes=307925400 peak_heap_over_start=41900112 peak_heap_after_a_gc=62776776 gen0=85 gen1=3 gen2=0 gc_pause_ms=91.2
+baseline whole-run run=7 ms=266.6 allocated_bytes=307955328 peak_heap_over_start=37738160 peak_heap_after_a_gc=62880568 gen0=84 gen1=4 gen2=1 gc_pause_ms=89.2
+baseline whole-run process_peak_working_set=144039936
+variant first-step steps=1 events=20017 starts=16 held_bytes=75987536 allocated_bytes=78060120 decide_ms=247.7
+variant whole-run run=1 ms=567.4 allocated_bytes=307535712 peak_heap_over_start=96174832 peak_heap_after_a_gc=116284504 gen0=76 gen1=11 gen2=2 gc_pause_ms=159.5
+variant whole-run run=2 ms=566.7 allocated_bytes=307525176 peak_heap_over_start=95512824 peak_heap_after_a_gc=116095104 gen0=73 gen1=11 gen2=2 gc_pause_ms=165.3
+variant whole-run run=3 ms=511.6 allocated_bytes=307534504 peak_heap_over_start=99335048 peak_heap_after_a_gc=119750688 gen0=75 gen1=12 gen2=2 gc_pause_ms=174.1
+variant whole-run run=4 ms=376.4 allocated_bytes=303156816 peak_heap_over_start=95784984 peak_heap_after_a_gc=116705536 gen0=74 gen1=11 gen2=2 gc_pause_ms=152.5
+variant whole-run run=5 ms=402.6 allocated_bytes=301905120 peak_heap_over_start=99282440 peak_heap_after_a_gc=118642128 gen0=71 gen1=12 gen2=2 gc_pause_ms=167.8
+variant whole-run run=6 ms=375.1 allocated_bytes=301875352 peak_heap_over_start=99543208 peak_heap_after_a_gc=119044504 gen0=69 gen1=11 gen2=2 gc_pause_ms=168.2
+variant whole-run run=7 ms=375.5 allocated_bytes=301914800 peak_heap_over_start=99287864 peak_heap_after_a_gc=118502248 gen0=72 gen1=11 gen2=2 gc_pause_ms=172.5
+variant whole-run process_peak_working_set=194027520
+variant first-step steps=1 events=20017 starts=16 held_bytes=75987464 allocated_bytes=78061152 decide_ms=277.9
+variant whole-run run=1 ms=583.6 allocated_bytes=307544448 peak_heap_over_start=98675072 peak_heap_after_a_gc=118155712 gen0=75 gen1=10 gen2=2 gc_pause_ms=168.5
+variant whole-run run=2 ms=555.6 allocated_bytes=307613072 peak_heap_over_start=97237672 peak_heap_after_a_gc=117284400 gen0=76 gen1=10 gen2=2 gc_pause_ms=162.8
+variant whole-run run=3 ms=504.4 allocated_bytes=307549368 peak_heap_over_start=101018696 peak_heap_after_a_gc=120525960 gen0=74 gen1=12 gen2=2 gc_pause_ms=173.6
+variant whole-run run=4 ms=444.6 allocated_bytes=304885152 peak_heap_over_start=99464192 peak_heap_after_a_gc=118879136 gen0=74 gen1=10 gen2=2 gc_pause_ms=185.9
+variant whole-run run=5 ms=371.3 allocated_bytes=301915216 peak_heap_over_start=97164136 peak_heap_after_a_gc=116993440 gen0=75 gen1=11 gen2=2 gc_pause_ms=158.8
+variant whole-run run=6 ms=369.6 allocated_bytes=301893008 peak_heap_over_start=95734032 peak_heap_after_a_gc=115902672 gen0=74 gen1=11 gen2=2 gc_pause_ms=157.9
+variant whole-run run=7 ms=360.0 allocated_bytes=301884264 peak_heap_over_start=96676144 peak_heap_after_a_gc=116331112 gen0=75 gen1=10 gen2=2 gc_pause_ms=152.8
+variant whole-run process_peak_working_set=202166272
+variant first-step steps=1 events=20017 starts=16 held_bytes=75987488 allocated_bytes=78060080 decide_ms=254.0
+variant whole-run run=1 ms=639.2 allocated_bytes=307549616 peak_heap_over_start=95769864 peak_heap_after_a_gc=117000736 gen0=73 gen1=11 gen2=2 gc_pause_ms=170.3
+variant whole-run run=2 ms=572.4 allocated_bytes=307525616 peak_heap_over_start=98254776 peak_heap_after_a_gc=117852176 gen0=77 gen1=10 gen2=2 gc_pause_ms=173.7
+variant whole-run run=3 ms=565.2 allocated_bytes=307544608 peak_heap_over_start=100963272 peak_heap_after_a_gc=120412512 gen0=75 gen1=12 gen2=2 gc_pause_ms=191.5
+variant whole-run run=4 ms=489.4 allocated_bytes=307539352 peak_heap_over_start=95594968 peak_heap_after_a_gc=115161552 gen0=77 gen1=11 gen2=2 gc_pause_ms=168.6
+variant whole-run run=5 ms=448.5 allocated_bytes=302295824 peak_heap_over_start=101332848 peak_heap_after_a_gc=120686984 gen0=73 gen1=12 gen2=2 gc_pause_ms=210.3
+variant whole-run run=6 ms=386.7 allocated_bytes=301904744 peak_heap_over_start=95573760 peak_heap_after_a_gc=115896320 gen0=74 gen1=11 gen2=2 gc_pause_ms=145.8
+variant whole-run run=7 ms=359.2 allocated_bytes=301933136 peak_heap_over_start=96173296 peak_heap_after_a_gc=116916560 gen0=71 gen1=11 gen2=2 gc_pause_ms=153.3
+variant whole-run process_peak_working_set=199335936

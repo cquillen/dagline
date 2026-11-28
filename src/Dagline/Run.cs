@@ -20,7 +20,7 @@ namespace Dagline;
 /// Each step is carried out under the lock, in this order: the step is handed to the recorder, which writes its journal entries and,
 /// if the step ends the run, closes the journal; the tasks' token is signalled, if the step asks; if the step ends the run, the
 /// registrations on the drain signal and the app's token and the timer are released; the grace-period timer is started, if the
-/// step asks; the events are published in order, each with its snapshot, which is taken then and made the current snapshot before
+/// step asks; the events are published in order, each with its snapshot, which is made the current snapshot before
 /// the event is handed to reporters; the bodies of the tasks the step starts are started; and if the step ends the run, which it
 /// does in a step that starts nothing, then for a run stopped by a failed write its <see cref="RunEnded"/> is published last, with
 /// the final snapshot, the wait for reporters listens to the app's token unless the run applied a stop, delivery is completed and
@@ -364,7 +364,7 @@ internal sealed class Run : ISnapshotSource
     }
 
     /// <summary>
-    /// Publishes a step's events in order. Each event's snapshot is taken as it is published, and is the current one before the
+    /// Publishes a step's events in order. Each event's snapshot is the current one before the
     /// event is handed to reporters, so a reporter never reads a current snapshot older than an event it holds.
     /// A step with no events changed only the snapshot, so it only marks the current snapshot as out of date.
     /// </summary>
@@ -380,9 +380,9 @@ internal sealed class Run : ISnapshotSource
         // Indexed, not enumerated, so that no enumerator is allocated for each step.
         for (var i = 0; i < events.Count; i++)
         {
-            var snapshot = _steps.SnapshotAfter(events[i]);
+            var (runEvent, snapshot) = events[i];
             _current = snapshot;
-            _delivery.Publish(events[i].Event, snapshot);
+            _delivery.Publish(runEvent, snapshot);
         }
     }
 

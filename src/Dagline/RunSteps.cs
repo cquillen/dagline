@@ -2,7 +2,7 @@ namespace Dagline;
 
 /// <summary>
 /// Every scheduling decision of one run. It takes one input for each thing that can happen to a run and answers with the steps
-/// that input caused, in order: each step's events with what each changed in the snapshot, the tasks it starts and the effects
+/// that input caused, in order: each step's events with the snapshot just after each, the tasks it starts and the effects
 /// it asks for. <see cref="Run"/> carries the steps out.
 /// </summary>
 /// <remarks>
@@ -16,9 +16,8 @@ namespace Dagline;
 /// It is not thread-safe: the run gives it one input at a time, under its lock.
 /// </para>
 /// <para>
-/// The snapshot just after each event is taken only when the run publishes the event, from what the event changed. A step that
-/// makes many tasks ready therefore holds one small change for each, and not a snapshot of the whole run for each, until it is
-/// carried out: holding those snapshots made a large run slow.
+/// The snapshot just after each event is taken as the event is decided, so a step holds one snapshot for each of its events
+/// until it is carried out. Each shares all but its changed chunks of nodes with the one before.
 /// </para>
 /// <para>
 /// One input may cause several steps. A stop with a grace period of zero gives two: the stop, and letting go of the running tasks.
@@ -304,18 +303,12 @@ internal sealed class RunSteps
     public NodeStatus StatusAt(int position)
         => _instances[position] is { } instance ? instance.Status : _rollUp.StatusOf(position);
 
-    /// <summary>
-    /// The snapshot of the run just after an event of a decided step: as it was then, however far the run has got since.
-    /// The run takes the snapshot of every event, as it publishes it, in the order the steps give the events,
-    /// and before it gives the next input, since each snapshot is built on the one before.
-    /// </summary>
-    public Snapshot SnapshotAfter(StepEvent stepEvent) => _snapshots.Take(stepEvent.Change);
-
-    /// <summary>
-    /// The run as it is now. The snapshot of every event decided so far must have been taken first, as
-    /// <see cref="SnapshotAfter"/> says.
-    /// </summary>
-    public Snapshot TakeSnapshot() => _snapshots.Take(ChangeSinceLastEvent());
+    /// <summary>The run as it is now, with every change made since the last snapshot, by an event or by a report that published none.</summary>
+    public Snapshot TakeSnapshot()
+    {
+        _rollUp.HandOverChanged(_snapshots);
+        return _snapshots.Take(_milestones, _rollUp.RunCounts);
+    }
 
     /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
     public int SlotTries => _slots.Tries;
@@ -690,14 +683,7 @@ internal sealed class RunSteps
     // Indexed by position among the nodes, so a group's place is empty.
     private TaskInstance InstanceOf(BuiltTask task) => _instances[task.Position]!;
 
-    private void Publish(RunEvent runEvent) => _step!.Events.Add(new StepEvent(runEvent, ChangeSinceLastEvent()));
-
-    /// <summary>What has changed in the snapshot since the last event, which from now on is part of the snapshot taken next.</summary>
-    private SnapshotChange ChangeSinceLastEvent()
-    {
-        _rollUp.HandOverChanged(_snapshots);
-        return _snapshots.Close(_milestones, _rollUp.RunCounts);
-    }
+    private void Publish(RunEvent runEvent) => _step!.Events.Add(new StepEvent(runEvent, TakeSnapshot()));
 
     /// <summary>Begins a new step, once the step under way, if any, is decided.</summary>
     private void Begin()

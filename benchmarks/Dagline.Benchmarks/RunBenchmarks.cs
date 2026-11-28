@@ -33,6 +33,7 @@ public class RunBenchmarks
     private Graph _heldByLimits = null!;
     private Graph _heldByOneSmallLimit = null!;
     private Graph _onAJournal = null!;
+    private Graph _manyReadyAtOnce = null!;
     private string _journals = null!;
 
     [GlobalSetup]
@@ -60,7 +61,11 @@ public class RunBenchmarks
         _onAJournal = Sharded(shards: 4, tenantsPerShard: 40, limited: false);
         _journals = Directory.CreateTempSubdirectory("dagline-benchmarks-").FullName;
 
+        // 20,000 tasks with no dependencies in 200 groups of 100, bodies that return at once: the first step makes all of them ready.
+        _manyReadyAtOnce = ManyReadyAtOnceGraph(groups: 200, tasksPerGroup: 100);
+
         await Check(_largeGraph, expectedWarnings: 0).ConfigureAwait(false);
+        await Check(_manyReadyAtOnce, expectedWarnings: 0, ManyReadyAtOnceOptions()).ConfigureAwait(false);
         await Check(_heldByLimits, expectedWarnings: 0).ConfigureAwait(false);
         await Check(_heldByOneSmallLimit, expectedWarnings: 0, OneSharedLimitOptions()).ConfigureAwait(false);
         await Check(_onAJournal, expectedWarnings: 0, OnAJournal()).ConfigureAwait(false);
@@ -79,6 +84,10 @@ public class RunBenchmarks
     /// <summary>10,000 tasks with no dependencies, every one holding one limit of 4 slots.</summary>
     [Benchmark]
     public Task<RunOutcome> HeldByOneSmallLimit() => Run(_heldByOneSmallLimit, OneSharedLimitOptions());
+
+    /// <summary>20,000 tasks with no dependencies in groups of 100, all made ready by the first step, at the default max running tasks.</summary>
+    [Benchmark]
+    public Task<RunOutcome> ManyReadyAtOnce() => Run(_manyReadyAtOnce, ManyReadyAtOnceOptions());
 
     /// <summary>160 tasks on a new journal file, each settle flushed to the disk.</summary>
     [Benchmark]
@@ -118,6 +127,12 @@ public class RunBenchmarks
     {
         Journal = Journal.None,
         Limits = new Dictionary<string, int> { [SharedLimit] = SharedLimitSize },
+        Reporters = [new PlainTextReporter(TextWriter.Null)],
+    };
+
+    private static RunOptions ManyReadyAtOnceOptions() => new()
+    {
+        Journal = Journal.None,
         Reporters = [new PlainTextReporter(TextWriter.Null)],
     };
 
@@ -168,6 +183,21 @@ public class RunBenchmarks
             for (var task = 1; task <= tasksPerGroup; task++)
             {
                 group.Task($"task-{task}", ReportAndSucceed).Limit(SharedLimit);
+            }
+        }
+
+        return builder.Build();
+    }
+
+    private static Graph ManyReadyAtOnceGraph(int groups, int tasksPerGroup)
+    {
+        var builder = new GraphBuilder();
+        for (var index = 1; index <= groups; index++)
+        {
+            var group = builder.Group($"group-{index}");
+            for (var task = 1; task <= tasksPerGroup; task++)
+            {
+                group.Task($"task-{task}", static _ => Task.CompletedTask);
             }
         }
 

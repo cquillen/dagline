@@ -5,7 +5,7 @@ namespace Dagline;
 /// <see cref="Run"/> carries it out, and decides nothing.
 /// </summary>
 /// <param name="Events">
-/// The events of the step in the order they are published, each with what it changed in the run's snapshot.
+/// The events of the step in the order they are published, each with the run's snapshot just after it.
 /// </param>
 /// <param name="Starts">The tasks whose bodies the step starts, in declaration order. Each is already running in the step's snapshots.</param>
 /// <param name="SignalsTheTasks">Whether the step signals the token every task sees: it applies a stop.</param>
@@ -22,12 +22,11 @@ internal sealed record Step(
     RunEnd? Ends);
 
 /// <summary>
-/// One event of a step, with what it changed in the run's snapshot. <see cref="RunSteps.SnapshotAfter"/> takes the snapshot
-/// just after the event from it, as the run publishes the event, so a step holds no snapshot of its own.
+/// One event of a step, with the snapshot of the run just after it, taken when the event was decided.
 /// </summary>
 /// <param name="Event">The event.</param>
-/// <param name="Change">What the event changed in the run's snapshot.</param>
-internal readonly record struct StepEvent(RunEvent Event, SnapshotChange Change);
+/// <param name="Snapshot">The run just after the event.</param>
+internal readonly record struct StepEvent(RunEvent Event, Snapshot Snapshot);
 
 /// <summary>
 /// How a run ends: with a run outcome, or stopped by a failed journal write; and whether it applied a stop, since only a run that
