@@ -10,7 +10,7 @@ internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeP
 {
     /// <summary>
     /// How long the run waits for its reporters once its end is queued for them: zero or more, or
-    /// <see cref="Timeout.InfiniteTimeSpan"/>. Only the new engine reads it.
+    /// <see cref="Timeout.InfiniteTimeSpan"/>.
     /// </summary>
     public TimeSpan ReporterWait { get; init; }
 

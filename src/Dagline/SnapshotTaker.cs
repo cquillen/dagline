@@ -9,14 +9,14 @@ namespace Dagline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="RunSteps"/> records each change to a task as it makes it, <see cref="RollUp"/> hands over each changed group as a
-/// finished node, and <see cref="RunSteps"/> closes the changes recorded so far into a
+/// <see cref="StepCore"/> records each change to a task as it makes it, <see cref="RollUp"/> hands over each changed group as a
+/// finished node, and <see cref="StepCore"/> closes the changes recorded so far into a
 /// <see cref="SnapshotChange"/> with each event. A snapshot is built only when it is taken, so the changes a step has decided
 /// cost one small entry for each node an event changed, not a list of every node each, until the step is carried out.
 /// </para>
 /// <para>
 /// The nodes of each snapshot share every chunk but the changed ones with the snapshot before, as <see cref="ChunkedList{T}"/> allows.
-/// It is not thread-safe: <see cref="RunSteps"/> owns it, and the run uses it under its lock.
+/// It is not thread-safe: <see cref="StepCore"/> owns it, and only the run's loop uses it.
 /// </para>
 /// </remarks>
 /// <param name="atTheStart">Every node as it is when the run starts, in declaration order.</param>
@@ -24,16 +24,15 @@ namespace Dagline;
 /// <param name="slots">The run's slots, which give the size of the max running tasks and of each limit.</param>
 /// <param name="journal">What every snapshot of the run says about its journal, which is fixed for the run.</param>
 /// <param name="samples">
-/// The tasks' samples, on the new engine (ADR 0015), whose progress each take lays over every task running in the snapshot it
-/// takes, as sampled at the take; or <see langword="null"/> on the existing engine, whose tasks' progress is recorded with their
-/// instances.
+/// The tasks' samples (ADR 0015), whose progress each take lays over every task running in the snapshot it takes, as sampled at
+/// the take.
 /// </param>
 internal sealed class SnapshotTaker(
     IEnumerable<NodeSnapshot> atTheStart,
     FrozenDictionary<NodePath, int> positions,
     Slots slots,
     SnapshotJournal journal,
-    TaskSamples? samples = null)
+    TaskSamples samples)
 {
     private readonly Queue<NodeChange> _untaken = new();
 
@@ -46,7 +45,7 @@ internal sealed class SnapshotTaker(
     private readonly Dictionary<int, object> _sinceLastChange = [];
     private ChunkedList<NodeSnapshot> _nodes = ChunkedList<NodeSnapshot>.From(atTheStart);
 
-    // For the samples alone. The positions of the tasks running in the last snapshot taken, each with the progress last laid over
+    // The positions of the tasks running in the last snapshot taken, each with the progress last laid over
     // it and the take that last laid it, and those positions as the run's current snapshot reads them.
     private readonly HashSet<int> _sampled = [];
     private ProgressSample[] _laid = [];
@@ -109,10 +108,7 @@ internal sealed class SnapshotTaker(
             _taking.Add((position, node));
         }
 
-        if (samples is not null)
-        {
-            LayProgressOver();
-        }
+        LayProgressOver();
 
         _nodes = _nodes.With(CollectionsMarshal.AsSpan(_taking));
         _taking.Clear();
@@ -197,7 +193,7 @@ internal sealed class SnapshotTaker(
     /// <returns>Whether it had changed.</returns>
     private bool ReadSample(int position)
     {
-        var sample = samples![position];
+        var sample = samples[position];
         if (sample.Version == _laid[position].Version)
         {
             return false;

@@ -277,7 +277,7 @@ public class LoopRunReporterWaitTests
         builder.Task("prepare", _ => Task.CompletedTask);
         using var blocking = new BlockingReporter("prepare: ready -> running");
         var watching = new RecordingReporter();
-        var run = NewEngine.RunAsync(builder.Build(), Options(clock, blocking, watching));
+        var run = Runner.RunAsync(builder.Build(), Options(clock, blocking, watching));
         await blocking.Blocked;
         await watching.Ended;
 

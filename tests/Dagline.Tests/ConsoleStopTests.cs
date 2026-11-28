@@ -1,128 +1,156 @@
 using Dagline.TestSupport;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Dagline.Tests;
 
 // The presses are applied through the test hook, below the console's handlers: reading the real cancel key event and SIGTERM is
-// checked by hand with the Basic sample.
+// checked by hand with the Basic sample. Each run is scripted, with one task kept running, so a press is applied when the test
+// pumps the run's loop.
 public class ConsoleStopTests
 {
     [Test]
-    public void The_first_ctrl_c_requests_the_drain_and_leaves_the_token_alone()
+    public void The_first_ctrl_c_drains_the_run_and_does_not_stop_it()
     {
-        using var console = ConsolePresses.Unhooked();
+        var (run, _) = StartedWithATaskRunning();
+        using var console = ConsolePresses.Unhooked(run.Run);
 
         console.PressCtrlC().ShouldBeTrue();
+        run.Pump();
 
-        console.Drain.IsRequested.ShouldBeTrue();
-        console.Token.IsCancellationRequested.ShouldBeFalse();
+        run.Current.Drain.ShouldNotBeNull();
+        run.Current.Stop.ShouldBeNull();
     }
 
     [Test]
-    public void The_second_ctrl_c_cancels_the_token()
+    public async Task The_second_ctrl_c_stops_the_run_as_the_app_and_signals_its_tasks()
     {
-        using var console = ConsolePresses.Unhooked();
+        var (run, work) = StartedWithATaskRunning();
+        using var console = ConsolePresses.Unhooked(run.Run);
 
         console.PressCtrlC();
         console.PressCtrlC().ShouldBeTrue();
+        run.Pump();
 
-        console.Token.IsCancellationRequested.ShouldBeTrue();
+        run.Current.Drain.ShouldNotBeNull();
+        run.Current.Stop!.By.ShouldBe(StopRequester.App);
+        (await work.Started).CancellationToken.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Test]
-    public void A_sigterm_cancels_the_token_with_no_drain_first()
+    public void A_sigterm_stops_the_run_with_no_drain_first()
     {
-        using var console = ConsolePresses.Unhooked();
+        var (run, _) = StartedWithATaskRunning();
+        using var console = ConsolePresses.Unhooked(run.Run);
 
         console.SendSigterm().ShouldBeTrue();
+        run.Pump();
 
-        console.Token.IsCancellationRequested.ShouldBeTrue();
-        console.Drain.IsRequested.ShouldBeFalse();
+        run.Current.Stop!.By.ShouldBe(StopRequester.App);
+        run.Current.Drain.ShouldBeNull();
     }
 
     [Test]
-    public void A_sigterm_after_a_drain_cancels_the_token()
+    public void A_sigterm_after_a_drain_stops_the_run()
     {
-        using var console = ConsolePresses.Unhooked();
+        var (run, _) = StartedWithATaskRunning();
+        using var console = ConsolePresses.Unhooked(run.Run);
 
         console.PressCtrlC();
         console.SendSigterm().ShouldBeTrue();
+        run.Pump();
 
-        console.Token.IsCancellationRequested.ShouldBeTrue();
+        run.Current.Drain.ShouldNotBeNull();
+        run.Current.Stop.ShouldNotBeNull();
     }
 
     [Test]
-    public void Once_the_token_is_cancelled_a_ctrl_c_or_a_sigterm_requests_nothing_and_is_not_swallowed()
+    public void Once_the_hook_has_stopped_the_run_a_ctrl_c_or_a_sigterm_asks_nothing_and_is_not_swallowed()
     {
-        using var console = ConsolePresses.Unhooked();
+        var (run, _) = StartedWithATaskRunning();
+        using var console = ConsolePresses.Unhooked(run.Run);
         console.SendSigterm();
 
         console.PressCtrlC().ShouldBeFalse();
         console.SendSigterm().ShouldBeFalse();
         console.PressCtrlC().ShouldBeFalse();
+        run.Pump();
 
-        console.Drain.IsRequested.ShouldBeFalse();
+        run.Current.Drain.ShouldBeNull();
     }
 
     [Test]
-    public void A_drain_the_app_requests_does_not_make_the_next_ctrl_c_a_stop()
+    public void A_drain_the_app_asks_for_does_not_make_the_next_ctrl_c_a_stop()
     {
-        using var console = ConsolePresses.Unhooked();
+        var (run, _) = StartedWithATaskRunning();
+        using var console = ConsolePresses.Unhooked(run.Run);
 
-        console.Drain.Request();
+        run.Run.Drain();
         console.PressCtrlC().ShouldBeTrue();
+        run.Pump();
 
-        console.Token.IsCancellationRequested.ShouldBeFalse();
+        run.Current.Drain.ShouldNotBeNull();
+        run.Current.Stop.ShouldBeNull();
     }
 
     [Test]
-    public void Once_disposed_a_ctrl_c_or_a_sigterm_requests_nothing_and_is_not_swallowed()
+    public void A_stop_the_app_asks_for_leaves_the_next_ctrl_c_swallowed()
     {
-        var console = ConsolePresses.Unhooked();
+        var (run, _) = StartedWithATaskRunning();
+        using var console = ConsolePresses.Unhooked(run.Run);
+
+        run.Run.Stop();
+        run.Pump();
+
+        console.PressCtrlC().ShouldBeTrue();
+    }
+
+    [Test]
+    public void Once_disposed_a_ctrl_c_or_a_sigterm_asks_nothing_and_is_not_swallowed()
+    {
+        var (run, _) = StartedWithATaskRunning();
+        var console = ConsolePresses.Unhooked(run.Run);
         console.Dispose();
 
         console.PressCtrlC().ShouldBeFalse();
         console.SendSigterm().ShouldBeFalse();
+        run.Pump();
 
-        console.Drain.IsRequested.ShouldBeFalse();
-        console.Token.IsCancellationRequested.ShouldBeFalse();
+        run.Current.Drain.ShouldBeNull();
+        run.Current.Stop.ShouldBeNull();
     }
 
     [Test]
-    public void Hook_returns_a_drain_that_is_not_requested_and_a_token_that_is_not_cancelled()
+    public void Hooking_no_run_throws()
     {
-        using var console = ConsoleStop.Hook();
-
-        console.Drain.IsRequested.ShouldBeFalse();
-        console.Token.CanBeCanceled.ShouldBeTrue();
-        console.Token.IsCancellationRequested.ShouldBeFalse();
+        Should.Throw<ArgumentNullException>(() => ConsoleStop.Hook(null!)).ParamName.ShouldBe("run");
     }
 
     [Test]
-    public async Task Its_drain_requested_from_code_drains_a_run_as_any_drain_signal_does()
+    public async Task Hooking_a_run_changes_nothing_about_it_and_disposing_twice_is_harmless()
     {
         var builder = new GraphBuilder();
         builder.Task("work", _ => Task.CompletedTask);
-        using var console = ConsoleStop.Hook();
+        var run = Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None });
 
-        console.Drain.Request();
-        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None }, console.Drain, console.Token);
+        var console = ConsoleStop.Hook(run);
+        var result = await run.Result;
+        console.Dispose();
+        console.Dispose();
 
-        result.Outcome.ShouldBe(RunOutcome.Stopped);
-        result.Snapshot.Drain.ShouldNotBeNull();
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        result.Snapshot.Drain.ShouldBeNull();
         result.Snapshot.Stop.ShouldBeNull();
-        result.Snapshot.NeverReached.Count.ShouldBe(1);
     }
 
-    [Test]
-    public void Disposing_twice_is_harmless_and_leaves_the_drain_and_the_token_usable()
+    private static (ScriptedDriver Run, PausedBody Work) StartedWithATaskRunning()
     {
-        var console = ConsoleStop.Hook();
-
-        console.Dispose();
-        console.Dispose();
-        console.Drain.Request();
-
-        console.Drain.IsRequested.ShouldBeTrue();
-        console.Token.IsCancellationRequested.ShouldBeFalse();
+        var work = new PausedBody();
+        var builder = new GraphBuilder();
+        builder.Task("work", work.Body);
+        var run = ScriptedDriver.Start(
+            builder.Build(),
+            new RunOptions { Journal = Journal.None, TimeProvider = new FakeTimeProvider(), GracePeriod = TimeSpan.FromMinutes(1) });
+        run.Pump();
+        return (run, work);
     }
 }

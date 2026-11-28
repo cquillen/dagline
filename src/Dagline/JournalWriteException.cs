@@ -28,9 +28,9 @@ public sealed class JournalWriteException : DaglineException
     }
 
     /// <summary>
-    /// The exception a run on the new engine ends with, before the snapshot it holds exists: the run's loop gives it the final
+    /// The exception a run ends with, before the snapshot it holds exists: the run's loop gives it the final
     /// snapshot with <see cref="Holds"/> as it publishes the <see cref="RunEnded"/> that carries it, before any reporter is handed
-    /// that event. Until the cutover (spec #139, #153), whose end carries an outcome and no exception.
+    /// that event. Until #153, whose end carries an outcome and no exception.
     /// </summary>
     internal JournalWriteException(Exception innerException)
         : this(innerException, null!)

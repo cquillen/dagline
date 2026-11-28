@@ -1,7 +1,7 @@
 namespace Dagline;
 
 /// <summary>
-/// Every decision of one run on the new engine (ADR 0015): it takes one input and the time the loop read for it, and answers with
+/// Every decision of one run (ADR 0015): it takes one input and the time the loop read for it, and answers with
 /// the effects that input caused, in the order the loop is to carry them out. The loop decides nothing.
 /// </summary>
 /// <remarks>
@@ -98,10 +98,10 @@ internal sealed class StepCore
     private Exception? _writeFailure;
 
     // The outcome the run reached by the rule, and, when a write failed before the run ended, the exception it ends with, which
-    // holds it unrecorded until the cutover (#153) makes unrecorded a run outcome.
+    // holds it unrecorded until #153 makes unrecorded a run outcome.
     private RunOutcome _reached;
     private JournalWriteException? _unrecorded;
-    private AskedBeforeTheStart _askedBeforeTheStart = AskedBeforeTheStart.Nothing;
+    private bool _stoppedBeforeTheStart;
     private DateTimeOffset _now;
     private RunMilestones _milestones = new(Started: default, Drain: null, Stop: null, Ended: null, Outcome: null);
 
@@ -218,7 +218,7 @@ internal sealed class StepCore
         switch (input.Kind)
         {
             case InputKind.Start:
-                Start(input.Asked);
+                Start(input.StoppedBeforeTheStart);
                 break;
             case InputKind.BodyEnded:
                 BodyEnded(input.Task!, input.Outcome);
@@ -271,13 +271,13 @@ internal sealed class StepCore
 
     /// <summary>
     /// The run starts: its start is recorded with its set-asides, flushed, then published, and the tasks with no dependency become
-    /// ready and those that fit start. A drain and a stop already asked for are applied once the tasks have become ready and before
-    /// any starts, so none does.
+    /// ready and those that fit start. A stop already asked for is applied once the tasks have become ready and before any starts,
+    /// so none does.
     /// </summary>
-    private void Start(AskedBeforeTheStart asked)
+    private void Start(bool stopped)
     {
         _life = Life.Running;
-        _askedBeforeTheStart = asked;
+        _stoppedBeforeTheStart = stopped;
         _milestones = _milestones with { Started = _now };
         Record(_onAJournal ? EntriesOfTheStart() : [], JournalFlush.ToDisk, AfterWrite.RunStart);
     }
@@ -309,8 +309,8 @@ internal sealed class StepCore
 
     /// <summary>
     /// The run's start is written: it is published, then each node already settled tells its dependents, the tasks whose
-    /// dependencies are all met become ready, the groups settled so far are announced, a drain and a stop already asked for are
-    /// applied, and the ready tasks that fit start.
+    /// dependencies are all met become ready, the groups settled so far are announced, a stop already asked for is applied, and
+    /// the ready tasks that fit start.
     /// </summary>
     private void AfterTheRunStartIsWritten()
     {
@@ -335,7 +335,11 @@ internal sealed class StepCore
 
         MakeReady();
         AnnounceSettledGroups(_rollUp.TakeSettled());
-        ApplyWhatWasAskedBeforeTheStart();
+        if (_stoppedBeforeTheStart)
+        {
+            ApplyStop(StopRequester.App);
+        }
+
         StartWhatFitsUnlessTheJournalFailed();
     }
 
@@ -530,7 +534,7 @@ internal sealed class StepCore
     }
 
     /// <summary>
-    /// Tries the ready tasks in declaration order and starts each one whose slots it can take, as the existing engine does. The
+    /// Tries the ready tasks in declaration order and starts each one whose slots it can take. The
     /// starts are recorded, not flushed, and published and their bodies started once that write lands. With nothing to start,
     /// the run ends if nothing is running and nothing is ready.
     /// </summary>
@@ -693,8 +697,8 @@ internal sealed class StepCore
 
     /// <summary>
     /// The end is written, or is not written since a write failed: the journal is closed, then the end is published. A run that
-    /// ends unrecorded publishes the exception it ends with in place of a run outcome, as the existing engine does, until the
-    /// cutover (#153). The run's result carries the failure of a write either way, that of its end entry alone included.
+    /// ends unrecorded publishes the exception it ends with in place of a run outcome, until #153 makes
+    /// unrecorded a run outcome. The run's result carries the failure of a write either way, that of its end entry alone included.
     /// </summary>
     private void AfterTheEndIsWritten()
     {
@@ -761,20 +765,6 @@ internal sealed class StepCore
         _saving = null;
         _effects.Add(Effect.SaveRefused(task, save, new JournalWriteException(failure, _source.Current)));
         StartWhatFitsUnlessTheJournalFailed();
-    }
-
-    /// <summary>Applies the drain and the stop already asked for when the run started, the drain first, each as if asked for then.</summary>
-    private void ApplyWhatWasAskedBeforeTheStart()
-    {
-        if (_askedBeforeTheStart.Drained)
-        {
-            ApplyDrain();
-        }
-
-        if (_askedBeforeTheStart.Stopped)
-        {
-            ApplyStop(StopRequester.App);
-        }
     }
 
     /// <summary>

@@ -144,14 +144,10 @@ else
     Console.WriteLine($"Continuing journal {unfinished.Id} for {description} (runs so far: {unfinished.Runs}).");
 }
 
-// The first Ctrl+C drains the run: nothing new starts and the running tasks finish. A second Ctrl+C, or a SIGTERM, stops it:
-// the running tasks are told to end, and the run waits for them for its grace period. One more kills the process.
-using var console = ConsoleStop.Hook();
-
-RunResult result;
+Run run;
 try
 {
-    result = await Runner.RunAsync(graph, new RunOptions
+    run = Runner.Start(graph, new RunOptions
     {
         MaxRunningTasks = 16,
         Limits = limits,
@@ -161,11 +157,21 @@ try
             Display = plain ? DisplayMode.Never : DisplayMode.Auto,
             Ascii = ascii,
         })],
-    }, console.Drain, console.Token);
+    });
 }
 catch (DaglineException exception) when (exception is RunConfigurationException or JournalInUseException or JournalNotFoundException or JournalAccessException or JournalFormatException)
 {
     return await RefuseAsync(exception.Message);
+}
+
+// The first Ctrl+C drains the run: nothing new starts and the running tasks finish. A second Ctrl+C, or a SIGTERM, stops it:
+// the running tasks are told to end, and the run waits for them for its grace period. One more kills the process.
+using var console = ConsoleStop.Hook(run);
+
+RunResult result;
+try
+{
+    result = await run.Result;
 }
 catch (JournalWriteException exception)
 {

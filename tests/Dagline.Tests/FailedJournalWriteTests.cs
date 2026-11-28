@@ -73,27 +73,25 @@ public class FailedJournalWriteTests
             var builder = new GraphBuilder();
             builder.Task("fails", fails.Body);
             builder.Task("slow", slow.Body);
-            var drain = new DrainSignal();
             using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
             var journal = JournalWriteFailure.SettleOf("fails").In(QuickJournal.New(temporary.Path));
 
-            var run = Runner.RunAsync(
+            var run = Runner.Start(
                 builder.Build(),
                 new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [watched] },
-                drain,
                 stop.Token);
             await fails.Started;
             await slow.Started;
             fails.Release();
             await watched.Handled("stop requested");
-            drain.Request();
+            run.Drain();
             await stop.CancelAsync();
             // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
             // run lets go, so the grace end's time is the end of the grace period on either engine.
             clock.Advance(TimeSpan.FromSeconds(30));
-            var error = await Should.ThrowAsync<JournalWriteException>(run);
+            var error = await Should.ThrowAsync<JournalWriteException>(run.Result);
 
             reporter.Lines.ShouldNotContain("drain requested");
             reporter.Events.OfType<StopRequested>().ShouldHaveSingleItem().By.ShouldBe(StopRequester.Dagline);

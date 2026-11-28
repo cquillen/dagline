@@ -157,38 +157,6 @@ public class PlainTextReporterTests
     }
 
     [Test]
-    public async Task A_wait_with_no_text_prints_the_path_alone()
-    {
-        var clock = new FakeTimeProvider(_runStart);
-        var writer = new StringWriter();
-        var builder = new GraphBuilder();
-        builder.Task("job", context =>
-        {
-            using (context.BeginWaiting())
-            {
-                clock.Advance(TimeSpan.FromSeconds(3));
-            }
-
-            return Task.CompletedTask;
-        });
-
-        // On the existing engine only: it moves the clock inside the wait's call, so it dates the wait by the call, where the new
-        // engine dates it by when the run applies it (ADR 0015); LoopPlainTextReporterTests prints the same on the new engine.
-        await global::Dagline.Runner.RunAsync(builder.Build(), Options(clock, new PlainTextReporter(writer, clock)));
-
-        Lines(writer).ShouldBe(
-        [
-            "2026-11-11T04:12:00Z run started: 1 task",
-            "2026-11-11T04:12:00Z started job",
-            "2026-11-11T04:12:00Z waiting job",
-            "2026-11-11T04:12:03Z waited job for 3.0s",
-            "2026-11-11T04:12:03Z succeeded job in 3.0s",
-            "2026-11-11T04:12:03Z run ended: complete in 3.0s",
-            "tasks: 1 succeeded",
-        ]);
-    }
-
-    [Test]
     public async Task A_drain_prints_its_own_line_and_a_stop_after_it_with_an_unlimited_grace_period_prints_no_duration()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -201,11 +169,10 @@ public class PlainTextReporterTests
             builder.Task("load", load.Body);
             builder.Task("store", store.Body);
             builder.Task("queued", _ => Task.CompletedTask);
-            var drain = new DrainSignal();
             using var stop = new CancellationTokenSource();
             var reporter = new WatchedReporter(new PlainTextReporter(writer, clock));
 
-            var run = Runner.RunAsync(
+            var run = Runner.Start(
                 builder.Build(),
                 new RunOptions
                 {
@@ -215,12 +182,11 @@ public class PlainTextReporterTests
                     Reporters = [reporter],
                     GracePeriod = Timeout.InfiniteTimeSpan,
                 },
-                drain,
                 stop.Token);
             await load.Started;
             await store.Started;
             clock.Advance(TimeSpan.FromSeconds(5));
-            drain.Request();
+            run.Drain();
             await reporter.Handled("drain requested");
             clock.Advance(TimeSpan.FromSeconds(2));
             await stop.CancelAsync();
@@ -228,7 +194,7 @@ public class PlainTextReporterTests
             load.Release();
             await reporter.Handled("load: running -> succeeded");
             store.Release();
-            await run;
+            await run.Result;
 
             Lines(writer).ShouldBe(
             [

@@ -36,17 +36,17 @@ public sealed class RunResult
     public IReadOnlyList<ReporterError> ReporterErrors { get; }
 
     /// <summary>
-    /// The file system's failure that stopped the run's journal, on the new engine, or <see langword="null"/> when every write landed:
+    /// The file system's failure that stopped the run's journal, or <see langword="null"/> when every write landed:
     /// the cause of <see cref="Unrecorded"/> when the run ended unrecorded, and otherwise the failure of its end entry alone, which
-    /// leaves the run the outcome it reached. Internal until the cutover (spec #139, #153), which makes it public.
+    /// leaves the run the outcome it reached. Internal until #153 makes it public.
     /// </summary>
     internal Exception? JournalError { get; }
 
     /// <summary>
-    /// On the new engine, the exception the run ended with when its journal could no longer be written, the same one its
+    /// The exception the run ended with when its journal could no longer be written, the same one its
     /// <see cref="RunEnded"/> carried: the run outcome unrecorded, which takes precedence over <see cref="Outcome"/>, the outcome
-    /// the run would otherwise have reached. <see langword="null"/> otherwise. Until the cutover (#153) makes unrecorded a run
-    /// outcome, the engine switch throws it, as the existing engine does.
+    /// the run would otherwise have reached. <see langword="null"/> otherwise. Until #153 makes unrecorded a run
+    /// outcome, <see cref="Run.Result"/> throws it.
     /// </summary>
     internal JournalWriteException? Unrecorded { get; }
 }

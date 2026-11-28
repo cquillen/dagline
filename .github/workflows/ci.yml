@@ -38,12 +38,6 @@ jobs:
 
       - run: dotnet test -c Release --no-build --coverage --coverage-output-format cobertura --report-trx --results-directory ${{ github.workspace }}/TestResults
 
-      # The suite again on the new engine of spec #139, for the test classes listed in tests/second-run.txt, until the cutover.
-      - name: Test the listed classes on the new engine
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: bash tests/second-run.sh "${{ github.workspace }}/TestResults/new-engine"
-
       # Output redirected to a file, so the auto-choosing reporter must print plain text and the run must end complete.
       - name: Run the Basic sample with output redirected
         shell: bash

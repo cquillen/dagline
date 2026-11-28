@@ -2,7 +2,7 @@ namespace Dagline;
 
 /// <summary>
 /// The roll-up of one run: the run's counts, derived from all its tasks, and each group's status, counts, waiting and warnings,
-/// derived from the tasks beneath it. <see cref="RunSteps"/> tells it each change to a task, and asks it what the run's counts are,
+/// derived from the tasks beneath it. <see cref="StepCore"/> tells it each change to a task, and asks it what the run's counts are,
 /// what status and counts a group has, which groups settled and how each changed group now looks.
 /// </summary>
 /// <remarks>
@@ -14,7 +14,7 @@ namespace Dagline;
 /// <para>
 /// A task may be given warnings very often, so a group is recorded as changed once until the changes are handed over, a group's
 /// counts are copied once until they next change, and the groups above a task are walked without allocating.
-/// It is not thread-safe: <see cref="RunSteps"/> owns it.
+/// It is not thread-safe: <see cref="StepCore"/> owns it.
 /// </para>
 /// </remarks>
 internal sealed class RollUp

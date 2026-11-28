@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Dagline;
 
 /// <summary>
-/// The current snapshot of a run on the new engine: written by the run's loop alone, as it publishes each event, and read by anyone,
+/// The current snapshot of a run: written by the run's loop alone, as it publishes each event, and read by anyone,
 /// from any thread. <see cref="RunStarted"/> hands it to reporters as their source of snapshots, so a reporter reads the run and
 /// never holds the run itself (ADR 0010, ADR 0016).
 /// </summary>

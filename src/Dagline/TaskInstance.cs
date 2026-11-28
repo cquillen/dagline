@@ -110,7 +110,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
-    /// Moves a task that has just started back to ready, with no start time, as though it had never started: on the new engine, the
+    /// Moves a task that has just started back to ready, with no start time, as though it had never started: the
     /// write that recorded its start failed before its body started. The one move back a status makes.
     /// </summary>
     /// <returns>
@@ -171,38 +171,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
-    /// Sets the status text of the task's progress, as given, or clears it when the text is empty. Progress is never an event.
-    /// </summary>
-    public TaskChange? SetStatusText(string? text)
-    {
-        if (!IsRunning)
-        {
-            return null;
-        }
-
-        // Kept as given, line breaks included: measured on #98, making it one line here cost a task that reports progress in a
-        // tight loop about a tenth more time, so each reporter flattens it as it prints.
-        _statusText = string.IsNullOrEmpty(text) ? null : text;
-
-        return Changed();
-    }
-
-    /// <summary>Sets the count of the task's progress, and the total it counts towards. Progress is never an event.</summary>
-    public TaskChange? SetCount(long current, long? total)
-    {
-        if (!IsRunning)
-        {
-            return null;
-        }
-
-        _count = current;
-        _total = total;
-
-        return Changed();
-    }
-
-    /// <summary>
-    /// Takes a task's progress as its sample held it when frozen, on the new engine, where progress is a sample and not a report
+    /// Takes a task's progress as its sample held it when frozen: progress is a sample and not a report
     /// the instance is given (ADR 0015). Progress is never an event.
     /// </summary>
     public void TakeProgress(in ProgressSample progress)
@@ -213,7 +182,7 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
-    /// Takes the counts of warnings and detail lines beyond the kept from the task's sample, on the new engine, where they are
+    /// Takes the counts of warnings and detail lines beyond the kept from the task's sample: they are
     /// counted on the task's side (ADR 0015). A count is taken only once every kept line of its kind has been applied, so a node
     /// never shows lines omitted before it lists the kept ones. Each adds to what is omitted: an unexpected failure's lines are
     /// counted here too, as the task settles.

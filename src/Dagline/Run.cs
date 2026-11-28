@@ -1,450 +1,125 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace Dagline;
 
 /// <summary>
-/// One run of a graph: the shell that carries out the steps its <see cref="RunSteps"/> decides, and owns every effect.
-/// Every input is given to the steps under one lock, one at a time, so the order of the run's events
-/// is a function of the order in which things happen to it.
+/// One run of a graph, as the app holds it: <see cref="Runner.Start"/> returns it. The app asks it to <see cref="Drain"/> or to
+/// <see cref="Stop"/>, reads its <see cref="Current"/> snapshot at any time, and awaits its <see cref="Result"/> once it has ended.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The run owns the lock, the current snapshot, the grace-period timer, the registrations on the drain signal and on the app's
-/// token, the source of the token every task sees, the task bodies, delivery to reporters and the end result. Its <see cref="JournalRecorder"/> owns the journal.
-/// It reads the clock at most once each time it takes the lock, and passes that time on: to the steps for each input, except for a
-/// report that is never an event, which needs no time; and for a checkpoint change, the recorder reads it for the entry and hands it
-/// back when the write failed, so that the input ends with that time, and a run with no journal reads none. No consumer code runs
-/// under the lock: task bodies are started on the thread pool, and reporters are called by <see cref="ReporterDelivery"/>.
+/// One loop owns the run from its start until its result is returned. A drain, a stop, the cancellation of the run's token, the
+/// end of a task body and every report a task makes are each posted to the loop, and the call that posts returns at once: no
+/// call on a run waits for the run, for a task or for a reporter, and none runs any of the run's work on the caller's thread. The
+/// loop applies what is posted one at a time, in the order it was posted, on the thread pool.
 /// </para>
 /// <para>
-/// Each step is carried out under the lock, in this order: the step is handed to the recorder, which writes its journal entries and,
-/// if the step ends the run, closes the journal; the tasks' token is signalled, if the step asks; if the step ends the run, the
-/// registrations on the drain signal and the app's token and the timer are released; the grace-period timer is started, if the
-/// step asks; the events are published in order, each with its snapshot, which is taken then and made the current snapshot before
-/// the event is handed to reporters; the bodies of the tasks the step starts are started; and if the step ends the run, which it
-/// does in a step that starts nothing, then for a run stopped by a failed write its <see cref="RunEnded"/> is published last, with
-/// the final snapshot, the wait for reporters listens to the app's token unless the run applied a stop, delivery is completed and
-/// the end result is set. So the tasks' token is signalled before the run can end, the grace period is running before any
-/// reporter hears of the stop, and the wait for reporters listens before the run's end is set.
+/// A drain or a stop asked for once the run has ended changes nothing, and so does one asked for again. Where the run is in its
+/// life is read from its snapshot: <see cref="Snapshot.Drain"/>, <see cref="Snapshot.Stop"/> and <see cref="Snapshot.Ended"/>.
 /// </para>
 /// <para>
-/// Each input that can settle a task or apply a stop is followed, under the same lock and with the same time, by the journal write
-/// failed input when the recorder says a write failed while it was carried out, and then by the end input, which ends the run when
-/// nothing is left to do. A run whose steps heard of a failed write ends with a <see cref="JournalWriteException"/>.
+/// A run holds no resource of its own and is not disposed: the journal it is on is closed, and let go of, before
+/// <see cref="RunEnded"/> is published. Reporters are never handed the run, only the read-only source of snapshots that
+/// <see cref="RunStarted.Source"/> carries, so a reporter cannot drain or stop it.
 /// </para>
 /// </remarks>
-[SuppressMessage(
-    "Reliability",
-    "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The source of the tasks' token has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token.")]
-internal sealed class Run : ISnapshotSource, ITaskRun
+public sealed class Run : ISnapshotSource
 {
-    private readonly Lock _gate = new();
-    private readonly Graph _graph;
-    private readonly TimeProvider _timeProvider;
-    private readonly ReporterDelivery _delivery;
-    private readonly RunSteps _steps;
-    private readonly TaskCompletionSource<RunOutcome> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly DrainSignal? _drain;
-    private readonly CancellationToken _appToken;
-    private readonly CancellationTokenSource _tasksTokenSource = new();
-    private readonly JournalRecorder _recorder;
+    private readonly RunLoop _loop;
 
-    private IDisposable? _hearsTheDrain;
-    private CancellationTokenRegistration _hearsTheStop;
-    private ITimer? _gracePeriodTimer;
-    private volatile Snapshot? _current;
-
-    /// <param name="graph">The graph to run.</param>
-    /// <param name="settings">The settings of the run.</param>
-    /// <param name="delivery">Delivery of the run's events to its reporters.</param>
-    /// <param name="drain">The signal through which the app drains the run, if it can.</param>
-    /// <param name="journal">
-    /// The journal the run is on, already held, opened and read, or <see langword="null"/> for none. The run's recorder owns it from
-    /// here, and closes it and lets go of its lock in the step that ends the run, so that a later run can continue it as soon as this
-    /// one has ended.
-    /// </param>
-    /// <param name="appToken">The app's token, which <see cref="Runner.RunAsync"/> was given, and whose cancellation stops the run.</param>
-    public Run(Graph graph, RunSettings settings, ReporterDelivery delivery, DrainSignal? drain, JournalFile? journal, CancellationToken appToken)
+    private Run(RunLoop loop)
     {
-        _drain = drain;
-        _appToken = appToken;
-        _graph = graph;
-        _timeProvider = settings.TimeProvider;
-        _delivery = delivery;
-        var continuation = new Continuation(graph, journal?.Fold);
-        _recorder = JournalRecorder.For(journal, graph, settings, continuation);
-        _steps = new RunSteps(graph, settings, journal?.Fold, continuation);
-    }
-
-    public Snapshot Current => _current ?? TakeCurrent();
-
-    /// <summary>
-    /// Completes with the run outcome once no task is running and none is ready, or faults with the <see cref="JournalWriteException"/>
-    /// the run ended with.
-    /// </summary>
-    public Task<RunOutcome> Ended => _ended.Task;
-
-    /// <summary>
-    /// Starts the run: the tasks with no dependency become ready and those that fit start. A drain already requested and a token
-    /// already cancelled are read under the lock and applied once the tasks have become ready and before any starts, so the run
-    /// starts nothing.
-    /// </summary>
-    public void Start()
-    {
-        Give((steps, now) => steps.Start(now, _drain?.IsRequested ?? false, _appToken.IsCancellationRequested, this));
-        HearTheDrainAndTheStop();
+        _loop = loop;
+        Result = ThrowIfUnrecordedAsync(loop.Result);
     }
 
     /// <summary>
-    /// Listens to the run's drain signal and the app's token until the run ends. It registers once the run has started, outside
-    /// the lock, since a signal already requested and a token already cancelled each call back at once, on the thread pool: a
-    /// request made in between is heard then, and one already applied changes nothing.
-    /// </summary>
-    private void HearTheDrainAndTheStop()
-    {
-        var hearsTheDrain = _drain?.OnRequest(HearDrain);
-        var hearsTheStop = _appToken.OnCancelled(HearStop);
-        lock (_gate)
-        {
-            if (!_ended.Task.IsCompleted)
-            {
-                _hearsTheDrain = hearsTheDrain;
-                _hearsTheStop = hearsTheStop;
-                return;
-            }
-        }
-
-        // The run ended before it could listen, so nothing else will let the signal and the token forget it.
-        hearsTheDrain?.Dispose();
-        hearsTheStop.Unregister();
-    }
-
-    private void HearDrain() => Give(static (steps, now) => steps.DrainHeard(now));
-
-    private void HearStop() => Give(static (steps, now) => steps.StopHeard(now));
-
-    private void GracePeriodOver() => Give(static (steps, now) => steps.GracePeriodOver(now));
-
-    /// <summary>Sets the status text of a task's progress.</summary>
-    public void SetStatusText(BuiltTask task, string? text) => Report(task, text, static (instance, text) => instance.SetStatusText(text));
-
-    /// <summary>Sets the count of a task's progress, and the total it counts towards.</summary>
-    public void SetCount(BuiltTask task, long current, long? total) => Report(task, (current, total), static (instance, count) => instance.SetCount(count.current, count.total));
-
-    /// <summary>Adds a warning to a task. A warning that is kept is published.</summary>
-    public void Warn(BuiltTask task, string warning)
-        => Report(task, warning, static (instance, warning, now) => instance.Warn(warning, now));
-
-    /// <summary>Sets the message of a task's outcome.</summary>
-    public void SetMessage(BuiltTask task, string message) => Report(task, message, static (instance, message) => instance.SetMessage(message));
-
-    /// <summary>Adds detail lines to a task's outcome.</summary>
-    public void AddDetail(BuiltTask task, IEnumerable<string> texts) => Report(task, texts, static (instance, texts) => instance.AddDetail(texts));
-
-    /// <summary>
-    /// Records a reported failure: from then on the task settles failed as a reported failure, however its body ends.
-    /// </summary>
-    public void Fail(BuiltTask task, string message, IEnumerable<string> detail)
-        => Report(task, (message, detail), static (instance, failure) => instance.Fail(failure.message, failure.detail));
-
-    /// <summary>
-    /// Opens a waiting scope of a task. The task's first open scope begins its waiting marker, with the scope's text and the time.
-    /// </summary>
-    /// <returns><see langword="true"/> when the scope was opened: the task is running.</returns>
-    public bool OpenWaitingScope(BuiltTask task, string? text)
-        => Report(task, text, static (instance, text, now) => instance.OpenWaitingScope(text, now));
-
-    /// <summary>
-    /// Closes one waiting scope of a task. Its last open scope ends the marker. Once the task has settled this changes nothing,
-    /// since settling ended the marker.
-    /// </summary>
-    public void CloseWaitingScope(BuiltTask task)
-        => Report(task, (object?)null, static (instance, _, now) => instance.CloseWaitingScope(now));
-
-    /// <summary>
-    /// Gives the steps a report that is never an event, such as progress, and carries out the step it caused, if any.
-    /// It reads no clock, so a task that reports often leaves the run's clock alone. What the task reports is passed on as
-    /// <paramref name="argument"/>, so that <paramref name="report"/> can be a static lambda and a report costs no closure.
-    /// </summary>
-    private void Report<TArgument>(BuiltTask task, TArgument argument, Func<TaskInstance, TArgument, TaskChange?> report)
-    {
-        // Not through Give: a task may report progress millions of times, and Give would cost each report a second closure.
-        lock (_gate)
-        {
-            CarryOut(_steps.Report(task, argument, report));
-        }
-    }
-
-    /// <summary>
-    /// Gives the steps a report that may be an event, such as a warning, with what the task reports and the time read once for it,
-    /// and carries out the step it caused, if any. What the task reports is passed on as <paramref name="argument"/>, so that
-    /// <paramref name="report"/> can be a static lambda and a task that reports often costs no closure for each report.
-    /// </summary>
-    /// <returns><see langword="true"/> when the report was applied: the task is running.</returns>
-    private bool Report<TArgument>(BuiltTask task, TArgument argument, Func<TaskInstance, TArgument, DateTimeOffset, TaskChange?> report)
-    {
-        lock (_gate)
-        {
-            var steps = _steps.Report(task, argument, report, _timeProvider.GetUtcNow());
-            CarryOut(steps);
-
-            return steps.Count > 0;
-        }
-    }
-
-    /// <summary>The checkpoint of a task as it is now: empty when there is none.</summary>
-    public string CheckpointOf(BuiltTask task)
-    {
-        lock (_gate)
-        {
-            return _steps.CheckpointOf(task);
-        }
-    }
-
-    /// <summary>
-    /// Saves a task's checkpoint, or clears it when <paramref name="text"/> is empty. The recorder writes its entry, and flushes it to
-    /// the disk when the journal's durability asks for it, under the lock, so that the order of the file is the order of the run's
-    /// decisions and a save never lands after its task's settle.
+    /// The run as it is now: as of the last event the run published, with the progress each running task has reported since.
+    /// It answers from the moment <see cref="Runner.Start"/> returns, before the run has published anything, and once the run has
+    /// ended it is the final snapshot.
     /// </summary>
     /// <remarks>
-    /// The save is made before this returns, so the task it returns has already completed or faulted. It faults with an
-    /// <see cref="InvalidOperationException"/> when the task is not running: it has settled, or the run has let go of it. It faults
-    /// with a <see cref="JournalWriteException"/> when the run is on a journal that can no longer be written: this save failed, or an
-    /// earlier write did. The run stops, as for any failed write.
+    /// Safe to read from any thread, and reading it never waits for the run, a task or a reporter. A report a task makes, other than
+    /// its progress, shows here once the run has applied it, which may be a little after the task's call has returned. Progress
+    /// shows on the next read.
     /// </remarks>
-    public Task SaveCheckpointAsync(BuiltTask task, string text)
-    {
-        try
-        {
-            ChangeCheckpoint(task, text);
-            return Task.CompletedTask;
-        }
-        catch (Exception refused) when (refused is InvalidOperationException or JournalWriteException)
-        {
-            return Task.FromException(refused);
-        }
-    }
-
-    private void ChangeCheckpoint(BuiltTask task, string text)
-    {
-        Exception? failed;
-        lock (_gate)
-        {
-            if (_steps.ChangeCheckpoint(task, text) && _recorder.ChangeCheckpoint(task, text) is { } failedAt)
-            {
-                EndTheInput(failedAt);
-            }
-
-            failed = _recorder.Failure;
-        }
-
-        if (failed is not null)
-        {
-            throw new JournalWriteException(failed, Current);
-        }
-    }
+    public Snapshot Current => _loop.Source.Current;
 
     /// <summary>
-    /// The status, as it is now, of a node that a task depends on. It answers whether or not the task has settled.
+    /// Completes with the run's result once the run has ended and every reporter has handled every event or been dropped. It is
+    /// the same task each time it is read, and <see cref="Runner.RunAsync"/> returns it.
     /// </summary>
-    /// <exception cref="ArgumentException">The task does not depend on the node.</exception>
-    public NodeStatus StatusOf(BuiltTask task, Node dependency)
-    {
-        var position = _graph.DependencyPositionOf(task, dependency);
-        lock (_gate)
-        {
-            return _steps.StatusAt(position);
-        }
-    }
+    /// <remarks>
+    /// A task's exception, a reporter's exception and the cancellation of the run's token never fault it. It faults with a
+    /// <see cref="JournalWriteException"/> when the run's journal could no longer be written during the run, once reporters have
+    /// handled every event (see <see cref="Runner.Start"/>).
+    /// </remarks>
+    public Task<RunResult> Result { get; }
 
     /// <summary>
-    /// Gives the steps one input, under the lock and with the time read once for it, and carries out the steps it caused, in order.
+    /// Asks the run to drain: once the run has applied it, which publishes <see cref="DrainRequested"/>, it starts nothing new,
+    /// <em>after</em> tasks included, and lets its running tasks finish as they would, untold and however long they take.
     /// </summary>
-    private void Give(Func<RunSteps, DateTimeOffset, IReadOnlyList<Step>> input)
-    {
-        lock (_gate)
-        {
-            var now = _timeProvider.GetUtcNow();
-            CarryOut(input(_steps, now));
-            EndTheInput(now);
-        }
-    }
+    /// <remarks>
+    /// It posts to the run and returns at once, and is safe to call from any thread, a console's cancel handler included. It never
+    /// throws. Asked again, once a stop has been applied, or once the run has ended, it changes nothing. A stop may follow it.
+    /// </remarks>
+    public void Drain() => _loop.Drain();
 
     /// <summary>
-    /// Ends an input, under the lock and with its time: gives the steps the journal write failed input, once, if the recorder says a
-    /// write has failed, then the end input, which ends the run when nothing is left to do. A write that fails mid-input waits for
-    /// the input to end, and whatever else the input decided is still carried out, since its events and starts are already facts
-    /// of the run.
+    /// Asks the run to stop, as cancelling the token given to <see cref="Runner.Start"/> does: the two are one request, and
+    /// whichever comes first applies the stop. Once the run has applied it, which publishes <see cref="StopRequested"/> with
+    /// <see cref="StopRequester.App"/>, it starts nothing new, signals <see cref="TaskContext.CancellationToken"/> on every running
+    /// task, and waits for them for at most <see cref="RunOptions.GracePeriod"/>.
     /// </summary>
-    private void EndTheInput(DateTimeOffset now)
-    {
-        if (_recorder.TakeNewFailure())
-        {
-            CarryOut(_steps.JournalWriteFailed(now));
-        }
-
-        CarryOut(_steps.EndIfDone(now));
-    }
-
-    /// <summary>Carries out the steps one input caused, under the lock and in order.</summary>
-    private void CarryOut(IReadOnlyList<Step> steps)
-    {
-        // Indexed, not enumerated, so that no enumerator is allocated for each input.
-        for (var i = 0; i < steps.Count; i++)
-        {
-            CarryOut(steps[i]);
-        }
-    }
-
-    /// <summary>Carries out one step, under the lock, in the order the remarks of this type give.</summary>
-    private void CarryOut(Step step)
-    {
-        _recorder.Record(step);
-        if (step.SignalsTheTasks)
-        {
-            SignalTheTasks();
-        }
-
-        if (step.Ends is not null)
-        {
-            // None of these waits for a callback that is running, which may be waiting for this lock.
-            _hearsTheDrain?.Dispose();
-            _hearsTheStop.Unregister();
-            _gracePeriodTimer?.Dispose();
-        }
-
-        // Started before the step's events are published, so that a reporter that hears of the stop finds the grace period
-        // already running: a test that then moves a fake clock on moves it from the stop, and not from some later instant.
-        if (step.GracePeriodTimer is { } gracePeriod)
-        {
-            _gracePeriodTimer = _timeProvider.CreateTimer(
-                static run => ((Run)run!).GracePeriodOver(),
-                this,
-                gracePeriod,
-                Timeout.InfiniteTimeSpan);
-        }
-
-        Publish(step);
-        foreach (var task in step.Starts)
-        {
-            _ = Task.Run(() => RunBodyAsync(task, _tasksTokenSource.Token));
-        }
-
-        if (step.Ends is { Outcome: { } outcome } reached)
-        {
-            CompleteDelivery(reached);
-            _ended.SetResult(outcome);
-        }
-        else if (step.Ends is { } byFailedWrite)
-        {
-            var endedWith = PublishEndedByFailedWrite();
-            CompleteDelivery(byFailedWrite);
-            _ended.SetException(endedWith);
-        }
-    }
+    /// <remarks>
+    /// It posts to the run and returns at once, and is safe to call from any thread. It never throws. A drain may come before it.
+    /// Asked again, after the token was cancelled, or once the run has ended, it changes nothing.
+    /// </remarks>
+    public void Stop() => _loop.Stop(StopRequester.App);
 
     /// <summary>
-    /// Has the wait for reporters listen to the app's token, unless the run applied a stop, and completes delivery. It is called only
-    /// once the run's <see cref="RunEnded"/> is queued, as <see cref="ReporterDelivery.ListenToTheStop"/> requires: a cancellation
-    /// heard while a reporter has handled every event but <see cref="RunEnded"/> is still to come would leave that reporter to be
-    /// waited for.
+    /// The run's result as its loop gives it, an unrecorded run's included, which <see cref="Result"/> throws instead. For the
+    /// scripted tests, until unrecorded becomes a run outcome (#153).
     /// </summary>
-    private void CompleteDelivery(RunEnd end)
-    {
-        if (!end.StopApplied)
-        {
-            _delivery.ListenToTheStop(_appToken);
-        }
+    internal Task<RunResult> ResultEvenIfUnrecorded => _loop.Result;
 
-        _delivery.Complete();
-    }
+    /// <summary>The run's inbox, which a test reads to see that a loop that faulted has closed it.</summary>
+    internal Inbox Inbox => _loop.Inbox;
 
     /// <summary>
-    /// Signals the token every task sees. The token reads as cancelled at once, while the callbacks that task bodies
-    /// registered on it run later on the thread pool, so none runs under the lock or holds up the end of the run.
+    /// Starts a run of <paramref name="graph"/> with <paramref name="host"/> to run its loop, its bodies and its reporters. The
+    /// options are checked and the journal opened here, so each throws at the call before anything has happened. The run's first
+    /// turn is the host's to run.
     /// </summary>
-    private void SignalTheTasks()
-    {
-        // A callback a task body registered on its token may throw. That is the body's affair, and the stop goes on.
-        _tasksTokenSource.CancelLettingCallbackFaultsGo();
-    }
-
-    /// <summary>
-    /// Publishes a step's events in order. Each event's snapshot is taken as it is published, and is the current one before the
-    /// event is handed to reporters, so a reporter never reads a current snapshot older than an event it holds.
-    /// A step with no events changed only the snapshot, so it only marks the current snapshot as out of date.
-    /// </summary>
-    private void Publish(Step step)
-    {
-        var events = step.Events;
-        if (events.Count == 0)
-        {
-            _current = null;
-            return;
-        }
-
-        // Indexed, not enumerated, so that no enumerator is allocated for each step.
-        for (var i = 0; i < events.Count; i++)
-        {
-            var snapshot = _steps.SnapshotAfter(events[i]);
-            _current = snapshot;
-            _delivery.Publish(events[i].Event, snapshot);
-        }
-    }
-
-    /// <summary>
-    /// Publishes the <see cref="RunEnded"/> of a run that ends with no outcome because a journal write failed. It is built here,
-    /// once the final snapshot is taken, since the <see cref="JournalWriteException"/> it carries holds that snapshot.
-    /// </summary>
-    /// <returns>The exception the event carries and the run ends with.</returns>
-    private JournalWriteException PublishEndedByFailedWrite()
-    {
-        var final = _steps.TakeSnapshot();
-        _current = final;
-        var endedWith = new JournalWriteException(_recorder.Failure!, final);
-        _delivery.Publish(new RunEnded(final.Ended!.Value, endedWith), final);
-        return endedWith;
-    }
-
-    /// <summary>Runs the body of a task, then has the task settle as its body ended.</summary>
-    /// <param name="task">The task.</param>
+    /// <param name="graph">The graph to run.</param>
+    /// <param name="options">The options of the run.</param>
+    /// <param name="host">What runs the loop, the bodies and the reporters.</param>
     /// <param name="cancellationToken">
-    /// The token every task sees, which a step of the run signals when it applies a stop. It is never the app's token itself, which
-    /// the run hears as an input like any other, so that a task never sees a stop the run has not applied.
+    /// The app's token: cancelling it is a stop, as <see cref="Stop"/> is. One already cancelled reaches the run with its start, so
+    /// the tasks become ready and none starts. Cancelled after the run has ended, it does nothing.
     /// </param>
-    private async Task RunBodyAsync(BuiltTask task, CancellationToken cancellationToken)
+    /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A reporter in <paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="RunConfigurationException">The options do not fit the graph.</exception>
+    internal static Run Start(Graph graph, RunOptions options, IRunHost host, CancellationToken cancellationToken)
     {
-        var outcome = await InvokeBodyAsync(task, cancellationToken).ConfigureAwait(false);
-        Give((steps, now) => steps.BodyEnded(task, outcome, now));
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(options);
+
+        IReporter[] reporters = [.. options.Reporters];
+        Arguments.ThrowIfAnyNull(reporters, "A reporter in the options is null.", nameof(options));
+
+        var settings = RunSettings.From(graph, options);
+        var journal = options.Journal.Open(settings.TimeProvider);
+
+        var run = new Run(new RunLoop(graph, settings, reporters, journal, host));
+        run._loop.Start(cancellationToken);
+        return run;
     }
 
-    /// <summary>
-    /// Invokes the body of a task and says how it ended. This is the one place a task body is invoked,
-    /// and so the one catch-all for it: whatever escapes the body is a failure of that task and of nothing else,
-    /// or its cancellation when it is a cancellation exception and the run has been stopped by the time the task settles.
-    /// The exception is read here, outside the lock and before the task settles, because its members are consumer code too.
-    /// </summary>
-    private async Task<TaskOutcome> InvokeBodyAsync(BuiltTask task, CancellationToken cancellationToken)
+    // Until #153 makes unrecorded a run outcome: an unrecorded run's result throws the exception its end carried, as before.
+    private static async Task<RunResult> ThrowIfUnrecordedAsync(Task<RunResult> ended)
     {
-        try
-        {
-            await task.Body(new TaskContext(this, task, _timeProvider, cancellationToken)).ConfigureAwait(false);
-            return TaskOutcome.Succeeded;
-        }
-        catch (Exception escaped)
-        {
-            return TaskOutcome.UnexpectedFailure(escaped);
-        }
-    }
-
-    // A progress report only marks the current snapshot as out of date, so a task that reports often costs
-    // one snapshot for each read and not one for each report.
-    private Snapshot TakeCurrent()
-    {
-        lock (_gate)
-        {
-            return _current ??= _steps.TakeSnapshot();
-        }
+        var result = await ended.ConfigureAwait(false);
+        return result.Unrecorded is { } unrecorded ? throw unrecorded : result;
     }
 }

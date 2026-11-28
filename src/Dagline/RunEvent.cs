@@ -229,15 +229,13 @@ public sealed record GroupSettled : RunEvent
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is published once at most, when the run applies the request on the <see cref="DrainSignal"/> it was given, and only while no
-/// stop has been applied: a drain requested during a stop changes nothing. It is a step of its own. The running tasks are not told:
+/// It is published once at most, when the run applies <see cref="Run.Drain"/>, and only while no stop has been applied: a drain
+/// asked for during a stop changes nothing. It is a step of its own. The running tasks are not told:
 /// their <see cref="TaskContext.CancellationToken"/> is not signalled, and no grace period runs. A drain only comes from the app,
 /// so it has no requester.
 /// </para>
 /// <para>
-/// A signal already requested when the run starts gives <see cref="RunStarted"/>, the tasks that become ready, this event, then
-/// <see cref="RunEnded"/>, with no task started. When the run's token is also cancelled by then, <see cref="StopRequested"/> follows
-/// this event. A stop that follows a drain later is published after it in the same way.
+/// A stop that follows a drain is published after it.
 /// </para>
 /// <para>
 /// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Drain"/> set.
@@ -263,16 +261,17 @@ public sealed record DrainRequested : RunEvent
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is published once at most: when the run hears that the <see cref="CancellationToken"/> passed to
-/// <see cref="Runner.RunAsync"/> is cancelled, with <see cref="By"/> set to <see cref="StopRequester.App"/>, or when the run's
+/// It is published once at most: when the run applies <see cref="Run.Stop"/> or the cancellation of the
+/// <see cref="CancellationToken"/> passed to <see cref="Runner.Start"/>, which are one request, with <see cref="By"/> set to
+/// <see cref="StopRequester.App"/>, or when the run's
 /// journal can no longer be written, with <see cref="StopRequester.Dagline"/>, unless a stop was already in progress.
 /// It is a step of its own, and comes after <see cref="DrainRequested"/> when a drain was applied first.
 /// A token already cancelled when the run starts gives <see cref="RunStarted"/>, the tasks that become ready, this event,
 /// then <see cref="RunEnded"/>, with no task started.
 /// </para>
 /// <para>
-/// Only the grace period running out ends the wait for the running tasks. A drain requested after this event, or the app's token
-/// cancelled after a stop that Dagline asked for, changes nothing.
+/// Only the grace period running out ends the wait for the running tasks. A drain asked for after this event, or a stop by the
+/// app after a stop that Dagline asked for, changes nothing.
 /// </para>
 /// <para>
 /// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Stop"/> set.

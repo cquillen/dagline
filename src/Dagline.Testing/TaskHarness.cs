@@ -227,7 +227,7 @@ public sealed class TaskHarness : IAsyncDisposable
         RunResult result;
         try
         {
-            result = await Runner.RunAsync(builder.Build(), options, drain: null, cancellationToken).ConfigureAwait(false);
+            result = await Runner.RunAsync(builder.Build(), options, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

@@ -52,19 +52,18 @@ public class StopBannerTests
     {
         var a = new PausedBody();
         var b = new PausedBody();
-        var drain = new DrainSignal();
         using var stop = new CancellationTokenSource();
         var builder = new GraphBuilder();
         builder.Task("a", a.Body);
         builder.Task("b", b.Body);
         builder.Task("c", _ => Task.CompletedTask);
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, drain: drain, stop: stop.Token);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 100, 24, stop: stop.Token);
         await a.Started;
         await b.Started;
         await display.Handled("c: running -> succeeded");
         var before = display.NextFrame();
-        drain.Request();
+        display.Drain();
         await display.Handled("drain requested");
         var draining = display.NextFrame();
         a.Release();
@@ -108,13 +107,12 @@ public class StopBannerTests
     public async Task On_a_narrow_terminal_the_drain_banner_cuts_what_the_run_is_waiting_for_and_keeps_what_Ctrl_C_does()
     {
         var a = new PausedBody();
-        var drain = new DrainSignal();
         var builder = new GraphBuilder();
         builder.Task("a", a.Body);
 
-        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15, drain: drain);
+        await using var display = await DisplayRun.StartAsync(builder.Build(), 60, 15);
         await a.Started;
-        drain.Request();
+        display.Drain();
         await display.Handled("drain requested");
         var frame = display.NextFrame();
         var overflowed = display.Screen.Overflowed;
