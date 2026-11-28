@@ -37,7 +37,7 @@ namespace Dagline;
     "Reliability",
     "CA1001:Types that own disposable fields should be disposable",
     Justification = "The source of the tasks' token has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token.")]
-internal sealed class Run : ISnapshotSource
+internal sealed class Run : ISnapshotSource, ITaskRun
 {
     private readonly Lock _gate = new();
     private readonly Graph _graph;
@@ -207,12 +207,26 @@ internal sealed class Run : ISnapshotSource
     /// the disk under the lock, so that the order of the file is the order of the run's decisions and a save never lands after its
     /// task's settle.
     /// </summary>
-    /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
-    /// <exception cref="JournalWriteException">
-    /// The run is on a journal that can no longer be written: this save failed, or an earlier write did. The run stops, as for any
-    /// failed write.
-    /// </exception>
-    public void ChangeCheckpoint(BuiltTask task, string text)
+    /// <remarks>
+    /// The save is made before this returns, so the task it returns has already completed or faulted. It faults with an
+    /// <see cref="InvalidOperationException"/> when the task is not running: it has settled, or the run has let go of it. It faults
+    /// with a <see cref="JournalWriteException"/> when the run is on a journal that can no longer be written: this save failed, or an
+    /// earlier write did. The run stops, as for any failed write.
+    /// </remarks>
+    public Task SaveCheckpointAsync(BuiltTask task, string text)
+    {
+        try
+        {
+            ChangeCheckpoint(task, text);
+            return Task.CompletedTask;
+        }
+        catch (Exception refused) when (refused is InvalidOperationException or JournalWriteException)
+        {
+            return Task.FromException(refused);
+        }
+    }
+
+    private void ChangeCheckpoint(BuiltTask task, string text)
     {
         Exception? failed;
         lock (_gate)
