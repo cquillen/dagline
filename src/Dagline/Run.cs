@@ -48,9 +48,10 @@ public sealed class Run : ISnapshotSource
     /// the same task each time it is read, and <see cref="Runner.RunAsync"/> returns it.
     /// </summary>
     /// <remarks>
-    /// A task's exception, a reporter's exception and the cancellation of the run's token never fault it. It faults with a
-    /// <see cref="JournalWriteException"/> when the run's journal could no longer be written during the run, once reporters have
-    /// handled every event (see <see cref="Runner.Start"/>).
+    /// A task's exception, a reporter's exception, the cancellation of the run's token and a journal write that fails never fault
+    /// it. A run whose journal could no longer be written ends with the run outcome <see cref="RunOutcome.Unrecorded"/>, and its
+    /// result carries the file system's failure in <see cref="RunResult.JournalError"/> beside its reporter errors (see
+    /// <see cref="Runner.Start"/>).
     /// </remarks>
     public Task<RunResult> Result { get; }
 

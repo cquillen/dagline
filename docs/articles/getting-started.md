@@ -128,7 +128,7 @@ var result = await run.Result;
 return result.Outcome.ToExitCode();
 ```
 
-The run outcome says how the run ended: complete, incomplete or stopped. Dagline never sets your exit code: <xref:Dagline.RunOutcomeExtensions.ToExitCode*> is a default mapping that a script calling your app can rely on, and you are free to choose your own.
+The run outcome says how the run ended: complete, incomplete, stopped or unrecorded. Dagline never sets your exit code: <xref:Dagline.RunOutcomeExtensions.ToExitCode*> is a default mapping that a script calling your app can rely on, and you are free to choose your own.
 
 ## Watch, drain, stop and continue
 
