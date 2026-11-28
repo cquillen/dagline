@@ -22,7 +22,7 @@ namespace Dagline;
 [SuppressMessage(
     "Reliability",
     "CA1001:Types that own disposable fields should be disposable",
-    Justification = "The source of the tasks' token has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token.")]
+    Justification = "The source of the tasks' token has no timer and no wait handle is ever taken from it, and a body the run has ended may still hold its token. The grace period's timer is disposed when the run ends.")]
 internal sealed class RunLoop
 {
     private readonly IRunHost _host;
@@ -33,8 +33,11 @@ internal sealed class RunLoop
     private readonly LoopTaskRun _taskRun = new();
     private readonly CancellationTokenSource _tasksTokenSource = new();
     private readonly TaskCompletionSource<RunResult> _result;
+    private readonly TimeSpan _gracePeriod;
 
     private RunOutcome? _outcome;
+    private CancellationTokenRegistration _hearsTheStop;
+    private ITimer? _gracePeriodTimer;
 
     /// <param name="graph">The graph to run.</param>
     /// <param name="settings">The settings of the run.</param>
@@ -48,6 +51,7 @@ internal sealed class RunLoop
     {
         _host = host;
         _clock = settings.TimeProvider;
+        _gracePeriod = settings.GracePeriod;
         _journal = journal;
         Inbox = new Inbox(host);
         _delivery = new HostedDelivery(reporters, host);
@@ -70,12 +74,31 @@ internal sealed class RunLoop
     /// </summary>
     public Task<RunResult> Result => _result.Task;
 
-    /// <summary>Posts the run's start and has the host run the loop's first turn.</summary>
-    public void Start()
+    /// <summary>
+    /// Posts the run's start and has the host run the loop's first turn. A token already cancelled, and a drain already asked for,
+    /// go with the start; a later cancellation of the token posts a stop by the app, and the token is let go of once the run ends.
+    /// </summary>
+    /// <param name="drained">Whether a drain was already asked for, which only the engine switch can do until the cutover.</param>
+    /// <param name="cancellationToken">The app's token, whose cancellation is a stop by the app.</param>
+    public void Start(bool drained, CancellationToken cancellationToken)
     {
-        Inbox.Post(Input.Start);
+        var stopped = cancellationToken.IsCancellationRequested;
+        Inbox.Post(Input.StartAsked(drained, stopped));
+        if (!stopped)
+        {
+            // Posting runs no engine code, so the callback is safe on whichever thread cancels the token. Registered before the
+            // first turn, so the loop that lets go of it at the end finds it set.
+            _hearsTheStop = cancellationToken.UnsafeRegister(static loop => ((RunLoop)loop!).Stop(StopRequester.App), this);
+        }
+
         _host.RunLoop(() => _ = RunAsync());
     }
+
+    /// <summary>Asks the run to drain. Asked again, during a stop, or once the run has ended, it changes nothing.</summary>
+    public void Drain() => Inbox.Post(Input.Drain);
+
+    /// <summary>Asks the run to stop. Asked again, or once the run has ended, it changes nothing.</summary>
+    public void Stop(StopRequester by) => Inbox.Post(Input.Stop(by));
 
     private async Task RunAsync()
     {
@@ -116,6 +139,7 @@ internal sealed class RunLoop
         {
             // A fault in Dagline itself: the app awaiting the result is told, rather than left waiting for ever.
             Inbox.Close();
+            LetGoOfTheTokenAndTheTimer();
             _result.TrySetException(fault);
         }
     }
@@ -143,6 +167,16 @@ internal sealed class RunLoop
                     break;
                 case EffectKind.CloseJournal:
                     _journal!.Dispose();
+                    break;
+                case EffectKind.SignalTheTasks:
+                    _host.Signal(_tasksTokenSource);
+                    break;
+                case EffectKind.StartGracePeriod:
+                    _gracePeriodTimer = _clock.CreateTimer(
+                        static loop => ((RunLoop)loop!).Inbox.Post(Input.GracePeriodOver),
+                        this,
+                        _gracePeriod,
+                        Timeout.InfiniteTimeSpan);
                     break;
                 case EffectKind.EndRun:
                     End(effect.Outcome);
@@ -205,10 +239,21 @@ internal sealed class RunLoop
         Inbox.Post(Input.BodyEnded(task, outcome));
     }
 
+    /// <summary>
+    /// Lets go of the app's token and the grace period's timer, which mean nothing once the run has ended. Neither waits for a
+    /// callback that is running: each only posts, and the inbox takes a post after the end and drops one after the loop has gone.
+    /// </summary>
+    private void LetGoOfTheTokenAndTheTimer()
+    {
+        _hearsTheStop.Unregister();
+        _gracePeriodTimer?.Dispose();
+    }
+
     /// <summary>The run has ended: no event follows, and the loop waits for the reporters to be done, as an input.</summary>
     private void End(RunOutcome outcome)
     {
         _outcome = outcome;
+        LetGoOfTheTokenAndTheTimer();
         _delivery.Complete(() => Inbox.Post(Input.ReportersDone));
     }
 }

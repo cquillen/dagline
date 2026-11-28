@@ -38,6 +38,17 @@ internal sealed class StepCore
         End,
     }
 
+    // Where the run is in its life: the one answer to "may anything start?" and "has the run ended?". The snapshot's milestones
+    // say the same to readers, and are set beside it.
+    private enum Life
+    {
+        NotStarted,
+        Running,
+        Draining,
+        Stopping,
+        Ended,
+    }
+
     private readonly Graph _graph;
     private readonly ISnapshotSource _source;
     private readonly RollUp _rollUp;
@@ -50,6 +61,7 @@ internal sealed class StepCore
     private readonly List<Effect> _effects = [];
     private readonly bool _onAJournal;
     private readonly int _maxRunningTasks;
+    private readonly TimeSpan _gracePeriod;
     private readonly Dictionary<string, int> _limits;
     private readonly string _user = Environment.UserName;
     private readonly string _machine = Environment.MachineName;
@@ -67,11 +79,13 @@ internal sealed class StepCore
     private readonly List<BuiltTask> _starting = [];
 
     private AfterWrite _afterWrite;
+    private Life _life;
+    private AskedBeforeTheStart _askedBeforeTheStart = AskedBeforeTheStart.Nothing;
     private DateTimeOffset _now;
     private RunMilestones _milestones = new(Started: default, Drain: null, Stop: null, Ended: null, Outcome: null);
 
     /// <param name="graph">The graph the run runs.</param>
-    /// <param name="settings">The settings of the run: the sizes of its slots.</param>
+    /// <param name="settings">The settings of the run: the sizes of its slots and its grace period.</param>
     /// <param name="journal">
     /// The journal the run is on, as it was folded when opened, or <see langword="null"/> for a run with no journal. What the run
     /// takes from it is decided here, once, before the run starts: a task it holds as an earlier success begins succeeded and is
@@ -86,6 +100,7 @@ internal sealed class StepCore
         _onAJournal = journal is not null;
         _continuation = new Continuation(graph, journal);
         _maxRunningTasks = settings.Sizes.MaxRunningTasks;
+        _gracePeriod = settings.GracePeriod;
         _limits = graph.LimitNames
             .Zip(settings.Sizes.Limits)
             .ToDictionary(limit => limit.First.Text, limit => limit.Second, LimitName.TextComparer);
@@ -120,7 +135,12 @@ internal sealed class StepCore
     /// <summary>How many times the run has tried to take the slots of a ready task so far, as <see cref="Slots.Tries"/> counts them.</summary>
     public int SlotTries => _slots.Tries;
 
-    private bool HasEnded => _milestones.Ended is not null;
+    private bool HasEnded => _life is Life.Ended;
+
+    private bool HasStopped => _life is Life.Stopping;
+
+    // A drain or a stop: either one starts nothing more, ends the run once nothing is running, and makes its outcome stopped.
+    private bool IsEndingEarly => _life is Life.Draining or Life.Stopping;
 
     private bool NothingIsRunning => _rollUp.InRun(NodeStatus.Running) == 0;
 
@@ -153,10 +173,19 @@ internal sealed class StepCore
         switch (input.Kind)
         {
             case InputKind.Start:
-                Start();
+                Start(input.Asked);
                 break;
             case InputKind.BodyEnded:
                 BodyEnded(input.Task!, input.Outcome);
+                break;
+            case InputKind.Drain:
+                Drain();
+                break;
+            case InputKind.Stop:
+                Stop(input.Requester);
+                break;
+            case InputKind.GracePeriodOver:
+                LetGo();
                 break;
             default:
                 throw new InvalidOperationException($"The step core does not take the input {input.Kind}.");
@@ -176,10 +205,13 @@ internal sealed class StepCore
 
     /// <summary>
     /// The run starts: its start is recorded with its set-asides, flushed, then published, and the tasks with no dependency become
-    /// ready and those that fit start.
+    /// ready and those that fit start. A drain and a stop already asked for are applied once the tasks have become ready and before
+    /// any starts, so none does.
     /// </summary>
-    private void Start()
+    private void Start(AskedBeforeTheStart asked)
     {
+        _life = Life.Running;
+        _askedBeforeTheStart = asked;
         _milestones = _milestones with { Started = _now };
         Record(_onAJournal ? EntriesOfTheStart() : [], JournalFlush.ToDisk, AfterWrite.RunStart);
     }
@@ -211,7 +243,8 @@ internal sealed class StepCore
 
     /// <summary>
     /// The run's start is written: it is published, then each node already settled tells its dependents, the tasks whose
-    /// dependencies are all met become ready, the groups settled so far are announced, and the ready tasks that fit start.
+    /// dependencies are all met become ready, the groups settled so far are announced, a drain and a stop already asked for are
+    /// applied, and the ready tasks that fit start.
     /// </summary>
     private void AfterTheRunStartIsWritten()
     {
@@ -236,6 +269,7 @@ internal sealed class StepCore
 
         MakeReady();
         AnnounceSettledGroups(_rollUp.TakeSettled());
+        ApplyWhatWasAskedBeforeTheStart();
         StartWhatFits();
     }
 
@@ -245,7 +279,8 @@ internal sealed class StepCore
     /// </summary>
     private void BodyEnded(BuiltTask task, TaskOutcome ended)
     {
-        var changes = InstanceOf(task).Settle(ended, _now);
+        // Only a stop tells the tasks, so only after a stop is a cancellation exception a cancellation: during a drain it is a failure.
+        var changes = InstanceOf(task).Settle(HasStopped ? ended.OnceStopped() : ended, _now);
         if (changes.Count == 0)
         {
             return;
@@ -356,6 +391,12 @@ internal sealed class StepCore
     /// </summary>
     private void StartWhatFits()
     {
+        if (IsEndingEarly)
+        {
+            EndIfDone();
+            return;
+        }
+
         _held.BeginWalk();
         while (NextToTry() is var (position, wasHeld))
         {
@@ -458,17 +499,21 @@ internal sealed class StepCore
         => _instances[position] is { } instance ? instance.Status : _rollUp.StatusOf(position);
 
     /// <summary>
-    /// The run ends when no task is running and none is ready: its end is recorded, flushed, then the journal is closed and the
-    /// end is published.
+    /// The run ends when no task is running and, unless a drain or a stop has been applied, none is ready: its end is recorded,
+    /// flushed, then the journal is closed and the end is published. Its outcome is complete when every task succeeded, and
+    /// otherwise stopped after a drain or a stop, and incomplete without one.
     /// </summary>
     private void EndIfDone()
     {
-        if (!NothingIsRunning || _rollUp.InRun(NodeStatus.Ready) > 0)
+        if (HasEnded || !NothingIsRunning || (!IsEndingEarly && _rollUp.InRun(NodeStatus.Ready) > 0))
         {
             return;
         }
 
-        var outcome = _rollUp.InRun(NodeStatus.Succeeded) == _graph.Tasks.Length ? RunOutcome.Complete : RunOutcome.Incomplete;
+        var outcome = _rollUp.InRun(NodeStatus.Succeeded) == _graph.Tasks.Length ? RunOutcome.Complete
+            : IsEndingEarly ? RunOutcome.Stopped
+            : RunOutcome.Incomplete;
+        _life = Life.Ended;
         _milestones = _milestones with { Ended = _now, Outcome = outcome };
         Record(_onAJournal ? [new RunEndedEntry(_now, outcome)] : [], JournalFlush.ToDisk, AfterWrite.End);
     }
@@ -483,6 +528,110 @@ internal sealed class StepCore
 
         Publish(new RunEnded(_now, outcome));
         _effects.Add(Effect.EndRun(outcome));
+    }
+
+    /// <summary>Applies the drain and the stop already asked for when the run started, the drain first, each as if asked for then.</summary>
+    private void ApplyWhatWasAskedBeforeTheStart()
+    {
+        if (_askedBeforeTheStart.Drained)
+        {
+            ApplyDrain();
+        }
+
+        if (_askedBeforeTheStart.Stopped)
+        {
+            ApplyStop(StopRequester.App);
+        }
+    }
+
+    /// <summary>
+    /// The app asks the run to drain: unless a drain or a stop has been applied, nothing starts from now on, no task is told, and
+    /// the run ends once nothing is running. A drain asked for again, or during a stop, changes nothing.
+    /// </summary>
+    private void Drain()
+    {
+        if (_life is not Life.Running)
+        {
+            return;
+        }
+
+        ApplyDrain();
+        EndIfDone();
+    }
+
+    private void ApplyDrain()
+    {
+        _life = Life.Draining;
+        _milestones = _milestones with { Drain = new DrainState(_now) };
+        Publish(new DrainRequested(_now));
+    }
+
+    /// <summary>
+    /// A stop is asked for: unless one has been applied, nothing starts from now on, the tasks are signalled, and the run waits for
+    /// those running for the grace period. A zero grace period lets go of them at once; with nothing running the run ends. A stop
+    /// can follow a drain, and a stop asked for again changes nothing, whoever asks: only the grace period ends the wait.
+    /// </summary>
+    private void Stop(StopRequester by)
+    {
+        if (_life is not (Life.Running or Life.Draining))
+        {
+            return;
+        }
+
+        ApplyStop(by);
+        if (_gracePeriod == TimeSpan.Zero && !NothingIsRunning)
+        {
+            LetGo();
+            return;
+        }
+
+        EndIfDone();
+    }
+
+    /// <summary>
+    /// Applies a stop: the tasks are signalled and, when tasks are running and the grace period is limited and more than zero, its
+    /// timer is started, both before the stop is published, so the token is signalled before the run can end and a reporter that
+    /// hears of the stop finds the grace period already running.
+    /// </summary>
+    private void ApplyStop(StopRequester by)
+    {
+        _life = Life.Stopping;
+        _milestones = _milestones with
+        {
+            Stop = new StopState(_now, _gracePeriod, GracePeriodRules.DeadlineFrom(_now, _gracePeriod), by),
+        };
+        _effects.Add(Effect.SignalTheTasks);
+        if (!NothingIsRunning && !GracePeriodRules.IsUnlimited(_gracePeriod) && _gracePeriod > TimeSpan.Zero)
+        {
+            _effects.Add(Effect.StartGracePeriod);
+        }
+
+        Publish(new StopRequested(_now, by, _gracePeriod));
+    }
+
+    /// <summary>
+    /// The grace period is over, or was zero: unless nothing is running, the grace end is published at once, then each running
+    /// task is let go of in declaration order, settled as left behind. Those settles are recorded, flushed, before they are
+    /// published, as any settle is, and what follows from them is decided once that write lands.
+    /// </summary>
+    private void LetGo()
+    {
+        if (NothingIsRunning)
+        {
+            return;
+        }
+
+        Publish(new GraceEnded(_now));
+        List<JournalEntry> entries = [];
+        foreach (var task in _graph.Tasks)
+        {
+            if (InstanceOf(task).Status is NodeStatus.Running)
+            {
+                Settle(task, InstanceOf(task).LeaveBehind(_now), entries);
+            }
+        }
+
+        Record(entries, JournalFlush.ToDisk, AfterWrite.Settles);
     }
 
     /// <summary>

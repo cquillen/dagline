@@ -162,16 +162,18 @@ public static class Runner
         return RunToEndAsync(graph, settings, journal, reporters, drain, cancellationToken);
     }
 
-    // The engine switch (spec #139), until the cutover. The new engine takes no drain and no token yet: refusing them at the call
-    // fails a test that relies on them at once, where dropping them would let it pass without a stop or hang until its timeout.
+    // The engine switch (spec #139), until the cutover. Not async, so that what LoopRun.Start throws is thrown at the call. A drain
+    // signal already requested goes with the start, as the existing engine applies it; one requested later drains the run.
     private static Task<RunResult> RunOnTheNewEngineAsync(Graph graph, RunOptions options, DrainSignal? drain, CancellationToken cancellationToken)
     {
-        if (drain is not null || cancellationToken.CanBeCanceled)
-        {
-            throw new NotSupportedException("The new engine takes no drain signal and no cancellation token yet.");
-        }
+        var run = LoopRun.Start(graph, options, ThreadPoolHost.Instance, drain?.IsRequested ?? false, cancellationToken);
+        return drain is null ? run.Result : DrainedOnRequestAsync(run, drain);
+    }
 
-        return LoopRun.Start(graph, options, ThreadPoolHost.Instance).Result;
+    private static async Task<RunResult> DrainedOnRequestAsync(LoopRun run, DrainSignal drain)
+    {
+        using var hearsTheDrain = drain.OnRequest(run.Drain);
+        return await run.Result.ConfigureAwait(false);
     }
 
     // The token is the run's own input, which stops it: the awaits here wait for the run to end however it ends, so none takes it.

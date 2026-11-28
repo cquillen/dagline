@@ -185,6 +185,41 @@ public class LoopRunTests
     }
 
     [Test]
+    public async Task The_compatibility_journal_is_continued_by_the_new_engine_as_the_existing_engine_continues_it()
+    {
+        // The journal JournalCompatibilityTests holds, continued with bodies that read no checkpoint: handing one back is #150's.
+        const string id = "20261111T041200Z-fa4fa4";
+        using var existingDirectory = new TemporaryDirectory();
+        using var newDirectory = new TemporaryDirectory();
+        var compatibilityJournal = Path.Combine(AppContext.BaseDirectory, "CompatibilityJournals", $"{id}.journal");
+        existingDirectory.CopyIn(compatibilityJournal);
+        newDirectory.CopyIn(compatibilityJournal);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 12, 0, 0, 0, TimeSpan.Zero));
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var load = shard.Task("load", _ => throw new InvalidOperationException("an earlier success runs again"));
+        var export = shard.Task("export", _ => Task.CompletedTask).Requires(load);
+        builder.Task("report", _ => Task.CompletedTask).Requires(export);
+        var graph = builder.Build();
+        var existing = new RecordingReporter();
+        var scripted = new RecordingReporter();
+
+        await global::Dagline.Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(existingDirectory.Path, id), Reporters = [existing], TimeProvider = clock });
+        var result = await ScriptedDriver
+            .Start(graph, new RunOptions { Journal = Journal.Continue(newDirectory.Path, id), Reporters = [scripted], TimeProvider = clock })
+            .Finish();
+
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        result.Snapshot[load.Path].IsEarlierSuccess.ShouldBeTrue();
+        result.Snapshot[load.Path].Message.ShouldBe("loaded 3 files");
+        result.Snapshot.Journal!.Run.ShouldBe(2);
+        Described(scripted).ShouldBe(Described(existing));
+        LinesAfterTheHeader(newDirectory).ShouldBe(LinesAfterTheHeader(existingDirectory));
+    }
+
+    [Test]
     public async Task A_reporter_that_hears_the_run_ended_can_continue_the_journal_at_once()
     {
         using var directory = new TemporaryDirectory();
@@ -195,18 +230,6 @@ public class LoopRunTests
 
         continuer.ContinuedRun.ShouldBe(2);
         result.Outcome.ShouldBe(RunOutcome.Complete);
-    }
-
-    [Test]
-    public async Task The_one_call_form_switched_onto_the_new_engine_refuses_a_drain_signal_or_a_token_at_the_call()
-    {
-        using var cancellation = new CancellationTokenSource();
-
-        Should.Throw<NotSupportedException>(() => NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, drain: new DrainSignal()));
-        Should.Throw<NotSupportedException>(
-            () => NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, cancellationToken: cancellation.Token));
-        (await NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None }, cancellationToken: CancellationToken.None))
-            .Outcome.ShouldBe(RunOutcome.Complete);
     }
 
     [Test]
