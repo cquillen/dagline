@@ -298,7 +298,6 @@ public class CheckpointTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_save_made_during_the_grace_period_succeeds_and_is_handed_back_in_the_next_run()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -326,9 +325,9 @@ public class CheckpointTests
             });
             var graph = builder.Build();
 
-            var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) }, cancellationToken: stop.Token);
+            var first = await Runner.RunAsync(graph, new RunOptions { Journal = QuickJournal.New(temporary.Path) }, cancellationToken: stop.Token);
             firstRun = false;
-            await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
+            await Runner.RunAsync(graph, new RunOptions { Journal = QuickJournal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
 
             first.Snapshot[export.Path].Status.ShouldBe(NodeStatus.Cancelled);
             handedBack.ShouldBe(["", "job-17"]);
@@ -336,7 +335,6 @@ public class CheckpointTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_save_or_clearing_after_the_run_has_let_go_of_the_task_throws_and_is_not_handed_back()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -350,7 +348,7 @@ public class CheckpointTests
 
             var run = Runner.RunAsync(
                 graph,
-                new RunOptions { Journal = Journal.New(temporary.Path), GracePeriod = TimeSpan.Zero },
+                new RunOptions { Journal = QuickJournal.New(temporary.Path), GracePeriod = TimeSpan.Zero },
                 cancellationToken: stop.Token);
             var context = await export.Started;
             await context.SaveCheckpointAsync("job-17");
@@ -366,7 +364,7 @@ public class CheckpointTests
                 handedBack = nextContext.Checkpoint;
                 return Task.CompletedTask;
             });
-            await Runner.RunAsync(again.Build(), new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
+            await Runner.RunAsync(again.Build(), new RunOptions { Journal = QuickJournal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
 
             first.Snapshot[exportTask.Path].Status.ShouldBe(NodeStatus.Cancelled);
             context.Checkpoint.ShouldBe("job-17");

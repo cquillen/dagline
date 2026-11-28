@@ -6,9 +6,9 @@ namespace Dagline.TestSupport;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is the public face of the one internal test hook on <see cref="Journal"/>, which wraps the stream of that journal's file once
+/// It is one public face of the one internal test hook on <see cref="Journal"/>, which wraps the stream of that journal's file once
 /// it is opened, so that the first write holding the chosen entry throws an <see cref="IOException"/>. The hook applies to the one
-/// journal it is put on, so tests running in parallel cannot fail each other's writes.
+/// journal it is put on, so tests running in parallel cannot fail each other's writes. <see cref="JournalFlushes"/> is the other face.
 /// </para>
 /// <para>
 /// A choice names its entry as a <see cref="JournalLine"/>, the only code outside <c>JournalFile</c> that knows how an entry looks in
@@ -27,6 +27,25 @@ public sealed class JournalWriteFailure
     {
         _line = line;
         _message = message;
+    }
+
+    /// <summary>
+    /// Fails the write that holds the run's start: the first write of a run, which holds the set-asides too, flushed before any
+    /// task starts.
+    /// </summary>
+    public static JournalWriteFailure RunStart() => new(JournalLine.RunStart);
+
+    /// <summary>
+    /// Fails the write that holds the start of the task at <paramref name="taskPath"/>, with the starts of the tasks that start
+    /// beside it.
+    /// </summary>
+    /// <param name="taskPath">The task's path as text, such as <c>shard-1/load</c>.</param>
+    /// <exception cref="ArgumentException"><paramref name="taskPath"/> is <see langword="null"/>, empty or only white space.</exception>
+    public static JournalWriteFailure StartOf(string taskPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskPath);
+
+        return new JournalWriteFailure(JournalLine.StartOf(taskPath));
     }
 
     /// <summary>Fails the write that holds the settle of the task at <paramref name="taskPath"/>, whatever it settled with.</summary>
@@ -78,7 +97,7 @@ public sealed class JournalWriteFailure
     {
         ArgumentNullException.ThrowIfNull(journal);
 
-        return journal.WithFailingWrite(FailureOf);
+        return journal.WithWatchedFile(FailureOf, flushedToDisk: static () => { });
     }
 
     private IOException? FailureOf(string write)

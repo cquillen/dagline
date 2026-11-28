@@ -184,6 +184,14 @@ _Avoid_: Polling, sleeping, suspended, paused
 Said of a running task that is not waiting.
 _Avoid_: Active, busy, executing
 
+**Host**:
+What runs a run's loop, its task bodies and its reporters' deliveries: the thread pool in an app, or a test's own thread when the test pumps a scripted run.
+_Avoid_: Scheduler, executor, dispatcher
+
+**Scripted run**:
+A run that a test drives on its own thread: nothing of it happens until the test pumps it, so the test makes each thing happen in the order it means and runs once.
+_Avoid_: Manual run, fake run, simulated run
+
 **Checkpoint**:
 A small piece of text a running task saves so that a later run continuing the same journal can carry on from it instead of starting over. Dagline keeps it until the task succeeds.
 _Avoid_: Saved state, bookmark, handle, resume token
@@ -239,3 +247,7 @@ _Avoid_: Done, closed, complete
 **Description**:
 Free text the consumer gives a journal when creating it, so that an operator can tell journals apart. It never changes.
 _Avoid_: Label, name, title
+
+**Durability**:
+What a run's journal entries survive, chosen for each run: flushed to the disk, the default, which survives a power cut, or handed to the operating system, which survives a killed process and not a power cut. Entries are written at the same moments under either.
+_Avoid_: Sync mode, write mode, safety level

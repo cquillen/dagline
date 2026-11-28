@@ -9,14 +9,10 @@
 *REMOVED*Dagline.StopSignal.Requests.get -> int
 *REMOVED*Dagline.StopSignal.StopSignal() -> void
 *REMOVED*static Dagline.Runner.RunAsync(Dagline.Graph! graph, Dagline.RunOptions! options, Dagline.StopSignal? stop = null) -> System.Threading.Tasks.Task<Dagline.RunResult!>!
-Dagline.ConsoleStop.Drain.get -> Dagline.DrainSignal!
-Dagline.ConsoleStop.Token.get -> System.Threading.CancellationToken
+*REMOVED*static Dagline.Journal.Continue(string! directory, string! id) -> Dagline.Journal!
+*REMOVED*static Dagline.Journal.New(string! directory, string? description = null) -> Dagline.Journal!
 Dagline.DrainRequested
 Dagline.DrainRequested.Equals(Dagline.DrainRequested? other) -> bool
-Dagline.DrainSignal
-Dagline.DrainSignal.DrainSignal() -> void
-Dagline.DrainSignal.IsRequested.get -> bool
-Dagline.DrainSignal.Request() -> void
 Dagline.DrainState
 Dagline.DrainState.Equals(Dagline.DrainState? other) -> bool
 Dagline.DrainState.<Clone>$() -> Dagline.DrainState!
@@ -37,4 +33,32 @@ static Dagline.DrainRequested.operator !=(Dagline.DrainRequested? left, Dagline.
 static Dagline.DrainRequested.operator ==(Dagline.DrainRequested? left, Dagline.DrainRequested? right) -> bool
 static Dagline.DrainState.operator !=(Dagline.DrainState? left, Dagline.DrainState? right) -> bool
 static Dagline.DrainState.operator ==(Dagline.DrainState? left, Dagline.DrainState? right) -> bool
-static Dagline.Runner.RunAsync(Dagline.Graph! graph, Dagline.RunOptions! options, Dagline.DrainSignal? drain = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.RunResult!>!
+Dagline.JournalDurability
+Dagline.JournalDurability.FlushedToDisk = 0 -> Dagline.JournalDurability
+Dagline.JournalDurability.HandedToOperatingSystem = 1 -> Dagline.JournalDurability
+static Dagline.Journal.Continue(string! directory, string! id, Dagline.JournalDurability durability = Dagline.JournalDurability.FlushedToDisk) -> Dagline.Journal!
+static Dagline.Journal.New(string! directory, string? description = null, Dagline.JournalDurability durability = Dagline.JournalDurability.FlushedToDisk) -> Dagline.Journal!
+*REMOVED*static Dagline.ConsoleStop.Hook() -> Dagline.ConsoleStop!
+Dagline.IRunHost
+Dagline.IRunHost.CompletionOptions.get -> System.Threading.Tasks.TaskCreationOptions
+Dagline.IRunHost.DeliverToReporter(System.Func<System.Threading.Tasks.Task!>! delivery) -> void
+Dagline.IRunHost.RunLoop(System.Action! turn) -> void
+Dagline.IRunHost.Signal(System.Threading.CancellationTokenSource! source) -> void
+Dagline.IRunHost.StartBody(System.Func<System.Threading.Tasks.Task!>! body) -> void
+Dagline.Run
+Dagline.Run.Current.get -> Dagline.Snapshot!
+Dagline.Run.Drain() -> void
+Dagline.Run.Result.get -> System.Threading.Tasks.Task<Dagline.RunResult!>!
+Dagline.Run.Stop() -> void
+static Dagline.ConsoleStop.Hook(Dagline.Run! run) -> Dagline.ConsoleStop!
+static Dagline.Run.Start(Dagline.Graph! graph, Dagline.RunOptions! options, Dagline.IRunHost! host, System.Threading.CancellationToken cancellationToken) -> Dagline.Run!
+static Dagline.Runner.RunAsync(Dagline.Graph! graph, Dagline.RunOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Dagline.RunResult!>!
+static Dagline.Runner.Start(Dagline.Graph! graph, Dagline.RunOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Dagline.Run!
+Dagline.RunOptions.ReporterWait.get -> System.TimeSpan
+Dagline.RunOptions.ReporterWait.init -> void
+*REMOVED*Dagline.RunEnded.Error.get -> System.Exception?
+*REMOVED*Dagline.RunEnded.Outcome.get -> Dagline.RunOutcome?
+Dagline.RunEnded.JournalError.get -> System.Exception?
+Dagline.RunEnded.Outcome.get -> Dagline.RunOutcome
+Dagline.RunOutcome.Unrecorded = 3 -> Dagline.RunOutcome
+Dagline.RunResult.JournalError.get -> System.Exception?

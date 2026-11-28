@@ -50,7 +50,7 @@ internal static class PlainTextLines
                 runEvent.At,
                 $"group {settled.Path} {NameText.Of(settled.Status)}: {CountsText.PerStatus(settled.Counts)}"),
         ],
-        RunEnded ended => [At(runEvent.At, Ended(ended, ended.At - snapshot.Started)), .. Summary(snapshot)],
+        RunEnded ended => [At(runEvent.At, Ended(ended, ended.At - snapshot.Started)), .. Summary(ended, snapshot)],
         _ => [],
     };
 
@@ -105,12 +105,18 @@ internal static class PlainTextLines
             : Invariant($"{journal.Id} run {journal.Run}");
 
     private static string Ended(RunEnded ended, TimeSpan duration)
-        => ended.Outcome is { } outcome
-            ? $"run ended: {NameText.Of(outcome)} in {DurationText.Of(duration)}"
-            // The error is a JournalWriteException, whose own message only repeats what the line already says.
-            : $"run ended: {_journalWriteFailed} after {DurationText.Of(duration)}: {Cause(ended.Error!).Message}";
+        => ended.JournalError is { } error
+            ? $"run ended: {NameText.Of(ended.Outcome)} in {DurationText.Of(duration)}: {_journalWriteFailed}: {error.Message}"
+            : $"run ended: {NameText.Of(ended.Outcome)} in {DurationText.Of(duration)}";
 
-    private static Exception Cause(Exception error) => error.InnerException ?? error;
+    /// <summary>
+    /// The summary's line about a journal that could not be written: what it is missing, or, when only the run's end could not be
+    /// written, that it lists the run as died. Nothing when every write landed.
+    /// </summary>
+    private static IEnumerable<string> NotRecorded(RunEnded ended)
+        => ended.JournalError is null ? []
+            : ended.Outcome is RunOutcome.Unrecorded ? ["unrecorded: the journal is missing some of what this run did"]
+            : ["the run's end is not recorded: the journal lists this run as died"];
 
     private static string Began(WaitingChanged began)
         => began.Text is { } text
@@ -141,11 +147,12 @@ internal static class PlainTextLines
 
     private static string Ran(NodeSnapshot task) => DurationText.Of(task.Ran ?? TimeSpan.Zero);
 
-    private static IEnumerable<string> Summary(Snapshot snapshot)
+    private static IEnumerable<string> Summary(RunEnded ended, Snapshot snapshot)
     {
         return
         [
             .. snapshot.Journal is { } journal ? [$"journal: {Named(journal)}"] : Array.Empty<string>(),
+            .. NotRecorded(ended),
             Counts(snapshot),
             .. Section("failed", snapshot.Failed, task => Entry(task, snapshot.TryGetBlocked(task.Path, out var blocked) ? blocked : null)),
             .. Section("cancelled", snapshot.Cancelled, task => Entry(task, blocked: null)),

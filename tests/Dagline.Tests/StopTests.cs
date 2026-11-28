@@ -48,7 +48,6 @@ public class StopTests
         var result = await Runner.RunAsync(
             builder.Build(),
             new RunOptions { Journal = Journal.None, Reporters = [reporter] },
-            new DrainSignal(),
             stop.Token);
 
         result.Outcome.ShouldBe(RunOutcome.Complete);

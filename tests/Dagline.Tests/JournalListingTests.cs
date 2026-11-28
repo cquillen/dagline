@@ -80,7 +80,6 @@ public class JournalListingTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_stopped_run_records_a_task_that_succeeds_in_the_grace_period_and_one_it_lets_go_of_as_cancelled()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -98,7 +97,7 @@ public class JournalListingTests
             var clock = new FakeTimeProvider();
             var running = Runner.RunAsync(
                 graph,
-                new RunOptions { Journal = Journal.New(temporary.Path), TimeProvider = clock, Reporters = [watched] },
+                new RunOptions { Journal = QuickJournal.New(temporary.Path), TimeProvider = clock, Reporters = [watched] },
                 cancellationToken: stop.Token);
             await finish.Started;
             await hang.Started;
@@ -108,7 +107,7 @@ public class JournalListingTests
             var first = await running;
             hang.Release();
             var summary = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
-            var next = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
+            var next = await Runner.RunAsync(graph, new RunOptions { Journal = QuickJournal.Continue(temporary.Path, first.Snapshot.Journal!.Id) });
 
             summary.Ending.ShouldBe(JournalEnding.Stopped);
             summary.Counts[NodeStatus.Succeeded].ShouldBe(1);
@@ -358,6 +357,33 @@ public class JournalListingTests
         var thrown = unreadable.Exception.ShouldBeOfType<JournalFormatException>();
         thrown.Version.ShouldBe(2);
         thrown.Message.ShouldContain(file);
+    }
+
+    [Test]
+    [Arguments("\"Unrecorded\"")]
+    [Arguments("99")]
+    public async Task A_journal_whose_end_entry_gives_an_outcome_no_run_records_is_listed_unreadable_and_cannot_be_continued(string outcome)
+    {
+        using var temporary = new TemporaryDirectory();
+        var builder = new GraphBuilder();
+        builder.Task("load", _ => throw new InvalidOperationException("load failed"));
+        var graph = builder.Build();
+        var healthy = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var edited = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        var id = edited.Snapshot.Journal!.Id;
+        var file = temporary.Combine($"{id}.journal");
+        await File.WriteAllTextAsync(
+            file,
+            (await File.ReadAllTextAsync(file)).Replace("\"outcome\":\"Incomplete\"", $"\"outcome\":{outcome}", StringComparison.Ordinal));
+
+        var listed = await Journals.ListAsync(temporary.Path);
+
+        listed.Journals.ShouldHaveSingleItem().Id.ShouldBe(healthy.Snapshot.Journal!.Id);
+        var unreadable = listed.Unreadable.ShouldHaveSingleItem();
+        unreadable.FilePath.ShouldBe(file);
+        unreadable.Exception.ShouldBeOfType<JournalFormatException>();
+        Should.Throw<JournalFormatException>(
+            () => Runner.Start(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, id) }));
     }
 
     [Test]

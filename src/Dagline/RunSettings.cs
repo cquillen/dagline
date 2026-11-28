@@ -9,11 +9,17 @@ namespace Dagline;
 internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeProvider TimeProvider)
 {
     /// <summary>
+    /// How long the run waits for its reporters once its end is queued for them: zero or more, or
+    /// <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// </summary>
+    public TimeSpan ReporterWait { get; init; }
+
+    /// <summary>
     /// Checks the options of a run of <paramref name="graph"/> and reads its settings from them. This is the one place
     /// the options are checked: every problem found is gathered into one exception.
     /// </summary>
     /// <exception cref="RunConfigurationException">
-    /// The max running tasks or a size is below 1, the graph names a limit that has no size, or the grace period is not allowed.
+    /// The max running tasks or a size is below 1, the graph names a limit that has no size, or the grace period or the reporter wait is not allowed.
     /// </exception>
     public static RunSettings From(Graph graph, RunOptions options)
     {
@@ -23,8 +29,16 @@ internal sealed record RunSettings(LimitSizes Sizes, TimeSpan GracePeriod, TimeP
             problems.Add(gracePeriodProblem);
         }
 
+        if (ClockWaitRules.ProblemWith("The reporter wait", options.ReporterWait) is { } reporterWaitProblem)
+        {
+            problems.Add(reporterWaitProblem);
+        }
+
         return problems.Count > 0
             ? throw new RunConfigurationException(problems)
-            : new RunSettings(LimitSizes.For(graph, options), options.GracePeriod, options.TimeProvider);
+            : new RunSettings(LimitSizes.For(graph, options), options.GracePeriod, options.TimeProvider)
+            {
+                ReporterWait = options.ReporterWait,
+            };
     }
 }

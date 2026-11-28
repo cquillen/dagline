@@ -17,6 +17,8 @@ public sealed class Snapshot
     private IReadOnlyList<NodeSnapshot>? _cancelled;
     private IReadOnlyList<NodeSnapshot>? _earlierSuccesses;
     private IReadOnlyList<NodeSnapshot>? _neverReached;
+    private readonly ChunkedList<NodeSnapshot> _nodes;
+    private readonly SnapshotJournal _journal;
     private IReadOnlyList<NodeSnapshot>? _waiting;
     private IReadOnlyList<NodeSnapshot>? _working;
     private IReadOnlyList<BlockedTasks>? _blocked;
@@ -43,7 +45,8 @@ public sealed class Snapshot
         Outcome = outcome;
         Drain = drain;
         Stop = stop;
-        Nodes = nodes;
+        _nodes = nodes;
+        _journal = journal;
         _positions = positions;
         Counts = counts;
         RunningTasks = runningTasks;
@@ -77,7 +80,7 @@ public sealed class Snapshot
     public StopState? Stop { get; }
 
     /// <summary>Every node of the graph, in declaration order.</summary>
-    public IReadOnlyList<NodeSnapshot> Nodes { get; }
+    public IReadOnlyList<NodeSnapshot> Nodes => _nodes;
 
     /// <summary>
     /// How many tasks of the run have each status, with their sums and sub-counts: the total, the settled, those that have not
@@ -279,6 +282,13 @@ public sealed class Snapshot
     public bool TryGetBlocked(NodePath cause, [MaybeNullWhen(false)] out BlockedTasks blocked)
         => LazyInitializer.EnsureInitialized(ref _blockedByCause, () => Blocked.ToFrozenDictionary(entry => entry.Cause))
             .TryGetValue(cause, out blocked);
+
+    /// <summary>
+    /// This snapshot with the nodes at the positions given replaced, and everything else as it is: the same instant, with a task's
+    /// progress laid over it. The two share every chunk of nodes but those that hold the positions.
+    /// </summary>
+    internal Snapshot WithNodes(ReadOnlySpan<(int Index, NodeSnapshot Element)> changes)
+        => new(Started, Ended, Outcome, Drain, Stop, _nodes.With(changes), _positions, Counts, RunningTasks, Limits, _journal);
 
     /// <summary>The tasks, in declaration order, that pass <paramref name="matches"/>: worked out on the first read and kept.</summary>
     private IReadOnlyList<NodeSnapshot> TasksWith(ref IReadOnlyList<NodeSnapshot>? kept, Func<NodeSnapshot, bool> matches)

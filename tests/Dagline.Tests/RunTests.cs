@@ -145,4 +145,56 @@ public class RunTests
             return Task.CompletedTask;
         }
     }
+
+    [Test]
+    public async Task A_started_run_answers_its_current_snapshot_at_once_and_its_result_is_what_running_it_in_one_call_gives()
+    {
+        var builder = new GraphBuilder();
+        var prepare = new PausedBody();
+        var prepareTask = builder.Task("prepare", prepare.Body);
+        builder.Task("publish", _ => Task.CompletedTask).Requires(prepareTask);
+
+        var run = Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None });
+        var atTheStart = run.Current;
+        await prepare.Started;
+        prepare.Release();
+        var result = await run.Result;
+
+        atTheStart.Nodes.Count.ShouldBe(2);
+        atTheStart.Ended.ShouldBeNull();
+        run.Result.ShouldBeSameAs(run.Result);
+        result.Outcome.ShouldBe(RunOutcome.Complete);
+        run.Current.ShouldBeSameAs(result.Snapshot);
+    }
+
+    [Test]
+    public async Task A_reporter_is_handed_a_source_of_snapshots_that_is_not_the_run()
+    {
+        var builder = new GraphBuilder();
+        builder.Task("prepare", _ => Task.CompletedTask);
+        var reporter = new RecordingReporter();
+
+        var run = Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var result = await run.Result;
+        var source = await reporter.Source;
+
+        source.ShouldNotBeAssignableTo<Run>();
+        source.Current.ShouldBeSameAs(result.Snapshot);
+    }
+
+    [Test]
+    public void Options_that_do_not_fit_the_graph_throw_at_the_start_before_any_task_starts()
+    {
+        var started = false;
+        var builder = new GraphBuilder();
+        builder.Task("prepare", _ =>
+        {
+            started = true;
+            return Task.CompletedTask;
+        });
+
+        Should.Throw<RunConfigurationException>(() => Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 0 }));
+
+        started.ShouldBeFalse();
+    }
 }

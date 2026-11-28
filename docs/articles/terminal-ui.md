@@ -12,13 +12,14 @@ Add the package and give the run the reporter that <xref:Dagline.Spectre.Spectre
 using Dagline;
 using Dagline.Spectre;
 
-using var console = ConsoleStop.Hook();
-
-var result = await Runner.RunAsync(graph, new RunOptions
+var run = Runner.Start(graph, new RunOptions
 {
     Journal = Journal.None,
     Reporters = [SpectreReporter.Create()],
-}, console.Drain, console.Token);
+});
+using var console = ConsoleStop.Hook(run);
+
+var result = await run.Result;
 
 return result.Outcome.ToExitCode();
 ```
@@ -132,14 +133,14 @@ Below 60 columns or 15 rows, the frame is the header alone, cut to fit, so a nar
 
 ## Draining and stopping
 
-<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, hooks the console's cancel key and SIGTERM to a drain signal, <xref:Dagline.ConsoleStop.Drain>, and a cancellation token, <xref:Dagline.ConsoleStop.Token>. Pass both to the run and dispose the hook when the run has ended, as `using var` does:
+<xref:Dagline.ConsoleStop.Hook*>, in the core `Dagline` package, hooks the console's cancel key and SIGTERM to the run you give it. Hook it once the run has started and dispose the hook when the run has ended, as `using var` does:
 
-- **The first Ctrl+C** requests the drain: the run starts nothing more and lets its running tasks finish, however long they take.
-- **The second Ctrl+C**, or **a SIGTERM** at any time, cancels the token, which stops the run: its running tasks are told to end, and it waits for them for at most its [grace period](running-and-stopping.md#the-grace-period).
-- Both are swallowed, so your process lives on and `RunAsync` returns its result.
-- **After the stop** nothing more is requested and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
+- **The first Ctrl+C** drains the run: it starts nothing more and lets its running tasks finish, however long they take.
+- **The second Ctrl+C**, or **a SIGTERM** at any time, stops the run: its running tasks are told to end, and it waits for them for at most its [grace period](running-and-stopping.md#the-grace-period).
+- Both are swallowed, so your process lives on and the run returns its result.
+- **After the stop** nothing more is asked and nothing is swallowed, so the operating system ends the process. That is the way out of an app that hangs, even after a stop.
 
-Disposing unhooks both and disposes the token's source, and a Ctrl+C or SIGTERM after that is your app's own business again. The hook listens to nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. Ctrl+C presses are counted by the hook itself, so a `Request` your app makes on `Drain` does not make the next Ctrl+C a stop. The display does not depend on the hook: any drain signal and any token show the banner.
+Disposing unhooks both, and a Ctrl+C or SIGTERM after that is your app's own business again. The hook listens to nothing but the console's cancel key event and SIGTERM, and Dagline hooks nothing at all unless your app calls `Hook`. Of the cancel key event it handles Ctrl+C alone: Ctrl+Break is not counted and not swallowed, so it ends the process as it would with no hook. Ctrl+C presses are counted by the hook itself, so a `Drain` your app asks of the run does not make the next Ctrl+C a stop. The display does not depend on the hook: any drain or stop of the run shows the banner.
 
 ### The banner
 
@@ -189,7 +190,7 @@ A run on a journal also names the journal on the outcome line, as in `Run stoppe
 
 In order:
 
-1. A rule, then the run outcome (`Run complete`, `Run incomplete` or `Run stopped`), the duration and the journal's id and run number. A run whose journal could no longer be written reads `Run ended with an error`, with the error's message beneath.
+1. A rule, then the run outcome (`Run complete`, `Run incomplete`, `Run stopped` or `Run unrecorded`), the duration and the journal's id and run number. After a failed journal write a line beneath it says so, with the file system's message: `The journal could no longer be written, so it is missing some of this run: <message>` for an unrecorded run, or `The run's end could not be written, so the journal lists this run as died: <message>` when only its end failed.
 2. The count per status, with earlier successes in brackets, and the warnings.
 3. How many tasks a stopped run never reached.
 4. **Failures**, in declaration order: the kind, when the task failed, how long it ran and how far it got; its message; its detail lines, and how many more were counted but not kept; and what it blocked, named by the roots of the cascade, with the number of tasks beneath a root that is a group, as in `finish (1)`.
@@ -232,7 +233,7 @@ For a terminal or font that lacks the Unicode glyphs, set `Ascii`:
 var reporter = SpectreReporter.Create(new SpectreOptions { Ascii = true });
 ```
 
-The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Text from your graph and tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the error a run ended with, is drawn with each character outside ASCII as `?`, so `café` becomes `caf?`. Neither a frame nor the summary then writes any character outside ASCII.
+The glyphs for succeeded, failed, running, ready, waiting, pending, blocked, cancelled, warning and a filled bar cell become `+ x * o ~ . / # ! =`, in place of `✓ ✗ ● ○ ◌ · ⊘ ■ ▲ ━`. Rules and empty bar cells are `-`, cut text ends in `...`, and facts on one line are separated by `|`. Text from your graph and tasks, such as the journal's description, titles, status text, waiting text, messages, warnings, detail lines and the journal error a run ended with, is drawn with each character outside ASCII as `?`, so `café` becomes `caf?`. Neither a frame nor the summary then writes any character outside ASCII.
 
 ### In your own tests
 
@@ -261,7 +262,7 @@ So, while a run with the display is in progress:
 The display draws on the terminal's alternate screen, the one full-screen programs such as editors use. That has two consequences.
 
 - **The run is not in your scrollback while it is in progress.** Each frame replaces the one before, and none of them is kept. What stays when the run has ended is the summary, printed on the ordinary screen, with whatever was there before the run above it.
-- **A killed process can leave the terminal unrestored.** The display restores the terminal on every way out it controls: the end of the run, a drawing failure, and the run's token cancelled after every task has ended, which ends the run's wait for reporters while the display is still busy. A process that is killed, by a Ctrl+C after the stop or from outside, gives it no chance, so the terminal can be left on the alternate screen with the cursor hidden. On Unix, `tput rmcup; tput cnorm` or `reset` brings it back. On any terminal, writing the sequences `ESC [ ? 1049 l` and `ESC [ ? 25 h` (without the spaces) leaves the alternate screen and shows the cursor, as PowerShell's `Write-Host "$([char]27)[?1049l$([char]27)[?25h"` does. A journal is not harmed by a killed process: see [After a crash](journals.md#after-a-crash).
+- **A killed process can leave the terminal unrestored.** The display restores the terminal on every way out it controls: the end of the run, a drawing failure, and the run dropping it because the [reporter wait](reporters.md#the-reporter-wait) ran out while the display was still busy. A process that is killed, by a Ctrl+C after the stop or from outside, gives it no chance, so the terminal can be left on the alternate screen with the cursor hidden. On Unix, `tput rmcup; tput cnorm` or `reset` brings it back. On any terminal, writing the sequences `ESC [ ? 1049 l` and `ESC [ ? 25 h` (without the spaces) leaves the alternate screen and shows the cursor, as PowerShell's `Write-Host "$([char]27)[?1049l$([char]27)[?25h"` does. A journal is not harmed by a killed process: see [After a crash](journals.md#after-a-crash).
 
 Every frame repaints every line, so a stray line written to the console is gone within a quarter of a second, and a resize repaints cleanly at the next frame. The display does not check that the terminal honours the alternate screen: on one that does not, the frames are drawn on the ordinary screen.
 

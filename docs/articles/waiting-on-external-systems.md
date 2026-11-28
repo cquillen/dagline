@@ -44,7 +44,7 @@ There is no backoff and no jitter, and tasks that wait at the same interval are 
 
 ## What waiting means
 
-Waiting is a marker on a running task and never a status. The task is running throughout: its dependents, its group and the run outcome are what they would be without the marker, and progress, warnings and the outcome work as usual. The task counts as waiting from the moment it enters the helper until the helper ends, however it ends, time spent inside a check included.
+Waiting is a marker on a running task and never a status. The task is running throughout: its dependents, its group and the run outcome are what they would be without the marker, and progress, warnings and the outcome work as usual. The task counts as waiting from the moment it enters the helper until the helper ends, however it ends, time spent inside a check included. The run applies the wait's beginning and its end as it applies every other report: the task shows as waiting in the run's current snapshot once the run has applied the beginning, which may be a little after the task entered the helper, and <xref:Dagline.NodeSnapshot.WaitingSince> and the time of each <xref:Dagline.WaitingChanged> are when the run applied it.
 
 Reporters see a <xref:Dagline.WaitingChanged> when the wait begins and another when it ends, and while it lasts the task's <xref:Dagline.NodeSnapshot> has <xref:Dagline.NodeSnapshot.WaitingSince> and <xref:Dagline.NodeSnapshot.WaitingText>. [Reporters](reporters.md#waiting-is-a-marker) has the details. The plain-text reporter prints a line at each end of the wait, so a long wait is visible in a log:
 
@@ -138,6 +138,8 @@ This loop is marked exactly as the helper is: the same events, at the same times
 
 Scopes may overlap. The task waits from the moment its first scope opens until its last one closes, with the text of the first, and a task may wait any number of times in one run. Disposing a scope twice does nothing.
 
+Open the scope around the whole wait, never inside the loop. Beginning and ending a wait on every pass of a tight loop is misuse: each is a report the run applies in turn, so the run falls behind the task. To show how far a loop has got, report [progress](writing-tasks.md#progress-status-text-and-a-count), which is made for that.
+
 ## When the run is stopped
 
 A stop ends the wait at once, and a drain does not: during a drain the helper goes on checking until the external work is done. A delay between checks ends as soon as the run signals the task's cancellation token, and the helper throws an `OperationCanceledException`. Let it escape the body and the task is **cancelled**, which never blocks its dependents. Reporters see the wait end immediately before the task is cancelled. If the run was already stopped when the task called the helper, it throws at once, without calling the check or marking the task as waiting.
@@ -165,7 +167,7 @@ Keep that cleanup within the grace period: once the run lets go of the task, not
 A task that starts work in an external system should not start it a second time when a run fails, is stopped or is killed, and its [journal](journals.md) is continued. A task does this with a **checkpoint**: a small piece of text, such as the external job's id, that Dagline keeps for the task and hands back when the task runs again in a run that continues the journal.
 
 - <xref:Dagline.TaskContext.Checkpoint> is the task's checkpoint: what the journal handed back when the task started, or what the task last saved in this run. It is empty when there is none.
-- <xref:Dagline.TaskContext.SaveCheckpointAsync(System.String,System.Threading.CancellationToken)> replaces it, and completes only once the text is flushed to the disk. Saving an empty string clears it.
+- <xref:Dagline.TaskContext.SaveCheckpointAsync(System.String,System.Threading.CancellationToken)> replaces it, and completes only once the text is in the journal, flushed to the disk unless the run chose [otherwise](journals.md#durability). Saving an empty string clears it.
 - <xref:Dagline.TaskContext.ClearCheckpointAsync(System.Threading.CancellationToken)> clears it. Clearing when there is none writes nothing.
 
 Dagline keeps the checkpoint through a failure, a cancellation and a killed process, and discards it when the task succeeds. It is private to the task: it is in no event and no snapshot, so no reporter ever shows it. Put an external id that the operator should see in the task's progress or outcome as well.
@@ -229,7 +231,7 @@ A lookup closes the window only if finding nothing rules out a start the externa
 ### The rules
 
 - A checkpoint is at most 4,096 bytes as UTF-8, counted in bytes and not characters. A longer one is refused at the call with `ArgumentException`, so a test finds the limit before a long run does.
-- Each save is a flush to the disk, which holds up the run for a few milliseconds. A checkpoint is for milestones, not for progress.
+- Each save is a flush to the disk with the default [durability](journals.md#durability), which holds up the run for a few milliseconds. A checkpoint is for milestones, not for progress.
 - With `Journal.None` the checkpoint lives in memory for the run: it starts empty, reads back what the task saved, and the same rules apply. A task's code is therefore the same in a test with no journal.
 - A new journal has no checkpoints. A checkpoint whose path is not in a later run's graph is kept, and handed back if the path returns.
 - The journal is readable text: never put a secret in a checkpoint.

@@ -3,17 +3,18 @@ using System.Text;
 namespace Dagline;
 
 /// <summary>
-/// The one internal test hook: a journal's stream that passes every write through to the real file, except the first write for
-/// whose text <c>failureOf</c> gives an <see cref="IOException"/>, which throws it and writes nothing.
-/// <see cref="Journal.WithFailingWrite"/> puts it under one journal, for the shared test support alone, and nothing else uses it.
+/// The one internal test hook on a journal: a journal's stream that passes every write through to the real file, except the first
+/// write for whose text <c>failureOf</c> gives an <see cref="IOException"/>, which throws it and writes nothing, and that calls
+/// <c>flushedToDisk</c> at each flush to the disk. <see cref="Journal.WithWatchedFile"/> puts it under one journal, for the shared
+/// test support alone, and nothing else uses it.
 /// </summary>
 /// <remarks>
 /// <see cref="JournalFile.Append"/> makes one write per call, carrying whole lines, so <c>failureOf</c> sees each append's lines
 /// together. Writes after the failed one pass through again, so that a test reading the file back sees any write the journal's
-/// guard on writing nothing after a failure let through. The flush to the disk does not come through here: the journal file makes
-/// it on the file itself.
+/// guard on writing nothing after a failure let through. The journal file makes each flush to the disk by flushing this stream,
+/// which reaches no disk, then the file itself, so <see cref="Flush"/> is called once for each flush to the disk and for no other.
 /// </remarks>
-internal sealed class FailingWriteStream(Stream inner, Func<string, IOException?> failureOf) : Stream
+internal sealed class WatchedFileStream(Stream inner, Func<string, IOException?> failureOf, Action flushedToDisk) : Stream
 {
     private bool _failed;
 
@@ -44,7 +45,11 @@ internal sealed class FailingWriteStream(Stream inner, Func<string, IOException?
 
     public override void Write(byte[] buffer, int offset, int count) => Write(buffer.AsSpan(offset, count));
 
-    public override void Flush() => inner.Flush();
+    public override void Flush()
+    {
+        flushedToDisk();
+        inner.Flush();
+    }
 
     public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 

@@ -66,7 +66,7 @@ A settled task leaves an **outcome** behind: its status, and what the task chose
 
 A failure is one of two kinds. A **reported failure** is one the task declared itself, because it found a problem. An **unexpected failure** is one it did not declare: an exception escaped its code. Both fail the task and block what requires it. They are told apart so that "the data is bad" never reads like "the code broke".
 
-While it runs, a task can also report **progress**: a line of status text, a count, or both. Progress is live only. It shows how far a task has got and is not part of its outcome.
+While it runs, a task can also report **progress**: a line of status text, a count, or both. Progress is live only. It shows how far a task has got and is not part of its outcome. It is also the one report made for a tight loop: it costs almost nothing, while beginning a wait or setting the message on every pass of a loop is misuse, as the run applies each such report in turn and falls behind.
 
 More in [Writing tasks](writing-tasks.md). Definitions: [Outcomes](../../GLOSSARY.md#outcomes).
 
@@ -76,7 +76,7 @@ A **run** is one execution of a graph by one process. You start it with one call
 
 How much runs at once is bounded in two ways. The **max running tasks** is the most tasks that may be running at any moment. A **limit** is a named ceiling that the graph puts on some of its tasks, and each run gives it a size.
 
-A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, and **stopped** when the run was drained or stopped and at least one task had not succeeded. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
+A run ends with a **run outcome**, which sums up the statuses of its tasks: **complete** when every task succeeded, **incomplete** when the run went as far as it could and at least one task did not, **stopped** when the run was drained or stopped and at least one task had not succeeded, and **unrecorded** when its journal could no longer be written before it had ended, which takes precedence over the other three. Your app decides what the run outcome means for its exit code, and Dagline offers a default mapping.
 
 More in [Running and stopping](running-and-stopping.md). Definitions: [Runs](../../GLOSSARY.md#runs) and [Scheduling](../../GLOSSARY.md#scheduling).
 
@@ -84,9 +84,9 @@ More in [Running and stopping](running-and-stopping.md). Definitions: [Runs](../
 
 A run can be ended early in two ways, and your app decides what asks for each, such as Ctrl+C.
 
-A **drain** is a request, usually from the operator, that the run start nothing new and let its running tasks finish as they would. Your app passes the run a drain signal and requests it. The running tasks are not told, and the run waits for them however long they take.
+A **drain** is a request, usually from the operator, that the run start nothing new and let its running tasks finish as they would. Your app asks the run it holds to drain. The running tasks are not told, and the run waits for them however long they take.
 
-A **stop** is a request, from the operator or from Dagline itself, that the run start nothing new and that its running tasks end now. Your app passes the run a cancellation token and cancels it. Every running task sees its own cancellation token signalled, and the run waits a **grace period**, 30 seconds by default, for them to end cleanly. Only the grace period running out ends that wait. A stop can follow a drain.
+A **stop** is a request, from the operator or from Dagline itself, that the run start nothing new and that its running tasks end now. Your app asks the run it holds to stop, or cancels the cancellation token it passed the run: the two are one request. Every running task sees its own cancellation token signalled, and the run waits a **grace period**, 30 seconds by default, for them to end cleanly. Only the grace period running out ends that wait. A stop can follow a drain.
 
 A task that ends because of the stop, or that is still running when the grace period runs out, is **cancelled**. Cancelled is a settled status, and it never blocks: a task that requires a cancelled one simply stays pending. A task that finished its work in spite of the drain or the stop keeps its real status. Tasks the run never started are never reached: they stay pending or ready, so a later run can see what was left to do.
 
@@ -106,7 +106,7 @@ A run can keep a **journal**: the durable record of a first run and every run th
 
 To **continue** a journal is to start a run on it again. Every task that succeeded in an earlier run, and whose success still stands, is an **earlier success**: it is succeeded from the start, keeps its whole outcome, and does not run again. Every other task runs. A task that runs *after* something keeps its earlier success only when what it is after was kept too, so that a summary or cleanup task is never stale. A journal is **finished** when its latest run was complete.
 
-A running task can save a **checkpoint**: a small piece of text that is on disk before the save returns, and that a run continuing the journal hands back when the task runs again. A task that triggers external work saves what it needs to re-attach to it, so that once the save has returned, a crash or a stop never makes it trigger that work twice. A crash between the trigger and the save leaves no checkpoint: [Waiting on external systems](waiting-on-external-systems.md#checkpoints-re-attaching-instead-of-starting-twice) shows how a task closes that window. Dagline keeps the checkpoint until the task succeeds.
+A running task can save a **checkpoint**: a small piece of text that is in the journal before the save returns, and that a run continuing the journal hands back when the task runs again. A task that triggers external work saves what it needs to re-attach to it, so that once the save has returned, a crash or a stop never makes it trigger that work twice. A crash between the trigger and the save leaves no checkpoint: [Waiting on external systems](waiting-on-external-systems.md#checkpoints-re-attaching-instead-of-starting-twice) shows how a task closes that window. Dagline keeps the checkpoint until the task succeeds.
 
 More in [Journals](journals.md), [Running part of the work](running-part-of-the-work.md) and [Waiting on external systems](waiting-on-external-systems.md). Definitions: [Journals](../../GLOSSARY.md#journals) and [Checkpoint](../../GLOSSARY.md#runs).
 
@@ -117,7 +117,7 @@ Dagline never writes to the console. What is shown of a run is the work of **rep
 A reporter is given two things:
 
 - **Events.** An event is a record of one thing that happened, with the time it happened: the run started, a task changed status, a task added a warning, a task began or stopped waiting, a group settled, a drain or a stop was requested, the grace period ran out, the run ended. Every reporter receives the same events in the same order, causes before effects.
-- **Snapshots.** A snapshot is everything Dagline knows about the run at one instant: every node with its status and what is attached to it, and the counts across the run. One comes with each event, and a reporter can ask for the run as it is now at any time.
+- **Snapshots.** A snapshot is everything Dagline knows about the run at one instant: every node with its status and what is attached to it, and the counts across the run. One comes with each event, and a reporter can ask for the run as it is now at any time. That is the run as the run has applied it: a report a task makes shows in it once the run has applied it, which may be a little after the task's call has returned, and progress shows on the next read.
 
 Events say what just happened and the snapshot says where things stand, so a reporter never has to piece that together from the events. Once a run has ended, a reporter shows a **summary** from the final snapshot, and your app gets that same snapshot back with the result of the run.
 

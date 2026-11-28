@@ -37,6 +37,8 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     private int _detailOmitted;
     private IReadOnlyList<string> _warnings = [];
     private int _warningsOmitted;
+    private int _warningsBeyondKeptTaken;
+    private int _detailBeyondKeptTaken;
     private string? _statusText;
     private long? _count;
     private long? _total;
@@ -107,6 +109,25 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
         return Moved(from, now);
     }
 
+    /// <summary>
+    /// Moves a task that has just started back to ready, with no start time, as though it had never started: the
+    /// write that recorded its start failed before its body started. The one move back a status makes.
+    /// </summary>
+    /// <returns>
+    /// The task as it is now, with a move from running to ready that the run never publishes, so that the counts it is in move back.
+    /// </returns>
+    public TaskChange StayReady(DateTimeOffset now)
+    {
+        if (Status is not NodeStatus.Running)
+        {
+            throw new InvalidOperationException($"The task '{task.Path}' cannot stay ready: it is {Status}, not running.");
+        }
+
+        Status = NodeStatus.Ready;
+        _started = null;
+        return Moved(NodeStatus.Running, now);
+    }
+
     /// <summary>Settles a pending task as blocked by the failed task at <paramref name="cause"/>.</summary>
     public TaskChange Block(NodePath cause, DateTimeOffset now) => SettleWith(TaskOutcome.Blocked(cause), now);
 
@@ -150,34 +171,41 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
-    /// Sets the status text of the task's progress, as given, or clears it when the text is empty. Progress is never an event.
+    /// Takes a task's progress as its sample held it when frozen: progress is a sample and not a report
+    /// the instance is given (ADR 0015). Progress is never an event.
     /// </summary>
-    public TaskChange? SetStatusText(string? text)
+    public void TakeProgress(in ProgressSample progress)
     {
-        if (!IsRunning)
-        {
-            return null;
-        }
-
-        // Kept as given, line breaks included: measured on #98, making it one line here cost a task that reports progress in a
-        // tight loop about a tenth more time, so each reporter flattens it as it prints.
-        _statusText = string.IsNullOrEmpty(text) ? null : text;
-
-        return Changed();
+        _statusText = progress.StatusText;
+        _count = progress.Count;
+        _total = progress.Total;
     }
 
-    /// <summary>Sets the count of the task's progress, and the total it counts towards. Progress is never an event.</summary>
-    public TaskChange? SetCount(long current, long? total)
+    /// <summary>
+    /// Takes the counts of warnings and detail lines beyond the kept from the task's sample: they are
+    /// counted on the task's side (ADR 0015). A count is taken only once every kept line of its kind has been applied, so a node
+    /// never shows lines omitted before it lists the kept ones. Each adds to what is omitted: an unexpected failure's lines are
+    /// counted here too, as the task settles.
+    /// </summary>
+    /// <returns>Whether either count changed what the task holds.</returns>
+    public bool TakeCountsBeyondKept(int warnings, int detail)
     {
-        if (!IsRunning)
+        var changed = false;
+        if (_warnings.Count >= _kept && warnings != _warningsBeyondKeptTaken)
         {
-            return null;
+            _warningsOmitted += warnings - _warningsBeyondKeptTaken;
+            _warningsBeyondKeptTaken = warnings;
+            changed = true;
         }
 
-        _count = current;
-        _total = total;
+        if (_detail.Count >= _kept && detail != _detailBeyondKeptTaken)
+        {
+            _detailOmitted += detail - _detailBeyondKeptTaken;
+            _detailBeyondKeptTaken = detail;
+            changed = true;
+        }
 
-        return Changed();
+        return changed;
     }
 
     /// <summary>
@@ -288,6 +316,20 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     }
 
     /// <summary>
+    /// What refuses a change of the task's checkpoint now: <see langword="null"/> while it is running, and otherwise the exception
+    /// to answer the change with, since the task has settled, or the run has let go of it.
+    /// </summary>
+    public InvalidOperationException? CheckpointChangeRefusal() => IsRunning ? null : new InvalidOperationException(
+        $"The task '{task.Path}' cannot change its checkpoint: it is {NameText.Of(Status)}, "
+        + "so the run no longer keeps anything it does. A task changes its checkpoint only while it is running.");
+
+    /// <summary>
+    /// Whether <paramref name="text"/> would change the task's checkpoint: <see langword="false"/> only for a clearing of a checkpoint
+    /// it does not have, as <see cref="ChangeCheckpoint"/> answers.
+    /// </summary>
+    public bool IsCheckpointChangedBy(string text) => text.Length > 0 || Checkpoint.Length > 0;
+
+    /// <summary>
     /// Replaces the task's checkpoint with <paramref name="text"/>, which clears it when empty. Unlike a report, it throws on a task
     /// that is not running, since a caller must never believe a checkpoint was kept when it was not.
     /// </summary>
@@ -298,11 +340,9 @@ internal sealed class TaskInstance(BuiltTask task, string checkpoint = "")
     /// <exception cref="InvalidOperationException">The task is not running: it has settled, or the run has let go of it.</exception>
     public bool ChangeCheckpoint(string text)
     {
-        if (!IsRunning)
+        if (CheckpointChangeRefusal() is { } refusal)
         {
-            throw new InvalidOperationException(
-                $"The task '{task.Path}' cannot change its checkpoint: it is {NameText.Of(Status)}, "
-                + "so the run no longer keeps anything it does. A task changes its checkpoint only while it is running.");
+            throw refusal;
         }
 
         if (text.Length == 0 && Checkpoint.Length == 0)

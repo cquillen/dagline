@@ -229,15 +229,13 @@ public sealed record GroupSettled : RunEvent
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is published once at most, when the run applies the request on the <see cref="DrainSignal"/> it was given, and only while no
-/// stop has been applied: a drain requested during a stop changes nothing. It is a step of its own. The running tasks are not told:
+/// It is published once at most, when the run applies <see cref="Run.Drain"/>, and only while no stop has been applied: a drain
+/// asked for during a stop changes nothing. It is a step of its own. The running tasks are not told:
 /// their <see cref="TaskContext.CancellationToken"/> is not signalled, and no grace period runs. A drain only comes from the app,
 /// so it has no requester.
 /// </para>
 /// <para>
-/// A signal already requested when the run starts gives <see cref="RunStarted"/>, the tasks that become ready, this event, then
-/// <see cref="RunEnded"/>, with no task started. When the run's token is also cancelled by then, <see cref="StopRequested"/> follows
-/// this event. A stop that follows a drain later is published after it in the same way.
+/// A stop that follows a drain is published after it.
 /// </para>
 /// <para>
 /// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Drain"/> set.
@@ -263,16 +261,17 @@ public sealed record DrainRequested : RunEvent
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is published once at most: when the run hears that the <see cref="CancellationToken"/> passed to
-/// <see cref="Runner.RunAsync"/> is cancelled, with <see cref="By"/> set to <see cref="StopRequester.App"/>, or when the run's
+/// It is published once at most: when the run applies <see cref="Run.Stop"/> or the cancellation of the
+/// <see cref="CancellationToken"/> passed to <see cref="Runner.Start"/>, which are one request, with <see cref="By"/> set to
+/// <see cref="StopRequester.App"/>, or when the run's
 /// journal can no longer be written, with <see cref="StopRequester.Dagline"/>, unless a stop was already in progress.
 /// It is a step of its own, and comes after <see cref="DrainRequested"/> when a drain was applied first.
 /// A token already cancelled when the run starts gives <see cref="RunStarted"/>, the tasks that become ready, this event,
 /// then <see cref="RunEnded"/>, with no task started.
 /// </para>
 /// <para>
-/// Only the grace period running out ends the wait for the running tasks. A drain requested after this event, or the app's token
-/// cancelled after a stop that Dagline asked for, changes nothing.
+/// Only the grace period running out ends the wait for the running tasks. A drain asked for after this event, or a stop by the
+/// app after a stop that Dagline asked for, changes nothing.
 /// </para>
 /// <para>
 /// The snapshot handed with this event, and every later one, has <see cref="Snapshot.Stop"/> set.
@@ -332,29 +331,30 @@ public sealed record GraceEnded : RunEvent
 
 /// <summary>The run ended. This is the last event of every run.</summary>
 /// <remarks>
-/// It carries exactly one of <see cref="Outcome"/> and <see cref="Error"/>. An ordinary run, stopped or not, ends with its run outcome.
-/// A run whose journal could no longer be written ends with a <see cref="JournalWriteException"/> and no run outcome, and
-/// <see cref="Runner.RunAsync"/> throws that same exception once reporters have handled every event.
+/// It always carries the run's <see cref="Outcome"/>, the same as <see cref="RunResult.Outcome"/>. A run whose journal could no
+/// longer be written before it had ended has the outcome <see cref="RunOutcome.Unrecorded"/>, and <see cref="JournalError"/> gives
+/// the file system's failure. A run whose journal failed only on the entry for its end keeps the outcome it reached, with
+/// <see cref="JournalError"/> beside it: the journal lists that run as <see cref="JournalEnding.Died"/>. The journal is closed, and
+/// let go of, before this event is published.
 /// </remarks>
 public sealed record RunEnded : RunEvent
 {
-    internal RunEnded(DateTimeOffset at, RunOutcome outcome)
+    internal RunEnded(DateTimeOffset at, RunOutcome outcome, Exception? journalError)
         : base(at)
     {
         Outcome = outcome;
+        JournalError = journalError;
     }
 
-    internal RunEnded(DateTimeOffset at, Exception error)
-        : base(at)
-    {
-        Error = error;
-    }
+    /// <summary>How the run ended.</summary>
+    public RunOutcome Outcome { get; }
 
-    /// <summary>How the run ended, or <see langword="null"/> when it ended with an error.</summary>
-    public RunOutcome? Outcome { get; }
-
-    /// <summary>The error the run ended with, or <see langword="null"/> when it ended with a run outcome.</summary>
-    public Exception? Error { get; }
+    /// <summary>
+    /// The file system's failure that stopped the run's journal, the same as <see cref="RunResult.JournalError"/>: an
+    /// <see cref="IOException"/>, or an <see cref="UnauthorizedAccessException"/> when the process may no longer write the file.
+    /// <see langword="null"/> when every write landed, and always <see langword="null"/> for a run with no journal.
+    /// </summary>
+    public Exception? JournalError { get; }
 
     private protected override void ClosedToOutsideDerivation()
     {

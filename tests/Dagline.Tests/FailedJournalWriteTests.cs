@@ -7,11 +7,9 @@ public class FailedJournalWriteTests
 {
     private const int _repeats = 50;
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
-    private static readonly TimeSpan _step = TimeSpan.FromSeconds(1);
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
-    public async Task A_settle_that_cannot_be_written_stops_the_run_and_the_run_ends_with_an_error()
+    public async Task A_settle_that_cannot_be_written_stops_the_run_and_the_run_ends_unrecorded_with_the_error()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -25,7 +23,7 @@ public class FailedJournalWriteTests
             var later = builder.Task("later", _ => Task.CompletedTask).After(slowTask);
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
-            var journal = JournalWriteFailure.SettleOf("fails").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.SettleOf("fails").In(QuickJournal.New(temporary.Path));
 
             var run = Runner.RunAsync(
                 builder.Build(),
@@ -34,10 +32,12 @@ public class FailedJournalWriteTests
             await slow.Started;
             fails.Release();
             await watched.Handled("stop requested");
-            await clock.AdvanceUntilAsync(run, _step);
-            var error = await Should.ThrowAsync<JournalWriteException>(run);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
+            var result = await run;
 
-            error.InnerException.ShouldBeOfType<IOException>();
+            result.JournalError.ShouldBeOfType<IOException>();
             reporter.Lines.Skip(5).ShouldBe(
             [
                 "fails: running -> succeeded",
@@ -45,13 +45,12 @@ public class FailedJournalWriteTests
                 "grace period over",
                 "slow: running -> cancelled",
                 "later: pending -> ready",
-                "run ended: JournalWriteException",
+                "run ended: unrecorded",
             ]);
-            ShouldHaveStoppedAndWaitedOutTheGracePeriod(reporter, error);
+            ShouldHaveStoppedWaitedOutTheGracePeriodAndEndedUnrecorded(reporter, result);
             (await slow.Started).CancellationToken.IsCancellationRequested.ShouldBeTrue();
-            error.Snapshot[failsTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
-            error.Snapshot[later.Path].Status.ShouldBe(NodeStatus.Ready);
-            error.Snapshot.Outcome.ShouldBeNull();
+            result.Snapshot[failsTask.Path].Status.ShouldBe(NodeStatus.Succeeded);
+            result.Snapshot[later.Path].Status.ShouldBe(NodeStatus.Ready);
 
             JournalEntries.Read(TheJournalIn(temporary)).ShouldBe(["header", "run started", "started fails", "started slow"]);
             var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
@@ -62,7 +61,6 @@ public class FailedJournalWriteTests
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task Neither_a_drain_nor_the_apps_token_shortens_the_grace_period_of_a_stop_Dagline_asked_for()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -74,37 +72,36 @@ public class FailedJournalWriteTests
             var builder = new GraphBuilder();
             builder.Task("fails", fails.Body);
             builder.Task("slow", slow.Body);
-            var drain = new DrainSignal();
             using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
-            var journal = JournalWriteFailure.SettleOf("fails").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.SettleOf("fails").In(QuickJournal.New(temporary.Path));
 
-            var run = Runner.RunAsync(
+            var run = Runner.Start(
                 builder.Build(),
                 new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [watched] },
-                drain,
                 stop.Token);
             await fails.Started;
             await slow.Started;
             fails.Release();
             await watched.Handled("stop requested");
-            drain.Request();
+            run.Drain();
             await stop.CancelAsync();
-            await clock.AdvanceUntilAsync(run, _step);
-            var error = await Should.ThrowAsync<JournalWriteException>(run);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
+            var result = await run.Result;
 
             reporter.Lines.ShouldNotContain("drain requested");
             reporter.Events.OfType<StopRequested>().ShouldHaveSingleItem().By.ShouldBe(StopRequester.Dagline);
-            ShouldHaveStoppedAndWaitedOutTheGracePeriod(reporter, error);
-            error.Snapshot.Drain.ShouldBeNull();
+            ShouldHaveStoppedWaitedOutTheGracePeriodAndEndedUnrecorded(reporter, result);
+            result.Snapshot.Drain.ShouldBeNull();
             slow.Release();
         }
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
-    public async Task A_checkpoint_save_that_cannot_be_written_throws_to_the_task_stops_the_run_and_the_run_ends_with_an_error()
+    public async Task A_checkpoint_save_that_cannot_be_written_throws_to_the_task_stops_the_run_and_the_run_ends_unrecorded_with_the_error()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
         {
@@ -132,16 +129,18 @@ public class FailedJournalWriteTests
             var graph = builder.Build();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
-            var journal = JournalWriteFailure.CheckpointSaveOf("saves").In(Journal.New(temporary.Path));
+            var journal = JournalWriteFailure.CheckpointSaveOf("saves").In(QuickJournal.New(temporary.Path));
 
             var run = Runner.RunAsync(graph, new RunOptions { Journal = journal, TimeProvider = clock, Reporters = [watched] });
             var thrownToTheTask = (await saveThrew.Task).ShouldBeOfType<JournalWriteException>();
             await watched.Handled("saves: running -> failed");
-            await clock.AdvanceUntilAsync(run, _step);
-            var error = await Should.ThrowAsync<JournalWriteException>(run);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
+            var result = await run;
 
             thrownToTheTask.InnerException.ShouldBeOfType<IOException>();
-            error.InnerException.ShouldBe(thrownToTheTask.InnerException);
+            result.JournalError.ShouldBe(thrownToTheTask.InnerException);
             reporter.Lines.Skip(5).ShouldBe(
             [
                 "stop requested",
@@ -149,14 +148,13 @@ public class FailedJournalWriteTests
                 "grace period over",
                 "slow: running -> cancelled",
                 "later: pending -> ready",
-                "run ended: JournalWriteException",
+                "run ended: unrecorded",
             ]);
-            ShouldHaveStoppedAndWaitedOutTheGracePeriod(reporter, error);
+            ShouldHaveStoppedWaitedOutTheGracePeriodAndEndedUnrecorded(reporter, result);
             (await slow.Started).CancellationToken.IsCancellationRequested.ShouldBeTrue();
-            error.Snapshot[saves.Path].Status.ShouldBe(NodeStatus.Failed);
-            error.Snapshot[slowTask.Path].Status.ShouldBe(NodeStatus.Cancelled);
-            error.Snapshot[later.Path].Status.ShouldBe(NodeStatus.Ready);
-            error.Snapshot.Outcome.ShouldBeNull();
+            result.Snapshot[saves.Path].Status.ShouldBe(NodeStatus.Failed);
+            result.Snapshot[slowTask.Path].Status.ShouldBe(NodeStatus.Cancelled);
+            result.Snapshot[later.Path].Status.ShouldBe(NodeStatus.Ready);
 
             JournalEntries.Read(TheJournalIn(temporary)).ShouldBe(["header", "run started", "started saves", "started slow"]);
             var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
@@ -179,8 +177,9 @@ public class FailedJournalWriteTests
         var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = journal, Reporters = [reporter] });
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
+        result.JournalError.ShouldBeOfType<IOException>();
         var ended = reporter.Events.OfType<RunEnded>().Single();
-        (ended.Outcome, ended.Error).ShouldBe((RunOutcome.Complete, null));
+        (ended.Outcome, ended.JournalError).ShouldBe((RunOutcome.Complete, result.JournalError));
         reporter.Events.OfType<StopRequested>().ShouldBeEmpty();
         var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
         listed.Ending.ShouldBe(JournalEnding.Died);
@@ -192,16 +191,18 @@ public class FailedJournalWriteTests
 
     /// <summary>
     /// The stop a failed journal write asks for: Dagline asks at the start of the run with the default grace period, waits it out,
-    /// and the run ends with <paramref name="error"/> in place of a run outcome.
+    /// and the run ends unrecorded, its end, its result and its final snapshot alike, with the file system's failure beside it.
     /// </summary>
-    private static void ShouldHaveStoppedAndWaitedOutTheGracePeriod(RecordingReporter reporter, JournalWriteException error)
+    private static void ShouldHaveStoppedWaitedOutTheGracePeriodAndEndedUnrecorded(RecordingReporter reporter, RunResult result)
     {
         var requested = reporter.Events.OfType<StopRequested>().Single();
         (requested.At, requested.By, requested.GracePeriod).ShouldBe((_runStart, StopRequester.Dagline, TimeSpan.FromSeconds(30)));
         var graceEnded = reporter.Events.OfType<GraceEnded>().Single();
         graceEnded.At.ShouldBe(_runStart.AddSeconds(30));
         var ended = reporter.Events.OfType<RunEnded>().Single();
-        (ended.Outcome, ended.Error).ShouldBe((null, error));
+        (ended.Outcome, ended.JournalError).ShouldBe((RunOutcome.Unrecorded, result.JournalError));
+        result.JournalError.ShouldBeOfType<IOException>();
+        (result.Outcome, result.Snapshot.Outcome).ShouldBe((RunOutcome.Unrecorded, RunOutcome.Unrecorded));
     }
 
     private static string TheJournalIn(TemporaryDirectory temporary) => Directory.GetFiles(temporary.Path, "*.journal").Single();

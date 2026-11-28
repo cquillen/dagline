@@ -127,16 +127,6 @@ public sealed class Graph : IReadOnlyList<Node>
     /// <summary>The group at a position among the nodes of the graph.</summary>
     internal BuiltGroup GroupAt(int position) => (BuiltGroup)Nodes[position];
 
-    /// <summary>A task and every group that holds it: the nodes that cannot succeed unless the task does.</summary>
-    internal IEnumerable<BuiltNode> WithItsGroups(BuiltTask task) => task.Groups.Select(GroupAt).Prepend<BuiltNode>(task);
-
-    /// <summary>The tasks that require a node, in declaration order.</summary>
-    internal IEnumerable<BuiltTask> Requiring(BuiltNode node)
-    {
-        var requires = new Upstream(node.Position, DependencyKind.Requires);
-        return node.Dependents.Select(TaskAt).Where(dependent => dependent.Upstreams.Contains(requires));
-    }
-
     /// <summary>
     /// Finds a node that a task depends on: an upstream declared on the task or on a group that holds it,
     /// or a node beneath such an upstream at any depth.
@@ -147,6 +137,19 @@ public sealed class Graph : IReadOnlyList<Node>
     internal bool TryGetDependency(BuiltTask task, Node handle, out int position)
         => TryGetPosition(handle, out position)
             && handle.WithAncestors().Select(node => Positions[node.Path]).Any(task.IsUpstream);
+
+    /// <summary>
+    /// The position among the nodes of this graph of a node that <paramref name="task"/> depends on, as
+    /// <see cref="TryGetDependency"/> finds it: what a task's context asks for when the task reads the status of a dependency.
+    /// </summary>
+    /// <exception cref="ArgumentException">The task does not depend on the node.</exception>
+    internal int DependencyPositionOf(BuiltTask task, Node dependency)
+        => TryGetDependency(task, dependency, out var position)
+            ? position
+            : throw new ArgumentException(
+                $"The task '{task.Path}' does not depend on the node '{dependency.Path}'. A task can read the status of an upstream "
+                + "declared on it or on a group that holds it, and of a node beneath such an upstream.",
+                nameof(dependency));
 
     /// <summary>Finds where a handle is in declaration order. A handle of another graph is not found, whatever its path.</summary>
     private bool TryGetPosition(Node handle, out int position)

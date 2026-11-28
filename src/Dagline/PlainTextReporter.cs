@@ -63,7 +63,11 @@ namespace Dagline;
 /// <para>
 /// When the run's journal can no longer be written, Dagline's stop prints
 /// <c>stop requested by Dagline, journal write failed: waiting up to 30.0s for 2 running tasks</c>, and the end of the run prints
-/// <c>run ended: journal write failed after 5.0s: </c> followed by the message of the cause, then the summary.
+/// <c>run ended: unrecorded in 5.0s: journal write failed: </c> followed by the message of the file system's failure, then the
+/// summary, whose line after the journal's reads <c>unrecorded: the journal is missing some of what this run did</c>. When only
+/// the run's end could not be written, the end prints the outcome the run reached with the same failure after it, as in
+/// <c>run ended: complete in 5.0s: journal write failed: disk full</c>, and the summary's line reads
+/// <c>the run's end is not recorded: the journal lists this run as died</c>.
 /// </para>
 /// <para>
 /// Every line about an event begins with the time of the event in UTC, as <c>2026-11-11T04:12:03Z</c>. Numbers are written

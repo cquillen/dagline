@@ -34,6 +34,10 @@ public abstract class Journal
     /// Free text that tells this journal apart from others in the same directory. It is fixed at creation and never changes, and
     /// is kept on one line: each line break in it becomes a space. <see langword="null"/> or empty means none.
     /// </param>
+    /// <param name="durability">
+    /// What this run's entries survive: <see cref="JournalDurability.FlushedToDisk"/>, the default, or
+    /// <see cref="JournalDurability.HandedToOperatingSystem"/>. A run that continues the journal chooses afresh.
+    /// </param>
     /// <returns>The choice, to set as <see cref="RunOptions.Journal"/>.</returns>
     /// <remarks>
     /// <para>
@@ -43,18 +47,23 @@ public abstract class Journal
     /// already exists, a new suffix is drawn. <see cref="Snapshot.Journal"/> carries the id, from the first event of the run on.
     /// </para>
     /// <para>
-    /// The journal's first line is written and flushed to the disk while it is created, before the run exists. Its lock file,
+    /// The journal's first line is written while it is created, before the run exists. With
+    /// <see cref="JournalDurability.FlushedToDisk"/> it is flushed to the disk, and on a Unix system so are the entries of its
+    /// directory and of the parent of each directory created, so that the new file's path survives a power cut. With
+    /// <see cref="JournalDurability.HandedToOperatingSystem"/> none of these is flushed. Its lock file,
     /// <c>&lt;id&gt;.lock</c>, is created beside it. <see cref="Runner.RunAsync"/> throws <see cref="JournalAccessException"/> when the
     /// directory, the lock file or the journal cannot be created, or the first line cannot be written.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="directory"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="directory"/> is empty or only white space.</exception>
-    public static Journal New(string directory, string? description = null)
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="durability"/> is not a member of <see cref="JournalDurability"/>.</exception>
+    public static Journal New(string directory, string? description = null, JournalDurability durability = JournalDurability.FlushedToDisk)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        ThrowIfUndefined(durability);
 
-        return new NewJournal(directory, LineBreaks.OneLineOrNone(description));
+        return new NewJournal(directory, LineBreaks.OneLineOrNone(description), durability);
     }
 
     /// <summary>
@@ -63,6 +72,10 @@ public abstract class Journal
     /// </summary>
     /// <param name="directory">The directory the journal is in.</param>
     /// <param name="id">The journal's id, as <see cref="JournalInfo.Id"/> gave it.</param>
+    /// <param name="durability">
+    /// What this run's entries survive: <see cref="JournalDurability.FlushedToDisk"/>, the default, or
+    /// <see cref="JournalDurability.HandedToOperatingSystem"/>, whatever the runs before it chose.
+    /// </param>
     /// <returns>The choice, to set as <see cref="RunOptions.Journal"/>.</returns>
     /// <remarks>
     /// <para>
@@ -80,7 +93,8 @@ public abstract class Journal
     /// are those of every task that is not an earlier success, set-aside tasks included.
     /// </para>
     /// <para>
-    /// The run may use a different <see cref="RunOptions.MaxRunningTasks"/> and different limit sizes from the runs before it. A journal whose latest run was complete
+    /// The run may use a different <see cref="RunOptions.MaxRunningTasks"/>, different limit sizes and a different durability from
+    /// the runs before it. A journal whose latest run was complete
     /// can be continued like any other: with an unchanged graph the run is complete at once, and a path the graph gained runs.
     /// </para>
     /// <para>
@@ -95,26 +109,32 @@ public abstract class Journal
     /// <paramref name="directory"/> is empty or only white space, or <paramref name="id"/> is not in the id format, so that an id can
     /// never name a file outside the directory.
     /// </exception>
-    public static Journal Continue(string directory, string id)
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="durability"/> is not a member of <see cref="JournalDurability"/>.</exception>
+    public static Journal Continue(string directory, string id, JournalDurability durability = JournalDurability.FlushedToDisk)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        ThrowIfUndefined(durability);
 
-        return new ContinuedJournal(JournalLocation.Of(directory, id));
+        return new ContinuedJournal(JournalLocation.Of(directory, id), durability);
     }
 
     /// <summary>Opens the journal the choice names, before the run exists: <see langword="null"/> for no journal.</summary>
     internal JournalFile? Open(TimeProvider clock) => Open(clock, file => file);
 
     /// <summary>
-    /// The one internal test hook: the same choice, but once the journal is opened, the first write to its file for whose text
-    /// <paramref name="failureOf"/> gives an <see cref="IOException"/> throws it, and every other write reaches the real file. It
-    /// applies to this journal alone. Only the shared test support calls it, which is what <c>InternalsVisibleTo</c> opens to.
+    /// The one internal test hook on a journal: the same choice, but once the journal is opened, the first write to its file for
+    /// whose text <paramref name="failureOf"/> gives an <see cref="IOException"/> throws it, every other write reaches the real
+    /// file, and <paramref name="flushedToDisk"/> is called at each flush of the file to the disk. It applies to this journal alone,
+    /// and can be put on a choice that already has it. Only the shared test support calls it, which is what
+    /// <c>InternalsVisibleTo</c> opens to.
     /// </summary>
     /// <param name="failureOf">
     /// Given the text of each write, one or more whole lines of the journal: the failure to throw in place of that write, or
     /// <see langword="null"/> to let it through.
     /// </param>
-    internal Journal WithFailingWrite(Func<string, IOException?> failureOf) => new FailingWriteJournal(this, failureOf);
+    /// <param name="flushedToDisk">Called just before each flush of the journal's file to the disk, on the thread that makes it.</param>
+    internal Journal WithWatchedFile(Func<string, IOException?> failureOf, Action flushedToDisk)
+        => new WatchedFileJournal(this, failureOf, flushedToDisk);
 
     /// <summary>
     /// Opens the journal the choice names, writing to its file through the stream <paramref name="writesThrough"/> makes of the file's
@@ -127,21 +147,29 @@ public abstract class Journal
         private protected override JournalFile? Open(TimeProvider clock, Func<Stream, Stream> writesThrough) => null;
     }
 
-    private sealed class NewJournal(string directory, string? description) : Journal
+    private static void ThrowIfUndefined(JournalDurability durability)
     {
-        private protected override JournalFile Open(TimeProvider clock, Func<Stream, Stream> writesThrough)
-            => JournalFile.Create(directory, description, clock, writesThrough);
+        if (durability is not (JournalDurability.FlushedToDisk or JournalDurability.HandedToOperatingSystem))
+        {
+            throw new ArgumentOutOfRangeException(nameof(durability), durability, "The durability is not one of the choices.");
+        }
     }
 
-    private sealed class ContinuedJournal(JournalLocation location) : Journal
+    private sealed class NewJournal(string directory, string? description, JournalDurability durability) : Journal
     {
         private protected override JournalFile Open(TimeProvider clock, Func<Stream, Stream> writesThrough)
-            => JournalFile.Open(location, writesThrough);
+            => JournalFile.Create(directory, description, durability, clock, writesThrough);
     }
 
-    private sealed class FailingWriteJournal(Journal journal, Func<string, IOException?> failureOf) : Journal
+    private sealed class ContinuedJournal(JournalLocation location, JournalDurability durability) : Journal
+    {
+        private protected override JournalFile Open(TimeProvider clock, Func<Stream, Stream> writesThrough)
+            => JournalFile.Open(location, durability, writesThrough);
+    }
+
+    private sealed class WatchedFileJournal(Journal journal, Func<string, IOException?> failureOf, Action flushedToDisk) : Journal
     {
         private protected override JournalFile? Open(TimeProvider clock, Func<Stream, Stream> writesThrough)
-            => journal.Open(clock, file => new FailingWriteStream(writesThrough(file), failureOf));
+            => journal.Open(clock, file => new WatchedFileStream(writesThrough(file), failureOf, flushedToDisk));
     }
 }

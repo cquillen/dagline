@@ -9,17 +9,6 @@ public class DrainTests
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
 
     [Test]
-    public void A_new_signal_has_not_been_requested_and_a_request_is_kept()
-    {
-        var drain = new DrainSignal();
-
-        drain.IsRequested.ShouldBeFalse();
-        drain.Request();
-        drain.Request();
-        drain.IsRequested.ShouldBeTrue();
-    }
-
-    [Test]
     public async Task A_drain_lets_the_running_tasks_finish_unsignalled_and_starts_nothing_new()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -32,22 +21,20 @@ public class DrainTests
             var queued = builder.Task("queued", _ => Task.CompletedTask);
             var then = builder.Task("then", _ => Task.CompletedTask).Requires(succeedsTask);
             var tidy = builder.Task("tidy", _ => Task.CompletedTask).After(failsTask);
-            var drain = new DrainSignal();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(
+            var run = Runner.Start(
                 builder.Build(),
-                new RunOptions { Journal = Journal.None, MaxRunningTasks = 2, Reporters = [watched] },
-                drain);
+                new RunOptions { Journal = Journal.None, MaxRunningTasks = 2, Reporters = [watched] });
             var succeedsContext = await succeeds.Started;
             var failsContext = await fails.Started;
-            drain.Request();
-            drain.Request();
+            run.Drain();
+            run.Drain();
             await watched.Handled("drain requested");
             succeeds.Release();
             fails.Throw(new InvalidOperationException("the store went away"));
-            var result = await run;
+            var result = await run.Result;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
             var lines = reporter.Lines.ToList();
@@ -73,15 +60,14 @@ public class DrainTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var drain = new DrainSignal();
             var watched = new WatchedReporter(new RecordingReporter());
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
+            var run = Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] });
             await load.Started;
-            drain.Request();
+            run.Drain();
             await watched.Handled("drain requested");
             load.Release();
-            var result = await run;
+            var result = await run.Result;
 
             result.Outcome.ShouldBe(RunOutcome.Complete);
             result.Snapshot.Drain.ShouldNotBeNull();
@@ -96,22 +82,20 @@ public class DrainTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
-            var drain = new DrainSignal();
             var watched = new WatchedReporter(new RecordingReporter());
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
+            var run = Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] });
             await load.Started;
-            drain.Request();
+            run.Drain();
             await watched.Handled("drain requested");
             load.Throw(new OperationCanceledException("gave up"));
-            var result = await run;
+            var result = await run.Result;
 
             result.Snapshot[loadTask.Path].Status.ShouldBe(NodeStatus.Failed);
         }
     }
 
     [Test]
-    [NotInParallel(DiskHeavy.Key)]
     public async Task A_drained_run_on_a_journal_is_listed_stopped_and_a_continuing_run_keeps_its_successes_and_runs_the_rest()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -122,17 +106,16 @@ public class DrainTests
             var loadTask = builder.Task("load", load.Body);
             var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(loadTask);
             var graph = builder.Build();
-            var drain = new DrainSignal();
             var watched = new WatchedReporter(new RecordingReporter());
 
-            var run = Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path), Reporters = [watched] }, drain);
+            var run = Runner.Start(graph, new RunOptions { Journal = QuickJournal.New(temporary.Path), Reporters = [watched] });
             await load.Started;
-            drain.Request();
+            run.Drain();
             await watched.Handled("drain requested");
             load.Release();
-            var first = await run;
+            var first = await run.Result;
             var listed = (await Journals.ListAsync(temporary.Path)).Journals.ShouldHaveSingleItem();
-            var next = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.Continue(temporary.Path, listed.Id) });
+            var next = await Runner.RunAsync(graph, new RunOptions { Journal = QuickJournal.Continue(temporary.Path, listed.Id) });
 
             first.Outcome.ShouldBe(RunOutcome.Stopped);
             first.Snapshot.NeverReached.Select(task => task.Path).ShouldBe([publish.Path]);
@@ -145,50 +128,6 @@ public class DrainTests
     }
 
     [Test]
-    public async Task A_drain_requested_before_the_call_starts_nothing_and_the_run_is_stopped()
-    {
-        var builder = new GraphBuilder();
-        var load = builder.Task("load", _ => Task.CompletedTask);
-        builder.Task("publish", _ => Task.CompletedTask).Requires(load);
-        var drain = new DrainSignal();
-        drain.Request();
-        var reporter = new RecordingReporter();
-
-        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, drain);
-
-        result.Outcome.ShouldBe(RunOutcome.Stopped);
-        reporter.Lines.ShouldBe(["run started", "load: pending -> ready", "drain requested", "run ended: stopped"]);
-        result.Snapshot.NeverReached.Count.ShouldBe(2);
-    }
-
-    [Test]
-    public async Task A_signal_drained_in_one_run_drains_a_later_run_from_its_start()
-    {
-        for (var repeat = 0; repeat < _repeats; repeat++)
-        {
-            var builder = new GraphBuilder();
-            var load = new PausedBody();
-            builder.Task("load", load.Body);
-            var graph = builder.Build();
-            var drain = new DrainSignal();
-            var watched = new WatchedReporter(new RecordingReporter());
-
-            var first = Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
-            await load.Started;
-            drain.Request();
-            await watched.Handled("drain requested");
-            load.Release();
-            (await first).Outcome.ShouldBe(RunOutcome.Complete);
-
-            var reporter = new RecordingReporter();
-            var second = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [reporter] }, drain);
-
-            second.Outcome.ShouldBe(RunOutcome.Stopped);
-            reporter.Lines.ShouldBe(["run started", "load: pending -> ready", "drain requested", "run ended: stopped"]);
-        }
-    }
-
-    [Test]
     public async Task The_snapshot_carries_the_drain_from_the_drain_requested_event_on()
     {
         for (var repeat = 0; repeat < _repeats; repeat++)
@@ -196,16 +135,15 @@ public class DrainTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var drain = new DrainSignal();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] }, drain);
+            var run = Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [watched] });
             await load.Started;
-            drain.Request();
+            run.Drain();
             await watched.Handled("drain requested");
             load.Release();
-            var result = await run;
+            var result = await run.Result;
 
             var events = reporter.Events;
             var snapshots = reporter.Snapshots;
@@ -225,21 +163,18 @@ public class DrainTests
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
             builder.Task("queued", _ => Task.CompletedTask);
-            var drain = new DrainSignal();
             using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(
+            var run = Runner.Start(
                 builder.Build(),
-                new RunOptions { Journal = Journal.None, MaxRunningTasks = 1, Reporters = [watched] },
-                drain,
-                stop.Token);
+                new RunOptions { Journal = Journal.None, MaxRunningTasks = 1, Reporters = [watched] }, stop.Token);
             await load.Started;
-            drain.Request();
+            run.Drain();
             await watched.Handled("drain requested");
             await stop.CancelAsync();
-            var result = await run;
+            var result = await run.Result;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
             reporter.Lines.ShouldBe(
@@ -268,22 +203,21 @@ public class DrainTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             builder.Task("load", load.Body);
-            var drain = new DrainSignal();
             using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(
+            var run = Runner.Start(
                 builder.Build(),
-                new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [watched] },
-                drain,
-                stop.Token);
+                new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [watched] }, stop.Token);
             await load.Started;
             await stop.CancelAsync();
             await watched.Handled("stop requested");
-            drain.Request();
-            await clock.AdvanceUntilAsync(run, TimeSpan.FromSeconds(1));
-            var result = await run;
+            run.Drain();
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
+            var result = await run.Result;
             load.Release();
 
             reporter.Lines.ShouldNotContain("drain requested");
@@ -294,33 +228,14 @@ public class DrainTests
     }
 
     [Test]
-    public async Task A_drain_and_a_stop_both_made_before_the_call_are_both_published_the_drain_first()
+    public async Task Invalid_options_still_throw_with_a_stop_already_made()
     {
         var builder = new GraphBuilder();
         builder.Task("load", _ => Task.CompletedTask);
-        var drain = new DrainSignal();
-        drain.Request();
-        using var stop = new CancellationTokenSource();
-        await stop.CancelAsync();
-        var reporter = new RecordingReporter();
-
-        var result = await Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] }, drain, stop.Token);
-
-        result.Outcome.ShouldBe(RunOutcome.Stopped);
-        reporter.Lines.ShouldBe(["run started", "load: pending -> ready", "drain requested", "stop requested", "run ended: stopped"]);
-    }
-
-    [Test]
-    public async Task Invalid_options_still_throw_with_a_drain_and_a_stop_already_made()
-    {
-        var builder = new GraphBuilder();
-        builder.Task("load", _ => Task.CompletedTask);
-        var drain = new DrainSignal();
-        drain.Request();
         using var stop = new CancellationTokenSource();
         await stop.CancelAsync();
 
         Should.Throw<RunConfigurationException>(
-            () => { _ = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 0 }, drain, stop.Token); });
+            () => { _ = Runner.Start(builder.Build(), new RunOptions { Journal = Journal.None, MaxRunningTasks = 0 }, stop.Token); });
     }
 }

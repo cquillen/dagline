@@ -15,13 +15,14 @@ Give the run the reporter that `SpectreReporter.Create()` returns:
 using Dagline;
 using Dagline.Spectre;
 
-using var console = ConsoleStop.Hook();
-
-var result = await Runner.RunAsync(graph, new RunOptions
+var run = Runner.Start(graph, new RunOptions
 {
     Journal = Journal.None,
     Reporters = [SpectreReporter.Create()],
-}, console.Drain, console.Token);
+});
+using var console = ConsoleStop.Hook(run);
+
+var result = await run.Result;
 
 return result.Outcome.ToExitCode();
 ```

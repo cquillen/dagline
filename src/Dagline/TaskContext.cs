@@ -18,8 +18,12 @@ namespace Dagline;
 /// as much as on one that fails. <see cref="Fail"/> ends the task as a reported failure.
 /// </para>
 /// <para>
-/// Everything reported shows in <see cref="ISnapshotSource.Current"/> from the moment the call returns, on the task's
-/// <see cref="NodeSnapshot"/>, while the task is still running. A warning is the only report that is also an event.
+/// Each call hands its report to the run and returns at once. A report other than progress shows in
+/// <see cref="ISnapshotSource.Current"/>, on the task's <see cref="NodeSnapshot"/>, once the run has applied it, which may be a
+/// little after the call has returned, and the time of a warning or a wait is the time the run applied it. Progress is read from
+/// the task whenever the current snapshot is read, so it shows on the next read. A warning is the only report that is also an
+/// event. Progress is the report for a tight loop: beginning a wait or setting the message on every pass of one is misuse, since
+/// the run applies each such report in turn and falls behind the task.
 /// </para>
 /// <para>
 /// A context is safe to call from several threads at once, so a body that fans out needs no lock of its own. Each call is applied
@@ -53,10 +57,10 @@ public sealed class TaskContext
 {
     private const int _checkpointBytes = 4096;
 
-    private readonly Run _run;
+    private readonly ITaskRun _run;
     private readonly BuiltTask _task;
 
-    internal TaskContext(Run run, BuiltTask task, TimeProvider timeProvider, CancellationToken cancellationToken)
+    internal TaskContext(ITaskRun run, BuiltTask task, TimeProvider timeProvider, CancellationToken cancellationToken)
     {
         _run = run;
         _task = task;
@@ -165,6 +169,8 @@ public sealed class TaskContext
     /// <remarks>
     /// The message shows as <see cref="NodeSnapshot.Message"/> and stays when the task succeeds, so a succeeded task can say
     /// what it did. <see cref="Fail"/> replaces it, and so does an exception that escapes the body when no failure was reported.
+    /// It shows once the run has applied it. Setting it on every pass of a tight loop is misuse: report how far the loop has got
+    /// with <see cref="SetStatusText"/> or <see cref="SetCount"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="message"/> is <see langword="null"/>.</exception>
     public void SetMessage(string message)
@@ -255,8 +261,9 @@ public sealed class TaskContext
     /// work as usual while the task waits.
     /// </para>
     /// <para>
-    /// The marker begins when the task's first open scope opens, with that scope's text and the time on the run's clock,
-    /// and ends when its last open scope closes. Scopes that overlap therefore make one wait, with the text and time of the one
+    /// The marker begins when the task's first open scope opens, with that scope's text, and ends when its last open scope
+    /// closes. Each is applied by the run as it applies every report, and its time is when the run applied it, on the run's clock. Open
+    /// a scope around a whole wait, never on every pass of a tight loop: that is misuse, and makes the run fall behind the task. Scopes that overlap therefore make one wait, with the text and time of the one
     /// that opened first. Each begin and end is published to reporters as a <see cref="WaitingChanged"/>, and while the task
     /// waits its <see cref="NodeSnapshot.WaitingSince"/> and <see cref="NodeSnapshot.WaitingText"/> are set. A task may wait
     /// several times in one run.
@@ -378,7 +385,8 @@ public sealed class TaskContext
     public string Checkpoint => _run.CheckpointOf(_task);
 
     /// <summary>
-    /// Saves the task's checkpoint, which replaces any it had, and completes once the checkpoint is flushed to the disk.
+    /// Saves the task's checkpoint, which replaces any it had, and completes once the checkpoint is written to the journal and, with
+    /// the default <see cref="JournalDurability"/>, flushed to the disk.
     /// <c>await context.SaveCheckpointAsync(job.Id);</c>.
     /// </summary>
     /// <param name="text">
@@ -390,13 +398,14 @@ public sealed class TaskContext
     /// <see cref="CancellationToken"/> to a save that records work the task has just started, since a stop would then cancel the save
     /// and a later run would start the work again.
     /// </param>
-    /// <returns>A task that completes once the checkpoint is on disk, and at once for a run with no journal.</returns>
+    /// <returns>A task that completes once the checkpoint is in the journal, and at once for a run with no journal.</returns>
     /// <remarks>
     /// <para>
-    /// The save writes one line to the journal and flushes it to the disk before it completes, so what the task does next can rely on the
-    /// checkpoint surviving a killed process. The flush holds up the run for its length, roughly 1 to 5 ms on an SSD: a checkpoint is for
-    /// milestones, not for progress. The save publishes no event and changes no snapshot. <see cref="Checkpoint"/> reads the new text
-    /// from the moment the save completes.
+    /// The save writes one line to the journal before it completes, so what the task does next can rely on the checkpoint surviving a
+    /// killed process. With <see cref="JournalDurability.FlushedToDisk"/>, the default, the line is flushed to the disk first, so it
+    /// survives a power cut too, and the flush holds up the run for its length, roughly 1 to 5 ms on an SSD: a checkpoint is for
+    /// milestones, not for progress. With <see cref="JournalDurability.HandedToOperatingSystem"/> it is not flushed. The save publishes
+    /// no event and changes no snapshot. <see cref="Checkpoint"/> reads the new text from the moment the save completes.
     /// </para>
     /// <para>
     /// A save made during the grace period, after a stop, succeeds and is handed back in the next run. One made once the task has settled,
@@ -431,10 +440,11 @@ public sealed class TaskContext
     }
 
     /// <summary>
-    /// Clears the task's checkpoint, and completes once the clearing is flushed to the disk. A task with no checkpoint writes nothing.
+    /// Clears the task's checkpoint, and completes once the clearing is written to the journal and, with the default
+    /// <see cref="JournalDurability"/>, flushed to the disk. A task with no checkpoint writes nothing.
     /// </summary>
     /// <param name="cancellationToken">Cancels the clearing only if it is signalled before the clearing begins to write.</param>
-    /// <returns>A task that completes once the clearing is on disk, and at once for a run with no journal or a task with no checkpoint.</returns>
+    /// <returns>A task that completes once the clearing is in the journal, and at once for a run with no journal or a task with no checkpoint.</returns>
     /// <remarks>
     /// Clear the checkpoint before reporting a failure when the external work has failed and a later run should start fresh work
     /// instead of re-attaching to it. It follows the rules of <see cref="SaveCheckpointAsync"/>: it succeeds during the grace period,
@@ -452,15 +462,7 @@ public sealed class TaskContext
             return Task.FromCanceled(cancellationToken);
         }
 
-        try
-        {
-            _run.ChangeCheckpoint(_task, text);
-            return Task.CompletedTask;
-        }
-        catch (Exception refused) when (refused is InvalidOperationException or JournalWriteException)
-        {
-            return Task.FromException(refused);
-        }
+        return _run.SaveCheckpointAsync(_task, text);
     }
 
     private async Task CheckUntilDone(
@@ -471,11 +473,14 @@ public sealed class TaskContext
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // The helper's awaits resume on the context the task body runs on, so that a stop of a waiting task stays on the host
+        // that started the body (ADR 0015): a cancelled delay awaited with no context resumes on the thread pool. In an app a
+        // body starts on the thread pool with no context, so nothing changes there.
         using (BeginWaiting(text))
         {
-            while (!await check(cancellationToken).ConfigureAwait(false))
+            while (!await check(cancellationToken).ConfigureAwait(true))
             {
-                await Task.Delay(interval, TimeProvider, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(interval, TimeProvider, cancellationToken).ConfigureAwait(true);
             }
         }
     }

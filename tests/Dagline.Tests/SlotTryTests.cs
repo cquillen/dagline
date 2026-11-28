@@ -1,8 +1,9 @@
 namespace Dagline.Tests;
 
 /// <summary>
-/// The work of starting tasks, counted as slot tries, grows with the number of tasks and not with its square. The step core is
-/// driven directly, settling each started task in the order it started, so the count is the same on every run of the test.
+/// The work of starting tasks, counted as slot tries, grows with the number of tasks and not with its square. The run's
+/// step core is driven directly, settling each started task in the order it started, so the count is the same on every run of
+/// the test.
 /// </summary>
 public class SlotTryTests
 {
@@ -53,43 +54,39 @@ public class SlotTryTests
     }
 
     /// <summary>
-    /// Gives the step core the inputs a run would, settling each started task as a success in the order the steps started them,
-    /// and takes the snapshot of every event in order, as the run does.
+    /// Gives the step core the inputs a run would, settling each started task as a success in the order its body was
+    /// started, and builds the snapshot of every event in order, as the loop does. With no journal, no input waits for a write.
     /// </summary>
     private static (RunOutcome? Outcome, int SlotTries) StepThrough(Graph graph, RunOptions options)
     {
-        var steps = new RunSteps(graph, RunSettings.From(graph, options), earlier: null, new Continuation(graph, earlier: null));
+        var core = new StepCore(graph, RunSettings.From(graph, options), journal: null, new UnreadSource());
         var now = DateTimeOffset.UnixEpoch;
         var running = new Queue<BuiltTask>();
         RunOutcome? outcome = null;
 
-        CarryOut(steps.Start(now, drained: false, stopped: false, new UnreadSource()));
-        CarryOut(steps.EndIfDone(now));
+        CarryOut(core.Apply(Input.Start, now));
         while (running.TryDequeue(out var task))
         {
-            CarryOut(steps.BodyEnded(task, TaskOutcome.Succeeded, now));
-            CarryOut(steps.EndIfDone(now));
+            CarryOut(core.Apply(Input.BodyEnded(task, TaskOutcome.Succeeded), now));
         }
 
-        return (outcome, steps.SlotTries);
+        return (outcome, core.SlotTries);
 
-        void CarryOut(IReadOnlyList<Step> decided)
+        void CarryOut(IReadOnlyList<Effect> effects)
         {
-            foreach (var step in decided)
+            foreach (var effect in effects)
             {
-                foreach (var stepEvent in step.Events)
+                switch (effect.Kind)
                 {
-                    steps.SnapshotAfter(stepEvent);
-                }
-
-                foreach (var started in step.Starts)
-                {
-                    running.Enqueue(started);
-                }
-
-                if (step.Ends is { } end)
-                {
-                    outcome = end.Outcome;
+                    case EffectKind.Publish:
+                        core.SnapshotAfter(effect.Change);
+                        break;
+                    case EffectKind.StartBody:
+                        running.Enqueue(effect.Task!);
+                        break;
+                    case EffectKind.EndRun:
+                        outcome = effect.Outcome;
+                        break;
                 }
             }
         }

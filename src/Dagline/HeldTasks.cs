@@ -2,7 +2,7 @@ namespace Dagline;
 
 /// <summary>
 /// The ready tasks of one run that a full limit has turned away, kept so that a walk tries one only when it fits, and in
-/// declaration order. <see cref="RunSteps"/> merges them, by position, with the ready tasks no limit has turned away.
+/// declaration order. <see cref="StepCore"/> merges them, by position, with the ready tasks no limit has turned away.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,7 +21,7 @@ namespace Dagline;
 /// moved a task holding two full limits from one to the other at every settle of either, at the cost of a try each time.
 /// </para>
 /// <para>
-/// It is not thread-safe: <see cref="RunSteps"/> owns it and uses it one step at a time.
+/// It is not thread-safe: <see cref="StepCore"/> owns it and uses it one input at a time.
 /// </para>
 /// </remarks>
 internal sealed class HeldTasks

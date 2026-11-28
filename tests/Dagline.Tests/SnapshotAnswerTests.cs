@@ -55,28 +55,22 @@ public class SnapshotAnswerTests
                 await secondPoll.Body(context);
             }
         }).After(check);
-        var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(
+        // Scripted, so that every report the bodies make before they pause has been applied when the test reads the run.
+        var run = ScriptedDriver.Start(
             builder.Build(),
-            new RunOptions
-            {
-                Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id),
-                TimeProvider = clock,
-                Reporters = [reporter],
-            });
-        var source = await reporter.Source;
-        await checking.Started;
+            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), TimeProvider = clock });
+        run.Pump();
         clock.Advance(TimeSpan.FromSeconds(5));
         checking.Release();
-        await Task.WhenAll(noisyWork.Started, quietWork.Started, firstPoll.Started, secondPoll.Started);
-        var midway = source.Current;
+        run.Pump();
+        var midway = run.Current;
         clock.Advance(TimeSpan.FromSeconds(7));
         noisyWork.Release();
         quietWork.Release();
         firstPoll.Release();
         secondPoll.Release();
-        var result = await run;
+        var result = await run.Finish();
 
         midway.Waiting.Select(task => task.Path).ShouldBe([pollA.Path, pollB.Path]);
         midway.Working.Select(task => task.Path).ShouldBe([noisy.Path, quiet.Path]);
@@ -211,13 +205,13 @@ public class SnapshotAnswerTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
-        await Task.WhenAll(brokenWait.Started, blankWait.Started);
-        var waiting = source.Current;
+        // Scripted, so that both waits have been applied when the test reads the run.
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
+        var waiting = run.Current;
         brokenWait.Release();
         blankWait.Release();
-        var result = await run;
+        var result = await run.Finish();
 
         result.Snapshot[quiet.Path].Message.ShouldBeNull();
         result.Snapshot[retracted.Path].Message.ShouldBeNull();
