@@ -333,6 +333,23 @@ public class LoopRunEndingEarlyTests
         reporter.Lines.TakeLast(3).ShouldBe(["prepare: running -> succeeded", "load: pending -> ready", "run ended: stopped"]);
     }
 
+    [Test]
+    public async Task A_drain_signal_and_a_token_both_asked_before_the_call_go_with_the_start_on_the_thread_pool_the_drain_first()
+    {
+        var prepare = new PausedBody();
+        var reporter = new RecordingReporter();
+        var drain = new DrainSignal();
+        drain.Request();
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
+
+        var result = await NewEngine.RunAsync(Chain(prepare), Options(reporter, TimeSpan.Zero), drain, stop.Token);
+
+        result.Outcome.ShouldBe(RunOutcome.Stopped);
+        reporter.Lines.ShouldBe(["run started", "prepare: pending -> ready", "drain requested", "stop requested", "run ended: stopped"]);
+        prepare.Started.IsCompleted.ShouldBeFalse();
+    }
+
     private static Graph Chain(PausedBody prepare)
     {
         var builder = new GraphBuilder();
