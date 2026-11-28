@@ -25,7 +25,9 @@ public class TaskCountsTests
         var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(shard);
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads a wait in the current snapshot the moment the call returns, which the new
+        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         await Task.WhenAll(loading.Started, polling.Started);
         var midway = source.Current;
@@ -146,7 +148,9 @@ public class TaskCountsTests
         shard.Task("poll-b", secondPoll.Body);
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads each wait in the current snapshot the moment the call returns, which the new
+        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         var first = await firstPoll.Started;
         var second = await secondPoll.Started;
@@ -210,7 +214,9 @@ public class TaskCountsTests
         tenant.Task("poll", polling.Body);
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads a wait in the current snapshot the moment the call returns, which the new
+        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         var context = await polling.Started;
         using var wait = context.BeginWaiting("job 17");
@@ -242,7 +248,9 @@ public class TaskCountsTests
         });
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads the warnings in the current snapshot the moment the call returns, which the new
+        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         var context = await warning.Started;
         for (var entity = 1; entity <= 100; entity++)
@@ -277,7 +285,9 @@ public class TaskCountsTests
         var noisy = tenant.Task("noisy", warning.Body);
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads the warnings in the current snapshot the moment the call returns, which the new
+        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         var context = await warning.Started;
         for (var entity = 1; entity <= 100; entity++)
@@ -350,7 +360,9 @@ public class TaskCountsTests
         var noisy = shard.Task("noisy", warning.Body);
         var reporter = new RecordingReporter();
 
-        var run = Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        // On the existing engine only: it reads each warning in the current snapshot the moment the call returns, which the new
+        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
+        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         var source = await reporter.Source;
         var context = await warning.Started;
         var beforeTheWarnings = source.Current;

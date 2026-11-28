@@ -270,7 +270,8 @@ public class LoopReportTests
         var load = new PausedBody();
         var builder = new GraphBuilder();
         var shard = builder.Group("shard-1");
-        var loadTask = shard.Task("load", load.Body);
+        var tenant = shard.Group("tenant-a");
+        var loadTask = tenant.Task("load", load.Body);
         var reporter = new RecordingReporter();
         var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
         run.Pump();
@@ -291,6 +292,7 @@ public class LoopReportTests
         foreach (var snapshot in reporter.Snapshots.Append(beforeTheLoop).Append(onceApplied))
         {
             var task = snapshot[loadTask.Path];
+            snapshot[tenant.Path].WarningCount.ShouldBe(task.WarningCount);
             snapshot[shard.Path].WarningCount.ShouldBe(task.WarningCount);
             if (task.Warnings.Count < 100)
             {
@@ -379,5 +381,71 @@ public class LoopReportTests
         letGo.Count.ShouldBe(17);
         afterTheLateReports.ShouldBeSameAs(letGo);
         result.Snapshot[loadTask.Path].ShouldBeSameAs(letGo);
+    }
+
+    [Test]
+    public async Task A_group_counts_the_waiting_tasks_beneath_it_as_the_loop_applies_their_waits_and_not_once_they_settle()
+    {
+        var firstPoll = new PausedBody();
+        var secondPoll = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var tenant = shard.Group("tenant-a");
+        tenant.Task("poll-a", firstPoll.Body);
+        shard.Task("poll-b", secondPoll.Body);
+        var reporter = new RecordingReporter();
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
+        var first = await firstPoll.Started;
+        var second = await secondPoll.Started;
+
+        var firstWait = first.BeginWaiting("job 17");
+        var whenTheCallReturns = run.Current;
+        run.Pump();
+        var oneWaiting = run.Current;
+        using var secondWait = second.BeginWaiting("job 18");
+        run.Pump();
+        var bothWaiting = run.Current;
+        firstWait.Dispose();
+        run.Pump();
+        var oneWaitingAgain = run.Current;
+        secondPoll.Release();
+        firstPoll.Release();
+        var result = await run.Finish();
+
+        whenTheCallReturns[tenant.Path].Counts.Waiting.ShouldBe(0);
+        (oneWaiting[tenant.Path].Counts.Waiting, oneWaiting[shard.Path].Counts.Waiting, oneWaiting.Counts.Waiting).ShouldBe((1, 1, 1));
+        oneWaiting[tenant.Path].IsWaiting.ShouldBeTrue();
+        oneWaiting[shard.Path].IsWaiting.ShouldBeFalse();
+        (bothWaiting[shard.Path].Counts.Waiting, bothWaiting.Counts.Waiting).ShouldBe((2, 2));
+        bothWaiting[shard.Path].IsWaiting.ShouldBeTrue();
+        (oneWaitingAgain[tenant.Path].Counts.Waiting, oneWaitingAgain[shard.Path].Counts.Waiting).ShouldBe((0, 1));
+        result.Snapshot.Counts.Waiting.ShouldBe(0);
+        result.Snapshot[shard.Path].Counts.Waiting.ShouldBe(0);
+        reporter.Events.OfType<GroupSettled>().ShouldAllBe(group => group.Counts.Waiting == 0);
+    }
+
+    [Test]
+    public async Task A_group_keeps_its_counts_value_while_only_warnings_beneath_it_change()
+    {
+        var noisy = new PausedBody();
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        shard.Task("noisy", noisy.Body);
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None });
+        run.Pump();
+        var context = await noisy.Started;
+        var beforeTheWarnings = run.Current;
+
+        context.AddWarning("entity 1 has no region");
+        context.AddWarning("entity 2 has no region");
+        run.Pump();
+        var afterTwoWarnings = run.Current;
+        noisy.Release();
+        var result = await run.Finish();
+
+        afterTwoWarnings[shard.Path].WarningCount.ShouldBe(2);
+        afterTwoWarnings[shard.Path].Counts.ShouldBeSameAs(beforeTheWarnings[shard.Path].Counts);
+        result.Snapshot[shard.Path].Counts.ShouldNotBeSameAs(beforeTheWarnings[shard.Path].Counts);
     }
 }
