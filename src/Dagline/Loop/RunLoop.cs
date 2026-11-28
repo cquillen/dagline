@@ -56,7 +56,7 @@ internal sealed class RunLoop
         var samples = new TaskSamples(graph);
         Source = new CurrentSnapshot(samples);
         _core = new StepCore(graph, settings, journal?.Fold, Source, samples);
-        _taskRun = new LoopTaskRun(Inbox, _core.Samples);
+        _taskRun = new LoopTaskRun(Inbox, samples, graph, Source);
 
         // Before the loop's first turn, on the starting thread: nothing else can read or change the core yet.
         Source.Publish(_core.TakeSnapshot(), _core.Sampled);

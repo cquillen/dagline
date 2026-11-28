@@ -11,7 +11,9 @@ namespace Dagline;
 /// </remarks>
 /// <param name="inbox">The run's inbox, to which the inputs are posted.</param>
 /// <param name="samples">The tasks' samples, which the reports that are samples overwrite.</param>
-internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples) : ITaskRun
+/// <param name="graph">The graph the run runs.</param>
+/// <param name="source">The run's current snapshot, from which a dependency's status is read.</param>
+internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples, Graph graph, CurrentSnapshot source) : ITaskRun
 {
     // Each throw below is a departure from Liskov substitution for the length of the rebuild: the new engine is reachable only
     // from tests, and each member is built by a later part of it (checkpoints).
@@ -66,7 +68,13 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples) : ITaskRun
 
     public Task SaveCheckpointAsync(BuiltTask task, string text) => throw NotYet(nameof(TaskContext.SaveCheckpointAsync));
 
-    public NodeStatus StatusOf(BuiltTask task, Node dependency) => throw NotYet(nameof(TaskContext.StatusOf));
+    /// <summary>
+    /// The status of a node the task depends on, as of the last snapshot the loop published: the status of a dependency changes only
+    /// with an event, so this is the status a reporter holding that event reads. It answers whether or not the task has settled.
+    /// </summary>
+    /// <exception cref="ArgumentException">The task does not depend on the node.</exception>
+    public NodeStatus StatusOf(BuiltTask task, Node dependency)
+        => source.Published.Nodes[graph.DependencyPositionOf(task, dependency)].Status;
 
     /// <summary>The lines of <paramref name="texts"/>, one for each line break, as far as the task's sample keeps them.</summary>
     private string[] KeptLines(BuiltTask task, IEnumerable<string> texts)
