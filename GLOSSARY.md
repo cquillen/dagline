@@ -153,7 +153,7 @@ The end of the wait after a stop while tasks are still running, because the grac
 _Avoid_: Stopped waiting, timeout
 
 **Run outcome**:
-How a run ended: complete, incomplete or stopped.
+How a run ended: complete, incomplete, stopped or unrecorded.
 _Avoid_: Result, exit status
 
 **Complete**:
@@ -167,6 +167,10 @@ _Avoid_: Failed, partial
 **Stopped**:
 The run outcome when the run was drained or stopped and at least one task had not succeeded.
 _Avoid_: Cancelled, aborted, interrupted
+
+**Unrecorded**:
+The run outcome when the journal could no longer be written before the run had ended, so it is missing something the run did. It takes precedence over the other three.
+_Avoid_: Failed, errored, faulted
 
 **Progress**:
 What a running task reports about how far it has got: a line of text, a count, or both. Progress is live only and is never carried into a later run.
@@ -189,6 +193,14 @@ _Avoid_: Saved state, bookmark, handle, resume token
 **Reporter**:
 Something that presents a run to people while it happens. It receives the run's events and can read its snapshot, and nothing it does changes the run.
 _Avoid_: Subscriber, listener, observer, sink
+
+**Dropped**:
+Said of a reporter the run hands no more events to, because it threw or because the reporter wait ran out.
+_Avoid_: Removed, disconnected, unsubscribed
+
+**Reporter wait**:
+How long a run waits at its end for its reporters to handle the events still queued for them.
+_Avoid_: Flush timeout, reporter grace period, drain time
 
 **Event**:
 A record of one thing that happened in a run, with the time it happened. Every reporter receives a run's events in the same order.
