@@ -274,7 +274,7 @@ new RunOptions { Journal = Journal.None, Reporters = [uploader], ReporterWait = 
 new RunOptions { Journal = Journal.None, Reporters = [uploader], ReporterWait = Timeout.InfiniteTimeSpan };
 ```
 
-`TimeSpan.Zero` drops a reporter still busy as soon as the run has ended. A limited reporter wait is at most `uint.MaxValue - 1` milliseconds, about 49.7 days, as for the grace period; anything else below zero or above that is refused before the run starts. On a clock whose timers fire at once, such as `InstantClock` from `Dagline.Testing`, a limited reporter wait runs out at once: see [Testing your tasks](testing-your-tasks.md#a-graph-run-on-the-instant-clock-with-reporters).
+`TimeSpan.Zero` drops a reporter still busy as soon as the run has ended. A limited reporter wait is at most `uint.MaxValue - 1` milliseconds, about 49.7 days, as for the grace period; anything else below zero or above that is refused before the run starts. On a clock whose timers fire at once, such as `InstantClock` from `Dagline.Testing`, a limited reporter wait runs out almost at once: see [Testing your tasks](testing-your-tasks.md#a-graph-run-on-the-instant-clock-with-reporters).
 
 ## Progress on a timer: the snapshot source
 
