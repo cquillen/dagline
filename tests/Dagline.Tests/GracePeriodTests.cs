@@ -8,7 +8,6 @@ public class GracePeriodTests
     private const int _repeats = 50;
     private const string _leftBehind = "still running when the run stopped waiting";
     private static readonly DateTimeOffset _runStart = new(2026, 11, 11, 4, 12, 0, TimeSpan.Zero);
-    private static readonly TimeSpan _step = TimeSpan.FromSeconds(1);
 
     [Test]
     public void The_grace_period_is_30_seconds_by_default()
@@ -75,7 +74,9 @@ public class GracePeriodTests
             clock.Advance(TimeSpan.FromSeconds(5));
             await stop.CancelAsync();
             await watched.Handled("honour: running -> cancelled");
-            await clock.AdvanceUntilAsync(run, _step);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
             var result = await run;
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);
@@ -154,7 +155,9 @@ public class GracePeriodTests
             await watched.Handled("stop requested");
             drain.Request();
             await stop.CancelAsync();
-            await clock.AdvanceUntilAsync(run, _step);
+            // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
+            // run lets go, so the grace end's time is the end of the grace period on either engine.
+            clock.Advance(TimeSpan.FromSeconds(30));
             var result = await run;
             load.Release();
 

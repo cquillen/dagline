@@ -8,10 +8,6 @@ public static class NewEngine
     /// loop, its bodies and its reporters on the thread pool.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
-    /// <exception cref="NotSupportedException">
-    /// <paramref name="drain"/> is not <see langword="null"/>, or <paramref name="cancellationToken"/> can be cancelled: the new
-    /// engine takes neither yet.
-    /// </exception>
     public static Task<RunResult> RunAsync(
         Graph graph,
         RunOptions options,

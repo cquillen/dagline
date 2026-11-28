@@ -37,12 +37,21 @@ public sealed class ScriptedDriver
     /// Starts a run of <paramref name="graph"/> on the new engine. Nothing of the run has happened when this returns: its first turn
     /// waits for the test to pump it.
     /// </summary>
+    /// <param name="graph">The graph to run.</param>
+    /// <param name="options">The options of the run.</param>
+    /// <param name="cancellationToken">The run's token: cancelling it is a stop, as <see cref="Stop"/> is.</param>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
-    public static ScriptedDriver Start(Graph graph, RunOptions options)
+    public static ScriptedDriver Start(Graph graph, RunOptions options, CancellationToken cancellationToken = default)
     {
         var host = new ManualHost();
-        return new ScriptedDriver(host, LoopRun.Start(graph, options, host));
+        return new ScriptedDriver(host, LoopRun.Start(graph, options, host, drained: false, cancellationToken));
     }
+
+    /// <summary>Asks the run to drain. It is applied when the test next pumps the loop.</summary>
+    public void Drain() => _run.Drain();
+
+    /// <summary>Asks the run to stop, as cancelling its token does. It is applied when the test next pumps the loop.</summary>
+    public void Stop() => _run.Stop();
 
     /// <summary>Runs everything queued, and everything that queues meanwhile, until nothing is queued.</summary>
     /// <returns>How many items ran.</returns>
