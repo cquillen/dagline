@@ -53,6 +53,7 @@ Dagline.Tests/StepOrderTests
 Dagline.Tests/StopAndEndEventTests
 Dagline.Tests/StopTests
 Dagline.Tests/TaskContextTests
+Dagline.Tests/TaskCountsTests
 Dagline.Tests/WaitUntilAsyncTests
 Dagline.Tests/WaitingTests
 Dagline.Tests/WarningTests
