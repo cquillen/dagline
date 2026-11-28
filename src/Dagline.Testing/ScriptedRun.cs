@@ -279,11 +279,24 @@ public sealed class ScriptedRun
                 await rung.ConfigureAwait(false);
             }
             else if (left == TimeSpan.Zero
-                || await Task.WhenAny(rung, Task.Delay(left, TimeProvider.System)).ConfigureAwait(false) != rung)
+                || !await RingsWithinAsync(rung, left).ConfigureAwait(false))
             {
                 Pump();
                 return condition();
             }
+        }
+    }
+
+    private static async Task<bool> RingsWithinAsync(Task rung, TimeSpan limit)
+    {
+        try
+        {
+            await rung.WaitAsync(limit, TimeProvider.System).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
         }
     }
 
