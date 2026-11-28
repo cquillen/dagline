@@ -33,8 +33,9 @@ internal abstract class JournalRecorder
 
     /// <summary>
     /// Records the entries of a decided step, in the order of its events, in one write: the run's start and its set-asides, each
-    /// task's start and settle, and the run's end. Every entry but a task's start is flushed, and the entries of a step share one
-    /// flush. When the step ends the run, the file is closed and the journal let go of after the write.
+    /// task's start and settle, and the run's end. Every entry but a task's start asks for a flush, which the file makes only with
+    /// <see cref="JournalDurability.FlushedToDisk"/>, and the entries of a step share one flush. When the step ends the run, the
+    /// file is closed and the journal let go of after the write.
     /// </summary>
     public abstract void Record(Step step);
 
