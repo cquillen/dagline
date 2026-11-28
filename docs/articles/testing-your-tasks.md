@@ -250,7 +250,7 @@ A periodic timer on an `InstantClock` fires again and again, moving time forward
 
 ### A graph run on the instant clock with reporters
 
-The run measures its [reporter wait](reporters.md#the-reporter-wait) on its own clock, and on an `InstantClock` that timer fires at once: a reporter still busy when the run ends is dropped straight away, and is on `ReporterErrors`. A run with no reporter, or whose reporters have all caught up by its end, makes no such timer, so the clock does not move at the end of the run. To have every reporter handle every event, wait for them with no limit:
+The run measures its [reporter wait](reporters.md#the-reporter-wait) on its own clock, and on an `InstantClock` that timer fires as soon as the thread pool runs it, moving the clock forward by the wait. Whether a reporter is still busy by then is a race: one may be dropped, and be on `ReporterErrors`, and the clock may end the run the length of the wait further on. A run with no reporter, or whose reporters have all caught up as it ends, makes no such timer, so the clock does not move at the end of the run. To have every reporter handle every event, and keep the clock where the tasks left it, wait for the reporters with no limit:
 
 ```csharp
 var result = await Runner.RunAsync(graph, new RunOptions
