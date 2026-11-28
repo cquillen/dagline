@@ -23,7 +23,7 @@ internal sealed class HostedDelivery
 
     public HostedDelivery(IReadOnlyList<IReporter> reporters, IRunHost host)
     {
-        _reporters = [.. reporters.Select(reporter => new HostedReporter(reporter, host, Finished))];
+        _reporters = [.. reporters.Select(reporter => new HostedReporter(reporter, host, () => Finished()))];
         _unfinished = _reporters.Length + 1;
     }
 
@@ -46,7 +46,11 @@ internal sealed class HostedDelivery
     /// Says that no event will follow, and calls <paramref name="done"/>, once, when every reporter has handled every event or has
     /// been dropped: at once, when every reporter already has.
     /// </summary>
-    public void Complete(Action done)
+    /// <returns>
+    /// <see langword="true"/> when every reporter already had, and <paramref name="done"/> was called within this call: there is
+    /// nothing to wait for.
+    /// </returns>
+    public bool Complete(Action done)
     {
         _done = done;
         foreach (var reporter in _reporters)
@@ -54,7 +58,7 @@ internal sealed class HostedDelivery
             reporter.Complete();
         }
 
-        Finished();
+        return Finished();
     }
 
     /// <summary>
@@ -62,20 +66,27 @@ internal sealed class HostedDelivery
     /// <see cref="HostedReporter.DropIfBusy"/> says, and the delivery then says every reporter is done, without waiting for a call
     /// still in progress. A reporter that had handled every event is left alone.
     /// </summary>
-    public void DropTheBusy()
+    /// <param name="cause">
+    /// Why the wait ran out before its time, kept as the inner exception of each dropped reporter's error, or
+    /// <see langword="null"/> when it ran its length.
+    /// </param>
+    public void DropTheBusy(Exception? cause)
     {
         foreach (var reporter in _reporters)
         {
-            reporter.DropIfBusy();
+            reporter.DropIfBusy(cause);
         }
     }
 
-    private void Finished()
+    private bool Finished()
     {
-        if (Interlocked.Decrement(ref _unfinished) == 0)
+        if (Interlocked.Decrement(ref _unfinished) != 0)
         {
-            _done!();
+            return false;
         }
+
+        _done!();
+        return true;
     }
 }
 
@@ -191,11 +202,12 @@ internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action f
 
     /// <summary>
     /// Drops the reporter if it has not handled every event: its error is an <see cref="OperationCanceledException"/> naming the
-    /// event in the call, or the next event when no call is under way, its queued events are let go, and its token is cancelled,
+    /// event in the call, or the next event when no call is under way, with <paramref name="cause"/> as its inner exception, its
+    /// queued events are let go, and its token is cancelled,
     /// through the host, before it is said to be finished, so a run that has returned has always cancelled it. A call under way is
     /// not waited for, and whatever it does once it comes back changes nothing. A reporter that is not busy is left alone.
     /// </summary>
-    public void DropIfBusy()
+    public void DropIfBusy(Exception? cause)
     {
         lock (_gate)
         {
@@ -205,11 +217,16 @@ internal sealed class HostedReporter(IReporter reporter, IRunHost host, Action f
             }
 
             var runEvent = _inCall ?? (_queue.TryPeek(out var next) ? next.Event : null);
-            LetGo(new ReporterError(reporter, runEvent, new OperationCanceledException(_dropped.Token)));
+            LetGo(new ReporterError(reporter, runEvent, Cancelled(cause)));
         }
 
         SignalAndFinish();
     }
+
+    private OperationCanceledException Cancelled(Exception? cause)
+        => cause is null
+            ? new OperationCanceledException(_dropped.Token)
+            : new OperationCanceledException("The reporter wait ran out at once: the run's clock refused to make its timer.", cause, _dropped.Token);
 
     private void Drop(ReporterError error)
     {

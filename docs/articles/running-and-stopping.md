@@ -61,6 +61,7 @@ Each call on the run only hands the request to the run and returns at once, from
 | `TimeProvider` | `TimeProvider.System` | The clock of the run. |
 | `GracePeriod` | 30 seconds | How long a stopped run waits for its running tasks. See [the grace period](#the-grace-period). |
 | `Reporters` | no reporters | What watches the run. |
+| `ReporterWait` | 30 seconds | How long the run waits for its reporters at its end. See [the reporter wait](reporters.md#the-reporter-wait). |
 
 ### Journal
 
@@ -93,7 +94,7 @@ A reporter is something that presents a run to people while it happens. Each rep
 
 The list is read once when the run starts. A reporter cannot change the run, and Dagline itself never writes to the console: what your app prints is up to you and your reporters.
 
-The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Create()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
+The run never waits for a reporter while tasks are running, and a reporter that throws is dropped while the run carries on. At its end, stopped or not, the run waits for its reporters to catch up, for at most <xref:Dagline.RunOptions.ReporterWait>: 30 seconds by default, measured on the run's `TimeProvider`, or `Timeout.InfiniteTimeSpan` to wait for as long as they take. A reporter still busy when it runs out is dropped, so a hung reporter never keeps your process from exiting. [Reporters](reporters.md) covers what a reporter may rely on, how to write one, and [the plain-text reporter](reporters.md#the-plain-text-reporter) that Dagline ships. On a terminal, `SpectreReporter.Create()` from `Dagline.Spectre` gives [the terminal display](terminal-ui.md).
 
 ## Sizing the max running tasks and limits
 
@@ -360,7 +361,8 @@ The mapping is stable: these codes keep their meaning in every release, so a scr
 - `MaxRunningTasks` is below 1,
 - a size in `Limits` is below 1,
 - the graph names a limit that `Limits` gives no size,
-- the grace period is below zero or above about 49.7 days (`uint.MaxValue - 1` milliseconds), and is not `Timeout.InfiniteTimeSpan`.
+- the grace period is below zero or above about 49.7 days (`uint.MaxValue - 1` milliseconds), and is not `Timeout.InfiniteTimeSpan`,
+- the reporter wait is below zero or above about 49.7 days, and is not `Timeout.InfiniteTimeSpan`.
 
 Its message lists every problem, one to a line, so you can fix them all in one pass:
 

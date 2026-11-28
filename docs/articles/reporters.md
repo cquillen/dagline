@@ -189,9 +189,9 @@ A run whose journal can no longer be written is stopped by Dagline: `StopRequest
 - **The snapshot matches the event.** The snapshot handed with an event is the run exactly as of that event, even when the reporter is handed the event long after it happened.
 - **The run never waits for a reporter while tasks are running.** Each reporter has a queue of its own. A slow reporter falls behind, and neither the tasks nor the other reporters are held up by it. The queue has no size limit, and the number of events in a run is in proportion to its tasks, so that is all a reporter that falls behind can cost in memory.
 - **A reporter that throws is dropped.** It receives no further call, and the tasks, the run outcome and the other reporters are unaffected. The error is returned with the result of the run and is never thrown at your app: see [When a reporter fails](#when-a-reporter-fails).
-- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait has no time bound, but cancelling the run's token ends it when the run applied no stop: see [Cancelling the token ends the wait for reporters](#cancelling-the-token-ends-the-wait-for-reporters). Otherwise a call to a reporter that never completes keeps `RunAsync` from returning.
+- **The run waits for reporters at its end.** `Runner.RunAsync` returns only once every reporter that was not dropped has handled every event, `RunEnded` included, so the last lines of a run are always printed before your app exits. That wait lasts at most the reporter wait, 30 seconds by default, after which a reporter still busy is dropped: see [The reporter wait](#the-reporter-wait).
 
-The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is cancelled only when the run's token ends the wait for a reporter that is still busy.
+The list of reporters is read once, when the run starts, and no reporter joins later. The cancellation token passed to `OnEventAsync` is cancelled only when the reporter is dropped: when it throws, or when it is still busy as the reporter wait runs out. The run's own token never cancels it.
 
 ## Writing a reporter
 
@@ -253,18 +253,28 @@ Each entry names the reporter, the event it was handling and the exception. This
 
 The run outcome says how the work went and is not changed by a reporter's failure. Whether a run whose display broke should exit with an error is your app's decision.
 
-### Cancelling the token ends the wait for reporters
+### The reporter wait
 
-A stuck reporter need not hang your process. When every task has ended and the run is waiting for its reporters, cancelling the token passed to `RunAsync` ends that wait. A reporter still busy at that moment is dropped like one that threw:
+The run waits for its reporters once, at its end, whether or not it was stopped, so that the last lines of a stopped run, which say what was cancelled and what was never reached, are printed too. <xref:Dagline.RunOptions.ReporterWait> bounds that wait: 30 seconds by default, measured on the run's `TimeProvider` from the moment `RunEnded` is queued for the reporters. The wait ends as soon as every reporter has handled every event. A reporter still busy when it runs out is dropped like one that threw:
 
-- the `CancellationToken` passed to its `OnEventAsync` is cancelled. Each reporter has a token of its own, never cancelled otherwise, so a reporter that awaits slow output can pass it on. It is already cancelled when `RunAsync` returns, but a callback you register on it runs on the thread pool and the run does not wait for it;
-- its remaining events are discarded, and it gets no further call;
+- the `CancellationToken` passed to its `OnEventAsync` is cancelled. Each reporter has a token of its own, never cancelled otherwise, so a reporter that awaits slow output can pass it on. It is already cancelled when the run's result completes, but a callback you register on it runs on the thread pool and the run does not wait for it;
+- its remaining events are let go, and it gets no further call;
 - `ReporterErrors` has a `ReporterError` naming it, the event it was handling and an `OperationCanceledException`;
-- `RunAsync` returns without waiting for its call to come back, even a call that blocks its thread and never returns a task. Whatever that call does later is ignored.
+- the run's result completes without waiting for its call to come back, even a call that blocks its thread and never returns a task. Whatever that call does later is ignored.
 
-A reporter that had already handled every event is unaffected and is not on the list. A cancellation once the tasks have ended never changes the run outcome. One made just as the run ends is never lost: either the run applies it as a stop, or it ends the wait for reporters.
+A reporter that had already handled every event is left alone, its token never cancelled, and is not on the list. A drop never changes the run outcome.
 
-Only a token cancelled after every task has ended does this. A token cancelled earlier is applied as a stop, and drops no reporter. Once a stop has been applied, by your app or by Dagline, nothing more can drop a hung reporter: the operator kills the process, which the journal survives. A drain never drops a reporter, and a run given no token waits for its reporters with no time bound.
+Nothing else ends the wait. The run's token means a stop and nothing more: cancelling it once the run has ended does nothing, and a drain never drops a reporter.
+
+```csharp
+// Give a slow remote reporter longer to send its last events.
+new RunOptions { Journal = Journal.None, Reporters = [uploader], ReporterWait = TimeSpan.FromMinutes(2) };
+
+// Wait for the reporters however long they take.
+new RunOptions { Journal = Journal.None, Reporters = [uploader], ReporterWait = Timeout.InfiniteTimeSpan };
+```
+
+`TimeSpan.Zero` drops a reporter still busy as soon as the run has ended. A limited reporter wait is at most `uint.MaxValue - 1` milliseconds, about 49.7 days, as for the grace period; anything else below zero or above that is refused before the run starts. On a clock whose timers fire at once, such as `InstantClock` from `Dagline.Testing`, a limited reporter wait runs out almost at once: see [Testing your tasks](testing-your-tasks.md#a-graph-run-on-the-instant-clock-with-reporters).
 
 ## Progress on a timer: the snapshot source
 

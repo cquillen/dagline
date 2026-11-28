@@ -248,6 +248,22 @@ public async Task A_failed_export_blocks_the_report()
 
 A periodic timer on an `InstantClock` fires again and again, moving time forward each time, until it is disposed, and the guard does not stop it, because the guard is checked only when a delay or timer is made. Anything that keeps a periodic timer for the life of a run would spin on it. Reporters do: the plain-text reporter and the terminal display both refresh on a timer. Give a reporter a clock of its own, such as `TimeProvider.System`, or leave reporters out of a test run.
 
+### A graph run on the instant clock with reporters
+
+The run measures its [reporter wait](reporters.md#the-reporter-wait) on its own clock, and on an `InstantClock` that timer fires as soon as the thread pool runs it, moving the clock forward by the wait. Whether a reporter is still busy by then is a race: one may be dropped, and be on `ReporterErrors`, and the clock may end the run the length of the wait further on. A run with no reporter, or whose reporters have all caught up as it ends, makes no such timer, so the clock does not move at the end of the run. To have every reporter handle every event, and keep the clock where the tasks left it, wait for the reporters with no limit:
+
+```csharp
+var result = await Runner.RunAsync(graph, new RunOptions
+{
+    Journal = Journal.None,
+    TimeProvider = new InstantClock(),
+    Reporters = [reporter],
+    ReporterWait = Timeout.InfiniteTimeSpan,
+});
+```
+
+Once the clock is past its guard it refuses to make the timer, and the run still returns its result: the wait runs out at once, and each reporter dropped then has the `ClockGuardException` as the inner exception of its error.
+
 ## When to pass Microsoft's fake clock instead
 
 The instant clock suits tests where time is not the subject: a delay ends, and the task moves on. When the order of events in time is what you are testing, such as what a reporter sees while a wait is in progress, or which of two waiting tasks finishes first, pass `FakeTimeProvider` from the `Microsoft.Extensions.TimeProvider.Testing` package and advance it yourself, step by step. `Dagline.Testing` does not depend on that package; add it to your test project.
