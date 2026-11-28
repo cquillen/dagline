@@ -103,6 +103,70 @@ public class StepCoreEffectTests
     }
 
     [Test]
+    public void A_continuing_run_records_its_set_asides_with_its_start_and_its_earlier_successes_get_no_event()
+    {
+        var builder = new GraphBuilder();
+        builder.Task("prepare", _ => Task.CompletedTask);
+        var check = builder.Task("check", _ => Task.CompletedTask);
+        builder.Task("load", _ => Task.CompletedTask).After(check);
+        var graph = builder.Build();
+        var earlier = JournalFold.Of(
+            new HeaderEntry(1, "journal", _now),
+            [Succeeded("prepare"), Succeeded("load"), Succeeded("gone"), new TaskSettledEntry("lost", _now, NodeStatus.Failed, [], 0, [], 0)]);
+        var core = new StepCore(graph, Settings(graph), earlier, new UnreadSource());
+
+        Described(core, core.Apply(Input.Start, _now)).ShouldBe(
+            ["record run started with 2 paths not in the graph, 1 of them unsucceeded, set aside load, flushed"]);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(
+        [
+            "publish run started",
+            "publish check: pending -> ready",
+            "record started check, not flushed",
+        ]);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(["publish check: ready -> running", "start check"]);
+        Described(core, core.Apply(Input.BodyEnded(graph.TaskAt(1), TaskOutcome.Succeeded), _now)).ShouldBe(["record settled check, flushed"]);
+        Described(core, core.Apply(Input.Written(null), default)).ShouldBe(
+        [
+            "publish check: running -> succeeded",
+            "publish load: pending -> ready",
+            "record started load, not flushed",
+        ]);
+    }
+
+    [Test]
+    public void A_steps_events_and_entries_share_the_time_of_its_input_across_its_writes()
+    {
+        var (graph, prepare, _) = Chain();
+        var core = new StepCore(graph, Settings(graph), JournalFold.Of(new HeaderEntry(1, "journal", _now), []), new UnreadSource());
+        var later = _now.AddMinutes(5);
+        var notRead = _now.AddDays(1);
+        core.Apply(Input.Start, _now);
+        core.Apply(Input.Written(null), notRead);
+        core.Apply(Input.Written(null), notRead);
+
+        List<DateTimeOffset> times = [];
+        foreach (var input in new[] { Input.BodyEnded(prepare, TaskOutcome.Succeeded), Input.Written(null), Input.Written(null) })
+        {
+            foreach (var effect in core.Apply(input, input.Kind is InputKind.Written ? notRead : later))
+            {
+                if (effect.Kind is EffectKind.Publish)
+                {
+                    core.SnapshotAfter(effect.Change);
+                    times.Add(effect.Event!.At);
+                }
+                else if (effect.Kind is EffectKind.Record)
+                {
+                    times.AddRange(effect.Entries!.Select(TimeOf));
+                }
+            }
+        }
+
+        // The settle, its event, the dependent made ready, its start's entry and its start's event.
+        times.Count.ShouldBe(5);
+        times.ShouldAllBe(time => time == later);
+    }
+
+    [Test]
     public void While_a_write_is_under_way_the_core_takes_no_input_but_its_result()
     {
         var (graph, prepare, _) = Chain();
@@ -203,12 +267,24 @@ public class StepCoreEffectTests
 
     private static string Described(JournalEntry entry) => entry switch
     {
-        RunStartedEntry => "run started",
+        RunStartedEntry { PathsNotInGraph: 0 } => "run started",
+        RunStartedEntry started
+            => $"run started with {started.PathsNotInGraph} paths not in the graph, {started.PathsNotInGraphUnsucceeded} of them unsucceeded",
+        SetAsideEntry setAside => $"set aside {setAside.Path}",
         TaskStartedEntry started => $"started {started.Path}",
         TaskSettledEntry settled => $"settled {settled.Path}",
         RunEndedEntry => "run ended",
         _ => entry.ToString(),
     };
+
+    private static DateTimeOffset TimeOf(JournalEntry entry) => entry switch
+    {
+        TaskStartedEntry started => started.Time,
+        TaskSettledEntry settled => settled.Time,
+        _ => throw new InvalidOperationException($"No time is read from {entry}."),
+    };
+
+    private static TaskSettledEntry Succeeded(string path) => new(path, _now, NodeStatus.Succeeded, [], 0, [], 0);
 
     /// <summary>The run as reporters would read it, which no reporter does here: there is none.</summary>
     private sealed class UnreadSource : ISnapshotSource
