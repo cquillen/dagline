@@ -124,4 +124,17 @@ public sealed record RunOptions
         }
     }
     = [];
+
+    /// <summary>
+    /// Whether <see cref="Runner.RunAsync"/> runs the graph on the new engine of spec #139. Only <see cref="OnTheNewEngine"/> sets
+    /// it, and it goes at the cutover with the existing engine.
+    /// </summary>
+    internal bool RunsOnTheNewEngine { get; private init; }
+
+    /// <summary>
+    /// The third internal test hook, the engine switch: the same options, but <see cref="Runner.RunAsync"/> runs the graph on the
+    /// new engine. It applies to the runs given these options alone, with no static or ambient state. Only the shared test support
+    /// calls it, which is what <c>InternalsVisibleTo</c> opens to.
+    /// </summary>
+    internal RunOptions OnTheNewEngine() => this with { RunsOnTheNewEngine = true };
 }
