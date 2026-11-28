@@ -17,4 +17,11 @@
     <InternalsVisibleTo Include="Dagline.Tests" />
   </ItemGroup>
 
+  <!-- prototype/engine-loop only: lets the throwaway engine prototype reuse the core's internal types. Never merge. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dagline.Prototype" />
+    <InternalsVisibleTo Include="Dagline.Prototype.Tests" />
+    <InternalsVisibleTo Include="Dagline.Prototype.Bench" />
+  </ItemGroup>
+
 </Project>

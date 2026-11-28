@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dagline\Dagline.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dagline.Prototype.Tests" />
+    <InternalsVisibleTo Include="Dagline.Prototype.Bench" />
+  </ItemGroup>
+
+</Project>
