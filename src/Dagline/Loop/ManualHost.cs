@@ -36,9 +36,6 @@ internal sealed class ManualHost : IRunHost
 
     public TaskCreationOptions CompletionOptions => TaskCreationOptions.None;
 
-    /// <summary>Whether nothing is queued: no turn of the loop, no body work and no delivery.</summary>
-    public bool IsIdle => _loopTurns.IsEmpty && _bodyWork.IsEmpty && _reporterWork.IsEmpty;
-
     public void RunLoop(Action turn) => _loopTurns.Enqueue(turn);
 
     public void StartBody(Func<Task> body) => _bodyWork.Enqueue(() => _ = body());

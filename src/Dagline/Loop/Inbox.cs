@@ -29,6 +29,10 @@ internal sealed class Inbox(IRunHost host)
         }
 
         _queue.Enqueue(input);
+
+        // A full fence between queuing and reading whether the inbox is closed, as Close has between closing and letting go, so
+        // that an input is never left in a closed inbox.
+        Interlocked.MemoryBarrier();
         if (_closed)
         {
             // The loop went between the check and the queuing, so nothing will read this input.
@@ -52,6 +56,7 @@ internal sealed class Inbox(IRunHost host)
     public void Close()
     {
         _closed = true;
+        Interlocked.MemoryBarrier();
         LetGoOfQueued();
     }
 
@@ -86,7 +91,9 @@ internal sealed class Inbox(IRunHost host)
         // Nothing flows from the poster to the loop: the loop's turn is the host's to run, with no context of the poster's.
         public void UnsafeOnCompleted(Action continuation)
         {
-            Volatile.Write(ref inbox._waiting, continuation);
+            // A full fence, not a volatile write: the read of the queue below must not move ahead of this store, or a post that
+            // finds no continuation and this read that finds no input could miss each other, and nothing would wake the loop.
+            Interlocked.Exchange(ref inbox._waiting, continuation);
 
             // An input posted between the loop finding the inbox empty and the line above found no continuation to hand on.
             if (!inbox._queue.IsEmpty)

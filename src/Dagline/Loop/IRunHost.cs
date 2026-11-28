@@ -17,8 +17,8 @@ internal interface IRunHost
     void RunLoop(Action turn);
 
     /// <summary>
-    /// Starts a task body. Whatever the body's awaits resume on that the host chose, such as a synchronization context it installs
-    /// for the body, the end of the body comes back through it as well.
+    /// Starts a task body. When the host starts the body under a synchronization context of its own, an await in the body that
+    /// resumes on that context, and the end of the body, come back to the host as well.
     /// </summary>
     void StartBody(Func<Task> body);
 
