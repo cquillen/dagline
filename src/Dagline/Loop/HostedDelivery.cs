@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace Dagline;
 
 /// <summary>
-/// Hands a run's events to its reporters through the run's host, on the new engine. Each reporter has a queue of its own, so
+/// Hands a run's events to its reporters through the run's host. Each reporter has a queue of its own, so
 /// every reporter receives the same events in the same order, and one that is slow or throws holds up neither the loop nor another
 /// reporter. A reporter that throws, or that is still busy when the run drops the busy ones at the end of the reporter wait, is
 /// dropped: it is handed nothing more, its token is cancelled, and its error is kept for the run's result.
@@ -80,7 +80,7 @@ internal sealed class HostedDelivery
 }
 
 /// <summary>
-/// One reporter's queue of events on the new engine, and the delivery that hands them to it in the order published, one call at a
+/// One reporter's queue of events, and the delivery that hands them to it in the order published, one call at a
 /// time. The delivery is scheduled through the host when an event finds none scheduled, and runs until the queue is empty.
 /// Every call is handed the same token, which is cancelled only when the reporter is dropped: when it throws, or when it is still
 /// busy as the reporter wait runs out.

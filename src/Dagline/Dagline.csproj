@@ -11,8 +11,8 @@
   </ItemGroup>
 
   <!-- The two openings into the core's internals (CODING_STANDARDS.md): the never-packed shared test support, for its two test hooks,
-       and the core's own tests, for the step core's count of slot tries alone; and, until the cutover, the new engine's scripted driver
-       and its step core's effect-list tests. -->
+       and the core's own tests, for the step core's count of slot tries and its effect lists; and, until the testing package has a
+       scripted run (#155), the shared test support's scripted driver. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Dagline.TestSupport" />
     <InternalsVisibleTo Include="Dagline.Tests" />

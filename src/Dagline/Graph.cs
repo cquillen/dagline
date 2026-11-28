@@ -127,16 +127,6 @@ public sealed class Graph : IReadOnlyList<Node>
     /// <summary>The group at a position among the nodes of the graph.</summary>
     internal BuiltGroup GroupAt(int position) => (BuiltGroup)Nodes[position];
 
-    /// <summary>A task and every group that holds it: the nodes that cannot succeed unless the task does.</summary>
-    internal IEnumerable<BuiltNode> WithItsGroups(BuiltTask task) => task.Groups.Select(GroupAt).Prepend<BuiltNode>(task);
-
-    /// <summary>The tasks that require a node, in declaration order.</summary>
-    internal IEnumerable<BuiltTask> Requiring(BuiltNode node)
-    {
-        var requires = new Upstream(node.Position, DependencyKind.Requires);
-        return node.Dependents.Select(TaskAt).Where(dependent => dependent.Upstreams.Contains(requires));
-    }
-
     /// <summary>
     /// Finds a node that a task depends on: an upstream declared on the task or on a group that holds it,
     /// or a node beneath such an upstream at any depth.

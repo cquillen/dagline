@@ -4,7 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Dagline.Tests;
 
 /// <summary>
-/// Ending a run early on the new engine: a drain, a stop, the grace period and letting go (ADR 0014, ADR 0015). Each test is one
+/// Ending a run early: a drain, a stop, the grace period and letting go (ADR 0014, ADR 0015). Each test is one
 /// scripted run that makes each thing happen in the order it means, so none is repeated.
 /// </summary>
 public class LoopRunEndingEarlyTests
@@ -313,20 +313,18 @@ public class LoopRunEndingEarlyTests
         var reporter = new RecordingReporter();
         var watched = new WatchedReporter(reporter);
         using var stop = new CancellationTokenSource();
-        var drain = new DrainSignal();
 
-        var running = NewEngine.RunAsync(
+        var running = Runner.Start(
             Chain(prepare),
             new RunOptions { Journal = Journal.None, Reporters = [watched], GracePeriod = Timeout.InfiniteTimeSpan },
-            drain,
             stop.Token);
         var context = await prepare.Started;
-        drain.Request();
+        running.Drain();
         await watched.Handled("drain requested");
         await stop.CancelAsync();
         await watched.Handled("stop requested");
         prepare.Release();
-        var result = await running;
+        var result = await running.Result;
 
         result.Outcome.ShouldBe(RunOutcome.Stopped);
         context.CancellationToken.IsCancellationRequested.ShouldBeTrue();
@@ -334,19 +332,17 @@ public class LoopRunEndingEarlyTests
     }
 
     [Test]
-    public async Task A_drain_signal_and_a_token_both_asked_before_the_call_go_with_the_start_on_the_thread_pool_the_drain_first()
+    public async Task A_token_cancelled_before_the_call_goes_with_the_start_on_the_thread_pool()
     {
         var prepare = new PausedBody();
         var reporter = new RecordingReporter();
-        var drain = new DrainSignal();
-        drain.Request();
         using var stop = new CancellationTokenSource();
         await stop.CancelAsync();
 
-        var result = await NewEngine.RunAsync(Chain(prepare), Options(reporter, TimeSpan.Zero), drain, stop.Token);
+        var result = await Runner.RunAsync(Chain(prepare), Options(reporter, TimeSpan.Zero), stop.Token);
 
         result.Outcome.ShouldBe(RunOutcome.Stopped);
-        reporter.Lines.ShouldBe(["run started", "prepare: pending -> ready", "drain requested", "stop requested", "run ended: stopped"]);
+        reporter.Lines.ShouldBe(["run started", "prepare: pending -> ready", "stop requested", "run ended: stopped"]);
         prepare.Started.IsCompleted.ShouldBeFalse();
     }
 

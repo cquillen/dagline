@@ -1,7 +1,7 @@
 namespace Dagline.Tests;
 
 /// <summary>
-/// The work of starting tasks, counted as slot tries, grows with the number of tasks and not with its square. The new engine's
+/// The work of starting tasks, counted as slot tries, grows with the number of tasks and not with its square. The run's
 /// step core is driven directly, settling each started task in the order it started, so the count is the same on every run of
 /// the test.
 /// </summary>
@@ -54,7 +54,7 @@ public class SlotTryTests
     }
 
     /// <summary>
-    /// Gives the new engine's step core the inputs a run would, settling each started task as a success in the order its body was
+    /// Gives the step core the inputs a run would, settling each started task as a success in the order its body was
     /// started, and builds the snapshot of every event in order, as the loop does. With no journal, no input waits for a write.
     /// </summary>
     private static (RunOutcome? Outcome, int SlotTries) StepThrough(Graph graph, RunOptions options)

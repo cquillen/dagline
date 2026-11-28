@@ -17,6 +17,3 @@
 *.exe    binary
 *.woff   binary
 *.woff2  binary
-
-# The second CI run's class list gains one line per class from several branches at once: keep every side's lines.
-tests/second-run.txt merge=union

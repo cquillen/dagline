@@ -126,23 +126,9 @@ public sealed record RunOptions
     = [];
 
     /// <summary>
-    /// The reporter wait: how long a run on the new engine waits for its reporters once the event that says the run ended is
-    /// queued, measured on <see cref="TimeProvider"/>. 30 seconds by default, or <see cref="Timeout.InfiniteTimeSpan"/> to wait for
-    /// as long as they take. A reporter still busy when it runs out is dropped. Internal until the cutover of spec #139, which
-    /// makes it a run option; the existing engine ignores it.
+    /// The reporter wait: how long a run waits for its reporters once the event that says the run ended is queued, measured on
+    /// <see cref="TimeProvider"/>. 30 seconds by default, or <see cref="Timeout.InfiniteTimeSpan"/> to wait for as long as they
+    /// take. A reporter still busy when it runs out is dropped. Internal until #154 makes it a run option.
     /// </summary>
     internal TimeSpan ReporterWait { get; init; } = TimeSpan.FromSeconds(30);
-
-    /// <summary>
-    /// Whether <see cref="Runner.RunAsync"/> runs the graph on the new engine of spec #139. Only <see cref="OnTheNewEngine"/> sets
-    /// it, and it goes at the cutover with the existing engine.
-    /// </summary>
-    internal bool RunsOnTheNewEngine { get; private init; }
-
-    /// <summary>
-    /// The third internal test hook, the engine switch: the same options, but <see cref="Runner.RunAsync"/> runs the graph on the
-    /// new engine. It applies to the runs given these options alone, with no static or ambient state. Only the shared test support
-    /// calls it, which is what <c>InternalsVisibleTo</c> opens to.
-    /// </summary>
-    internal RunOptions OnTheNewEngine() => this with { RunsOnTheNewEngine = true };
 }

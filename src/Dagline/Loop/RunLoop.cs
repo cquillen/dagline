@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace Dagline;
 
 /// <summary>
-/// The one loop that owns a run on the new engine, from its start until its result is returned (ADR 0015). It is the only reader
+/// The one loop that owns a run, from its start until its result is returned (ADR 0015). It is the only reader
 /// of the run's inbox and the only code that touches the run's state: it takes one input at a time, asks the step core what it
 /// means, and carries out the effects the core returns, in the order given, deciding nothing.
 /// </summary>
@@ -91,15 +91,14 @@ internal sealed class RunLoop
     public Task<RunResult> Result => _result.Task;
 
     /// <summary>
-    /// Posts the run's start and has the host run the loop's first turn. A token already cancelled, and a drain already asked for,
-    /// go with the start; a later cancellation of the token posts a stop by the app, and the token is let go of once the run ends.
+    /// Posts the run's start and has the host run the loop's first turn. A token already cancelled goes with the start; a later
+    /// cancellation of the token posts a stop by the app, and the token is let go of once the run ends.
     /// </summary>
-    /// <param name="drained">Whether a drain was already asked for, which only the engine switch can do until the cutover.</param>
     /// <param name="cancellationToken">The app's token, whose cancellation is a stop by the app.</param>
-    public void Start(bool drained, CancellationToken cancellationToken)
+    public void Start(CancellationToken cancellationToken)
     {
         var stopped = cancellationToken.IsCancellationRequested;
-        Inbox.Post(Input.StartAsked(drained, stopped));
+        Inbox.Post(stopped ? Input.StartStopped : Input.Start);
         if (!stopped)
         {
             // Posting runs no engine code, so the callback is safe on whichever thread cancels the token. Registered before the
@@ -270,7 +269,7 @@ internal sealed class RunLoop
     {
         var snapshot = _core.SnapshotAfter(change);
 
-        // Until the cutover (#153): the exception an unrecorded run's end carries holds the final snapshot, as on the existing engine.
+        // Until #153 makes unrecorded a run outcome: the exception an unrecorded run's end carries holds the final snapshot.
         if (runEvent is RunEnded { Error: JournalWriteException unrecorded })
         {
             unrecorded.Holds(snapshot);
@@ -301,7 +300,7 @@ internal sealed class RunLoop
     }
 
     /// <summary>
-    /// Runs a task's body, then posts its end. This is the one place a body is invoked on the new engine, and so the one catch-all
+    /// Runs a task's body, then posts its end. This is the one place a body is invoked, and so the one catch-all
     /// for it: whatever escapes the body is a failure of that task and of nothing else.
     /// </summary>
     private async Task RunBodyAsync(BuiltTask task, TaskContext context)

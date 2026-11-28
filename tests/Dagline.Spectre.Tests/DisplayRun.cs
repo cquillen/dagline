@@ -30,14 +30,16 @@ internal sealed class DisplayRun : IAsyncDisposable
     private readonly Size _size;
     private readonly List<(int At, Size Size)> _resizes = [];
 
-    private DisplayRun(FakeTimeProvider clock, TestConsole console, WatchedReporter reporter, HeldReporter? held, Task<RunResult> run)
+    private readonly global::Dagline.Run _run;
+
+    private DisplayRun(FakeTimeProvider clock, TestConsole console, WatchedReporter reporter, HeldReporter? held, global::Dagline.Run run)
     {
         Clock = clock;
         Console = console;
         _reporter = reporter;
         _held = held;
         _size = new Size(console.Profile.Width, console.Profile.Height);
-        Run = run;
+        _run = run;
     }
 
     /// <summary>The clock of the run and of the display.</summary>
@@ -47,7 +49,7 @@ internal sealed class DisplayRun : IAsyncDisposable
     public TestConsole Console { get; }
 
     /// <summary>The run, which completes with its result once it has ended and the display has handled every event.</summary>
-    public Task<RunResult> Run { get; }
+    public Task<RunResult> Run => _run.Result;
 
     /// <summary>What a terminal would show now, read from everything the display has written so far.</summary>
     public Screen Screen => Screen.Read(Console.Output, _size, _resizes);
@@ -65,7 +67,6 @@ internal sealed class DisplayRun : IAsyncDisposable
     /// <param name="options">
     /// Options for the run, such as a journal or a max running tasks. Their clock and reporters are replaced. The default runs with no journal.
     /// </param>
-    /// <param name="drain">A drain signal for the run, if the test drains it.</param>
     /// <param name="holdBefore">
     /// An event, as <see cref="EventLine.Describe"/> writes it, that the display is not handed until <see cref="ReleaseHeld"/>,
     /// nor any event after it: the run moves on while the display falls behind.
@@ -77,7 +78,6 @@ internal sealed class DisplayRun : IAsyncDisposable
         int width,
         int height,
         RunOptions? options = null,
-        DrainSignal? drain = null,
         string? holdBefore = null,
         bool ascii = false,
         CancellationToken stop = default)
@@ -89,10 +89,13 @@ internal sealed class DisplayRun : IAsyncDisposable
         var reporter = new WatchedReporter(held ?? display);
         var runOptions = (options ?? new RunOptions { Journal = Journal.None }) with { TimeProvider = clock, Reporters = [reporter] };
 
-        var run = Runner.RunAsync(graph, runOptions, drain, stop);
+        var run = Runner.Start(graph, runOptions, stop);
         await reporter.Handled("run started");
         return new DisplayRun(clock, console, reporter, held, run);
     }
+
+    /// <summary>Asks the run to drain, as the app would.</summary>
+    public void Drain() => _run.Drain();
 
     /// <summary>
     /// Completes once the display has handled the event that <see cref="EventLine.Describe"/> writes as <paramref name="line"/>,

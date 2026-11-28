@@ -8,7 +8,7 @@ namespace Dagline;
 /// kept up to date as tasks start and settle. The max running tasks behaves as a limit that every task holds.
 /// </summary>
 /// <remarks>
-/// It is not safe to use from several threads at once: <see cref="RunSteps"/> owns it and changes it one step at a time.
+/// It is not safe to use from several threads at once: <see cref="StepCore"/> owns it and changes it one input at a time.
 /// </remarks>
 /// <param name="limitNames">Every limit the graph names, as <see cref="Graph.LimitNames"/> gives them.</param>
 /// <param name="sizes">The max running tasks and the size of each of those limits.</param>

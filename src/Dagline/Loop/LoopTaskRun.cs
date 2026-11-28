@@ -1,7 +1,7 @@
 namespace Dagline;
 
 /// <summary>
-/// A run on the new engine as its tasks' contexts see it. What a task reports reaches the run either as an input posted to the
+/// A run as its tasks' contexts see it. What a task reports reaches the run either as an input posted to the
 /// inbox, applied in the order the task made its calls, or as a sample the task overwrites in a place of its own (ADR 0015).
 /// </summary>
 /// <remarks>

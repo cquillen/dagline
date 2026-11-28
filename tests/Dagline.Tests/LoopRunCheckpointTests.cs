@@ -4,7 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Dagline.Tests;
 
 /// <summary>
-/// A task's checkpoint on the new engine (ADR 0015): a save is an input like any other, answered once its entry is written with
+/// A task's checkpoint (ADR 0015): a save is an input like any other, answered once its entry is written with
 /// the run's durability. Each test is one scripted run that makes each thing happen in the order it means, so none is repeated.
 /// </summary>
 public class LoopRunCheckpointTests

@@ -4,8 +4,8 @@ using Microsoft.Extensions.Time.Testing;
 namespace Dagline.Tests;
 
 /// <summary>
-/// A chain of tasks run on the new engine, the one loop that owns a run (ADR 0015): scripted on the test's own thread, and on the
-/// thread pool, each against what the existing engine gives for the same graph.
+/// A chain of tasks run by the one loop that owns a run (ADR 0015): scripted on the test's own thread, and on the thread pool, each
+/// giving the same events, snapshots and journal for the same graph.
 /// </summary>
 public class LoopRunTests
 {
@@ -91,7 +91,7 @@ public class LoopRunTests
     {
         var reporter = new RecordingReporter();
 
-        var result = await NewEngine.RunAsync(Chain(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        var result = await Runner.RunAsync(Chain(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
         reporter.Lines.ShouldBe(_chainLines);
@@ -99,52 +99,48 @@ public class LoopRunTests
     }
 
     [Test]
-    public async Task The_events_and_the_snapshot_of_each_are_those_of_the_existing_engine()
+    public async Task The_events_and_the_snapshot_of_each_are_the_same_scripted_and_on_the_thread_pool()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        var existing = new RecordingReporter();
         var scripted = new RecordingReporter();
         var onThePool = new RecordingReporter();
         var graph = Chain();
 
-        // The oracle stays on the existing engine: the project's own Runner would follow the engine switch.
-        await global::Dagline.Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [existing], TimeProvider = clock });
         await ScriptedDriver.Start(graph, new RunOptions { Journal = Journal.None, Reporters = [scripted], TimeProvider = clock }).Finish();
-        await NewEngine.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [onThePool], TimeProvider = clock });
+        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.None, Reporters = [onThePool], TimeProvider = clock });
 
-        var expected = Described(existing);
-        Described(scripted).ShouldBe(expected);
-        Described(onThePool).ShouldBe(expected);
+        scripted.Lines.ShouldBe(_chainLines);
+        Described(onThePool).ShouldBe(Described(scripted));
     }
 
     [Test]
-    public async Task A_chain_on_a_new_journal_records_what_the_existing_engine_records()
+    public async Task A_chain_on_a_new_journal_records_the_same_scripted_and_on_the_thread_pool()
     {
-        using var existingDirectory = new TemporaryDirectory();
-        using var newDirectory = new TemporaryDirectory();
+        using var onThePoolDirectory = new TemporaryDirectory();
+        using var scriptedDirectory = new TemporaryDirectory();
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        var existing = new RecordingReporter();
+        var onThePool = new RecordingReporter();
         var scripted = new RecordingReporter();
         var graph = Chain();
 
-        await global::Dagline.Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(existingDirectory.Path), Reporters = [existing], TimeProvider = clock });
+        await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(onThePoolDirectory.Path), Reporters = [onThePool], TimeProvider = clock });
         var result = await ScriptedDriver
-            .Start(graph, new RunOptions { Journal = Journal.New(newDirectory.Path), Reporters = [scripted], TimeProvider = clock })
+            .Start(graph, new RunOptions { Journal = Journal.New(scriptedDirectory.Path), Reporters = [scripted], TimeProvider = clock })
             .Finish();
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
-        Described(scripted).ShouldBe(Described(existing));
-        LinesAfterTheHeader(newDirectory).ShouldBe(LinesAfterTheHeader(existingDirectory));
-        JournalEntries.Read(TheJournalIn(newDirectory)).ShouldBe(
+        Described(scripted).ShouldBe(Described(onThePool));
+        LinesAfterTheHeader(scriptedDirectory).ShouldBe(LinesAfterTheHeader(onThePoolDirectory));
+        JournalEntries.Read(TheJournalIn(scriptedDirectory)).ShouldBe(
             ["header", "run started", "started prepare", "settled prepare", "started load", "settled load", "started publish", "settled publish", "run ended"]);
     }
 
     [Test]
-    public async Task A_journal_the_existing_engine_wrote_is_continued_by_the_new_engine_entry_for_entry_as_the_existing_engine_continues_it()
+    public async Task A_journal_is_continued_entry_for_entry_the_same_scripted_and_on_the_thread_pool()
     {
         using var first = new TemporaryDirectory();
-        using var existingDirectory = new TemporaryDirectory();
-        using var newDirectory = new TemporaryDirectory();
+        using var onThePoolDirectory = new TemporaryDirectory();
+        using var scriptedDirectory = new TemporaryDirectory();
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         var checkFails = true;
         var before = new GraphBuilder();
@@ -152,10 +148,10 @@ public class LoopRunTests
         var check = before.Task("check", _ => checkFails ? throw new InvalidOperationException("bad data") : Task.CompletedTask);
         before.Task("load", _ => Task.CompletedTask).After(check);
         before.Task("gone", _ => Task.CompletedTask);
-        var id = (await global::Dagline.Runner.RunAsync(before.Build(), new RunOptions { Journal = Journal.New(first.Path), TimeProvider = clock }))
+        var id = (await Runner.RunAsync(before.Build(), new RunOptions { Journal = Journal.New(first.Path), TimeProvider = clock }))
             .Snapshot.Journal!.Id;
-        existingDirectory.CopyIn(TheJournalIn(first));
-        newDirectory.CopyIn(TheJournalIn(first));
+        onThePoolDirectory.CopyIn(TheJournalIn(first));
+        scriptedDirectory.CopyIn(TheJournalIn(first));
         checkFails = false;
         clock.Advance(Seconds(60));
 
@@ -165,35 +161,35 @@ public class LoopRunTests
         var checkAgain = after.Task("check", _ => Task.CompletedTask);
         after.Task("load", _ => Task.CompletedTask).After(checkAgain);
         var graph = after.Build();
-        var existing = new RecordingReporter();
+        var onThePool = new RecordingReporter();
         var scripted = new RecordingReporter();
-        await global::Dagline.Runner.RunAsync(
+        await Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.Continue(existingDirectory.Path, id), Reporters = [existing], TimeProvider = clock });
+            new RunOptions { Journal = Journal.Continue(onThePoolDirectory.Path, id), Reporters = [onThePool], TimeProvider = clock });
         var result = await ScriptedDriver
-            .Start(graph, new RunOptions { Journal = Journal.Continue(newDirectory.Path, id), Reporters = [scripted], TimeProvider = clock })
+            .Start(graph, new RunOptions { Journal = Journal.Continue(scriptedDirectory.Path, id), Reporters = [scripted], TimeProvider = clock })
             .Finish();
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
         result.Snapshot.Counts.EarlierSuccesses.ShouldBe(1);
         result.Snapshot.SetAside.Select(path => path.ToString()).ShouldBe(["load"]);
         result.Snapshot.JournalPathsNotInGraph.ShouldBe(1);
-        Described(scripted).ShouldBe(Described(existing));
-        LinesAfterTheHeader(newDirectory).ShouldBe(LinesAfterTheHeader(existingDirectory));
-        JournalEntries.Read(TheJournalIn(newDirectory)).Skip(11).ShouldBe(
+        Described(scripted).ShouldBe(Described(onThePool));
+        LinesAfterTheHeader(scriptedDirectory).ShouldBe(LinesAfterTheHeader(onThePoolDirectory));
+        JournalEntries.Read(TheJournalIn(scriptedDirectory)).Skip(11).ShouldBe(
             ["run started", "set aside load", "started check", "settled check", "started load", "settled load", "run ended"]);
     }
 
     [Test]
-    public async Task The_compatibility_journal_is_continued_by_the_new_engine_as_the_existing_engine_continues_it()
+    public async Task The_compatibility_journal_is_continued_the_same_scripted_and_on_the_thread_pool()
     {
         // The journal JournalCompatibilityTests holds, continued with bodies that read no checkpoint: handing one back is #150's.
         const string id = "20261111T041200Z-fa4fa4";
-        using var existingDirectory = new TemporaryDirectory();
-        using var newDirectory = new TemporaryDirectory();
+        using var onThePoolDirectory = new TemporaryDirectory();
+        using var scriptedDirectory = new TemporaryDirectory();
         var compatibilityJournal = Path.Combine(AppContext.BaseDirectory, "CompatibilityJournals", $"{id}.journal");
-        existingDirectory.CopyIn(compatibilityJournal);
-        newDirectory.CopyIn(compatibilityJournal);
+        onThePoolDirectory.CopyIn(compatibilityJournal);
+        scriptedDirectory.CopyIn(compatibilityJournal);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 12, 0, 0, 0, TimeSpan.Zero));
         var builder = new GraphBuilder();
         var shard = builder.Group("shard-1");
@@ -201,22 +197,22 @@ public class LoopRunTests
         var export = shard.Task("export", _ => Task.CompletedTask).Requires(load);
         builder.Task("report", _ => Task.CompletedTask).Requires(export);
         var graph = builder.Build();
-        var existing = new RecordingReporter();
+        var onThePool = new RecordingReporter();
         var scripted = new RecordingReporter();
 
-        await global::Dagline.Runner.RunAsync(
+        await Runner.RunAsync(
             graph,
-            new RunOptions { Journal = Journal.Continue(existingDirectory.Path, id), Reporters = [existing], TimeProvider = clock });
+            new RunOptions { Journal = Journal.Continue(onThePoolDirectory.Path, id), Reporters = [onThePool], TimeProvider = clock });
         var result = await ScriptedDriver
-            .Start(graph, new RunOptions { Journal = Journal.Continue(newDirectory.Path, id), Reporters = [scripted], TimeProvider = clock })
+            .Start(graph, new RunOptions { Journal = Journal.Continue(scriptedDirectory.Path, id), Reporters = [scripted], TimeProvider = clock })
             .Finish();
 
         result.Outcome.ShouldBe(RunOutcome.Complete);
         result.Snapshot[load.Path].IsEarlierSuccess.ShouldBeTrue();
         result.Snapshot[load.Path].Message.ShouldBe("loaded 3 files");
         result.Snapshot.Journal!.Run.ShouldBe(2);
-        Described(scripted).ShouldBe(Described(existing));
-        LinesAfterTheHeader(newDirectory).ShouldBe(LinesAfterTheHeader(existingDirectory));
+        Described(scripted).ShouldBe(Described(onThePool));
+        LinesAfterTheHeader(scriptedDirectory).ShouldBe(LinesAfterTheHeader(onThePoolDirectory));
     }
 
     [Test]

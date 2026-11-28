@@ -140,25 +140,23 @@ public class GracePeriodTests
             var load = new PausedBody();
             var builder = new GraphBuilder();
             var loadTask = builder.Task("load", load.Body);
-            var drain = new DrainSignal();
             using var stop = new CancellationTokenSource();
             var reporter = new RecordingReporter();
             var watched = new WatchedReporter(reporter);
 
-            var run = Runner.RunAsync(
+            var run = Runner.Start(
                 builder.Build(),
                 new RunOptions { Journal = Journal.None, TimeProvider = clock, Reporters = [watched] },
-                drain,
                 stop.Token);
             await load.Started;
             await stop.CancelAsync();
             await watched.Handled("stop requested");
-            drain.Request();
+            run.Drain();
             await stop.CancelAsync();
             // The grace period's timer exists once the stop is heard. Moving the clock to its end in one step keeps it there while the
             // run lets go, so the grace end's time is the end of the grace period on either engine.
             clock.Advance(TimeSpan.FromSeconds(30));
-            var result = await run;
+            var result = await run.Result;
             load.Release();
 
             result.Outcome.ShouldBe(RunOutcome.Stopped);

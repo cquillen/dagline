@@ -5,6 +5,86 @@ namespace Dagline.Tests;
 public class TaskCountsTests
 {
     [Test]
+    public async Task A_continuing_run_counts_its_earlier_successes_in_the_counts_of_the_run_and_of_a_group()
+    {
+        using var temporary = new TemporaryDirectory();
+        var fail = true;
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var done = shard.Group("tenant-a");
+        var doneLoad = done.Task("load", _ => Task.CompletedTask);
+        var mixed = shard.Group("tenant-b");
+        mixed.Task("load", _ => Task.CompletedTask);
+        mixed.Task("verify", context => fail ? throw context.Fail("bad data") : Task.CompletedTask);
+        var graph = builder.Build();
+
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        fail = false;
+        var reporter = new RecordingReporter();
+        var second = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
+
+        var start = reporter.Snapshots[0];
+        start.Counts.EarlierSuccesses.ShouldBe(2);
+        start.Counts[NodeStatus.Succeeded].ShouldBe(2);
+        start.Counts.Unsucceeded.ShouldBe(1);
+        start[done.Path].Counts.EarlierSuccesses.ShouldBe(1);
+        start[mixed.Path].Counts.EarlierSuccesses.ShouldBe(1);
+        start[doneLoad.Path].Counts.EarlierSuccesses.ShouldBe(1);
+        start[doneLoad.Path].Counts[NodeStatus.Succeeded].ShouldBe(1);
+        var settled = reporter.Events.OfType<GroupSettled>().ToList();
+        settled.Select(group => (group.Path, group.Counts.EarlierSuccesses, group.Counts[NodeStatus.Succeeded])).ShouldBe(
+        [
+            (mixed.Path, 1, 2),
+            (shard.Path, 2, 3),
+        ]);
+        second.Snapshot.Counts.EarlierSuccesses.ShouldBe(2);
+        second.Snapshot.Counts.Unsucceeded.ShouldBe(0);
+        second.Snapshot[shard.Path].Counts.EarlierSuccesses.ShouldBe(2);
+    }
+
+    [Test]
+    public async Task A_continuing_run_counts_the_warnings_of_its_earlier_successes_in_every_group_above_them_from_its_start()
+    {
+        using var temporary = new TemporaryDirectory();
+        var fail = true;
+        var builder = new GraphBuilder();
+        var shard = builder.Group("shard-1");
+        var tenant = shard.Group("tenant-a");
+        tenant.Task("load", context =>
+        {
+            for (var entity = 1; entity <= 101; entity++)
+            {
+                context.AddWarning($"entity {entity} has no region");
+            }
+
+            return Task.CompletedTask;
+        });
+        var verify = tenant.Task("verify", context =>
+        {
+            context.AddWarning("entity 7 has no owner");
+            return fail ? throw context.Fail("bad data") : Task.CompletedTask;
+        });
+        var graph = builder.Build();
+
+        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
+        fail = false;
+        var reporter = new RecordingReporter();
+        var second = await Runner.RunAsync(
+            graph,
+            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
+
+        var start = reporter.Snapshots[0];
+        start[tenant.Path].WarningCount.ShouldBe(101);
+        start[shard.Path].WarningCount.ShouldBe(101);
+        start[verify.Path].WarningCount.ShouldBe(0);
+        second.Snapshot[tenant.Path].WarningCount.ShouldBe(102);
+        second.Snapshot[shard.Path].WarningCount.ShouldBe(102);
+    }
+
+
+    [Test]
     public async Task The_counts_of_the_run_of_nested_groups_and_of_a_task_give_their_sums_and_sub_counts()
     {
         var loading = new PausedBody();
@@ -25,15 +105,12 @@ public class TaskCountsTests
         var publish = builder.Task("publish", _ => Task.CompletedTask).Requires(shard);
         var reporter = new RecordingReporter();
 
-        // On the existing engine only: it reads a wait in the current snapshot the moment the call returns, which the new
-        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
-        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
-        await Task.WhenAll(loading.Started, polling.Started);
-        var midway = source.Current;
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
+        var midway = run.Current;
         loading.Release();
         polling.Release();
-        var result = await run;
+        var result = await run.Finish();
 
         var runCounts = midway.Counts;
         runCounts[NodeStatus.Running].ShouldBe(2);
@@ -96,45 +173,6 @@ public class TaskCountsTests
         final.Working.ShouldBe(0);
     }
 
-    [Test]
-    public async Task A_continuing_run_counts_its_earlier_successes_in_the_counts_of_the_run_and_of_a_group()
-    {
-        using var temporary = new TemporaryDirectory();
-        var fail = true;
-        var builder = new GraphBuilder();
-        var shard = builder.Group("shard-1");
-        var done = shard.Group("tenant-a");
-        var doneLoad = done.Task("load", _ => Task.CompletedTask);
-        var mixed = shard.Group("tenant-b");
-        mixed.Task("load", _ => Task.CompletedTask);
-        mixed.Task("verify", context => fail ? throw context.Fail("bad data") : Task.CompletedTask);
-        var graph = builder.Build();
-
-        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
-        fail = false;
-        var reporter = new RecordingReporter();
-        var second = await Runner.RunAsync(
-            graph,
-            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
-
-        var start = reporter.Snapshots[0];
-        start.Counts.EarlierSuccesses.ShouldBe(2);
-        start.Counts[NodeStatus.Succeeded].ShouldBe(2);
-        start.Counts.Unsucceeded.ShouldBe(1);
-        start[done.Path].Counts.EarlierSuccesses.ShouldBe(1);
-        start[mixed.Path].Counts.EarlierSuccesses.ShouldBe(1);
-        start[doneLoad.Path].Counts.EarlierSuccesses.ShouldBe(1);
-        start[doneLoad.Path].Counts[NodeStatus.Succeeded].ShouldBe(1);
-        var settled = reporter.Events.OfType<GroupSettled>().ToList();
-        settled.Select(group => (group.Path, group.Counts.EarlierSuccesses, group.Counts[NodeStatus.Succeeded])).ShouldBe(
-        [
-            (mixed.Path, 1, 2),
-            (shard.Path, 2, 3),
-        ]);
-        second.Snapshot.Counts.EarlierSuccesses.ShouldBe(2);
-        second.Snapshot.Counts.Unsucceeded.ShouldBe(0);
-        second.Snapshot[shard.Path].Counts.EarlierSuccesses.ShouldBe(2);
-    }
 
     [Test]
     public async Task A_group_says_how_many_tasks_beneath_it_wait_and_flips_between_waiting_and_working_as_they_do()
@@ -148,24 +186,28 @@ public class TaskCountsTests
         shard.Task("poll-b", secondPoll.Body);
         var reporter = new RecordingReporter();
 
-        // On the existing engine only: it reads each wait in the current snapshot the moment the call returns, which the new
-        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
-        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
         var first = await firstPoll.Started;
+        run.Pump();
         var second = await secondPoll.Started;
-        var bothWorking = source.Current;
+        run.Pump();
+        var bothWorking = run.Current;
         var firstWait = first.BeginWaiting("job 17");
-        var oneWaiting = source.Current;
+        run.Pump();
+        var oneWaiting = run.Current;
         var secondWait = second.BeginWaiting("job 18");
-        var bothWaiting = source.Current;
+        run.Pump();
+        var bothWaiting = run.Current;
         firstWait.Dispose();
-        var oneWaitingAgain = source.Current;
+        run.Pump();
+        var oneWaitingAgain = run.Current;
         secondWait.Dispose();
-        var neitherWaiting = source.Current;
+        run.Pump();
+        var neitherWaiting = run.Current;
         firstPoll.Release();
         secondPoll.Release();
-        var result = await run;
+        var result = await run.Finish();
 
         bothWorking.Counts.Waiting.ShouldBe(0);
         bothWorking[shard.Path].IsWorking.ShouldBeTrue();
@@ -204,6 +246,7 @@ public class TaskCountsTests
         result.Snapshot[tenant.Path].IsWorking.ShouldBeFalse();
     }
 
+
     [Test]
     public async Task A_task_that_settles_while_waiting_stops_counting_as_waiting_in_every_group_above_it()
     {
@@ -214,15 +257,14 @@ public class TaskCountsTests
         tenant.Task("poll", polling.Body);
         var reporter = new RecordingReporter();
 
-        // On the existing engine only: it reads a wait in the current snapshot the moment the call returns, which the new
-        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
-        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
         var context = await polling.Started;
         using var wait = context.BeginWaiting("job 17");
-        var waiting = source.Current;
+        run.Pump();
+        var waiting = run.Current;
         polling.Release();
-        var result = await run;
+        var result = await run.Finish();
 
         waiting[shard.Path].IsWaiting.ShouldBeTrue();
         waiting[tenant.Path].Counts.Waiting.ShouldBe(1);
@@ -232,6 +274,7 @@ public class TaskCountsTests
         var shardSettled = reporter.Events.OfType<GroupSettled>().Single(group => group.Path == shard.Path);
         shardSettled.Counts.Waiting.ShouldBe(0);
     }
+
 
     [Test]
     public async Task A_group_counts_every_warning_beneath_it_including_those_beyond_the_number_kept()
@@ -248,35 +291,34 @@ public class TaskCountsTests
         });
         var reporter = new RecordingReporter();
 
-        // On the existing engine only: it reads the warnings in the current snapshot the moment the call returns, which the new
-        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
-        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
         var context = await warning.Started;
         for (var entity = 1; entity <= 100; entity++)
         {
             context.AddWarning($"entity {entity} has no region");
         }
 
-        var atTheNumberKept = source.Current;
+        run.Pump();
+        var atTheNumberKept = run.Current;
         context.AddWarning("entity 101 has no region");
-        var beyondIt = source.Current;
         warning.Release();
-        var result = await run;
+        var result = await run.Finish();
 
+        // A count beyond the kept shows once the run next builds a snapshot, here the task's settle: LoopReportTests pins when.
         atTheNumberKept[noisy.Path].WarningCount.ShouldBe(100);
         atTheNumberKept[tenant.Path].WarningCount.ShouldBe(100);
-        beyondIt[noisy.Path].WarningCount.ShouldBe(101);
-        beyondIt[tenant.Path].WarningCount.ShouldBe(101);
-        beyondIt[tenant.Path].Warnings.ShouldBeEmpty();
+        result.Snapshot[noisy.Path].WarningCount.ShouldBe(101);
         result.Snapshot[tenant.Path].WarningCount.ShouldBe(101);
+        result.Snapshot[tenant.Path].Warnings.ShouldBeEmpty();
         result.Snapshot[shard.Path].WarningCount.ShouldBe(102);
         result.Snapshot[quiet.Path].WarningCount.ShouldBe(1);
         result.Snapshot.WarningCount.ShouldBe(102);
     }
 
+
     [Test]
-    public async Task A_warning_beyond_the_number_kept_is_counted_at_once_in_a_group_two_levels_above_its_task_and_publishes_nothing()
+    public async Task A_warning_beyond_the_number_kept_is_counted_in_a_group_two_levels_above_its_task_and_publishes_nothing()
     {
         var warning = new PausedBody();
         var builder = new GraphBuilder();
@@ -285,71 +327,31 @@ public class TaskCountsTests
         var noisy = tenant.Task("noisy", warning.Body);
         var reporter = new RecordingReporter();
 
-        // On the existing engine only: it reads the warnings in the current snapshot the moment the call returns, which the new
-        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
-        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
         var context = await warning.Started;
         for (var entity = 1; entity <= 100; entity++)
         {
             context.AddWarning($"entity {entity} has no region");
         }
 
-        var atTheNumberKept = source.Current;
+        run.Pump();
+        var atTheNumberKept = run.Current;
         context.AddWarning("entity 101 has no region");
         context.AddWarning("entity 102 has no region");
-        var beyondIt = source.Current;
         warning.Release();
-        var result = await run;
+        var result = await run.Finish();
 
+        // A count beyond the kept shows once the run next builds a snapshot, here the task's settle: LoopReportTests pins when.
         atTheNumberKept[shard.Path].WarningCount.ShouldBe(100);
-        beyondIt[shard.Path].WarningCount.ShouldBe(102);
-        beyondIt[tenant.Path].WarningCount.ShouldBe(102);
-        beyondIt[noisy.Path].WarningsOmitted.ShouldBe(2);
+        result.Snapshot[tenant.Path].WarningCount.ShouldBe(102);
+        result.Snapshot[noisy.Path].WarningsOmitted.ShouldBe(2);
         reporter.Events.OfType<WarningAdded>().Count().ShouldBe(100);
         reporter.Events.OfType<GroupSettled>().Select(group => group.Path).ShouldBe([tenant.Path, shard.Path]);
         reporter.Snapshots[^1][shard.Path].WarningCount.ShouldBe(102);
         result.Snapshot[shard.Path].WarningCount.ShouldBe(102);
     }
 
-    [Test]
-    public async Task A_continuing_run_counts_the_warnings_of_its_earlier_successes_in_every_group_above_them_from_its_start()
-    {
-        using var temporary = new TemporaryDirectory();
-        var fail = true;
-        var builder = new GraphBuilder();
-        var shard = builder.Group("shard-1");
-        var tenant = shard.Group("tenant-a");
-        tenant.Task("load", context =>
-        {
-            for (var entity = 1; entity <= 101; entity++)
-            {
-                context.AddWarning($"entity {entity} has no region");
-            }
-
-            return Task.CompletedTask;
-        });
-        var verify = tenant.Task("verify", context =>
-        {
-            context.AddWarning("entity 7 has no owner");
-            return fail ? throw context.Fail("bad data") : Task.CompletedTask;
-        });
-        var graph = builder.Build();
-
-        var first = await Runner.RunAsync(graph, new RunOptions { Journal = Journal.New(temporary.Path) });
-        fail = false;
-        var reporter = new RecordingReporter();
-        var second = await Runner.RunAsync(
-            graph,
-            new RunOptions { Journal = Journal.Continue(temporary.Path, first.Snapshot.Journal!.Id), Reporters = [reporter] });
-
-        var start = reporter.Snapshots[0];
-        start[tenant.Path].WarningCount.ShouldBe(101);
-        start[shard.Path].WarningCount.ShouldBe(101);
-        start[verify.Path].WarningCount.ShouldBe(0);
-        second.Snapshot[tenant.Path].WarningCount.ShouldBe(102);
-        second.Snapshot[shard.Path].WarningCount.ShouldBe(102);
-    }
 
     [Test]
     public async Task A_group_keeps_one_counts_value_while_its_counts_are_unchanged_and_a_new_one_once_they_change()
@@ -360,18 +362,19 @@ public class TaskCountsTests
         var noisy = shard.Task("noisy", warning.Body);
         var reporter = new RecordingReporter();
 
-        // On the existing engine only: it reads each warning in the current snapshot the moment the call returns, which the new
-        // engine does not promise, since a report shows once the run has applied it (ADR 0015, #146).
-        var run = global::Dagline.Runner.RunAsync(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
-        var source = await reporter.Source;
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
         var context = await warning.Started;
-        var beforeTheWarnings = source.Current;
+        run.Pump();
+        var beforeTheWarnings = run.Current;
         context.AddWarning("entity 1 has no region");
-        var afterOneWarning = source.Current;
+        run.Pump();
+        var afterOneWarning = run.Current;
         context.AddWarning("entity 2 has no region");
-        var afterTwoWarnings = source.Current;
+        run.Pump();
+        var afterTwoWarnings = run.Current;
         warning.Release();
-        var result = await run;
+        var result = await run.Finish();
 
         afterOneWarning[shard.Path].WarningCount.ShouldBe(1);
         afterTwoWarnings[shard.Path].WarningCount.ShouldBe(2);

@@ -3,7 +3,7 @@ using Dagline.TestSupport;
 namespace Dagline.Tests;
 
 /// <summary>
-/// The ordered effects the new engine's step core gives for an input: what a whole run cannot show, that a record is the last effect
+/// The ordered effects the step core gives for an input: what a whole run cannot show, that a record is the last effect
 /// of its list and that what follows a write is decided only once its result is given. The core is driven directly, with no host,
 /// no clock and no thread, through the core's opening to this project.
 /// </summary>

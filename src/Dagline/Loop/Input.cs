@@ -70,8 +70,8 @@ internal enum InputKind
 /// <param name="Payload">
 /// What the input carries beyond its task: the <see cref="TaskOutcome"/> of <see cref="InputKind.BodyEnded"/>, the text of a
 /// task's report, the failure of <see cref="InputKind.Written"/>, which is <see langword="null"/> when the write landed, the
-/// <see cref="StopRequester"/> of <see cref="InputKind.Stop"/>, the <see cref="AskedBeforeTheStart"/> of a
-/// <see cref="InputKind.Start"/> that carries any, or the <see cref="CheckpointSave"/> of <see cref="InputKind.CheckpointSave"/>.
+/// <see cref="StopRequester"/> of <see cref="InputKind.Stop"/> and of a <see cref="InputKind.Start"/> with a stop already asked
+/// for, or the <see cref="CheckpointSave"/> of <see cref="InputKind.CheckpointSave"/>.
 /// </param>
 internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, object? Payload = null)
 {
@@ -86,11 +86,10 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
     public static Input GracePeriodOver { get; } = new(InputKind.GracePeriodOver);
 
     /// <summary>
-    /// The run starts with a drain or a stop, or both, already asked for: a token already cancelled, or a drain signal already
-    /// requested, which reaches the core with the start rather than after it, when tasks would already have started.
+    /// The run starts with a stop already asked for: a token already cancelled, which reaches the core with the start rather than
+    /// after it, when tasks would already have started.
     /// </summary>
-    public static Input StartAsked(bool drained, bool stopped)
-        => drained || stopped ? new(InputKind.Start, Payload: new AskedBeforeTheStart(drained, stopped)) : Start;
+    public static Input StartStopped { get; } = new(InputKind.Start, Payload: StopRequester.App);
 
     public static Input Stop(StopRequester by) => new(InputKind.Stop, Payload: by);
 
@@ -138,14 +137,8 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
 
     public StopRequester Requester => (StopRequester)Payload!;
 
-    /// <summary>What was asked for before the start, for <see cref="InputKind.Start"/>: nothing, unless the start carries it.</summary>
-    public AskedBeforeTheStart Asked => Payload as AskedBeforeTheStart ?? AskedBeforeTheStart.Nothing;
-}
-
-/// <summary>Whether a drain and a stop had been asked for when the run started.</summary>
-internal sealed record AskedBeforeTheStart(bool Drained, bool Stopped)
-{
-    public static AskedBeforeTheStart Nothing { get; } = new(Drained: false, Stopped: false);
+    /// <summary>Whether a stop was already asked for when the run started, for <see cref="InputKind.Start"/>.</summary>
+    public bool StoppedBeforeTheStart => Payload is StopRequester;
 }
 
 /// <summary>A failure a task reported, as <see cref="InputKind.FailureReported"/> carries it.</summary>
