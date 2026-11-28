@@ -159,6 +159,15 @@ internal sealed class StepCore
             case InputKind.WaitClosed:
                 Report(input.Task!, InstanceOf(input.Task!).CloseWaitingScope(_now));
                 break;
+            case InputKind.MessageSet:
+                Report(input.Task!, InstanceOf(input.Task!).SetMessage(input.Text!));
+                break;
+            case InputKind.DetailKept:
+                Report(input.Task!, InstanceOf(input.Task!).AddDetail(input.Lines));
+                break;
+            case InputKind.FailureReported:
+                Report(input.Task!, InstanceOf(input.Task!).Fail(input.Failed.Message, input.Failed.Lines));
+                break;
             default:
                 throw new InvalidOperationException($"The step core does not take the input {input.Kind}.");
         }

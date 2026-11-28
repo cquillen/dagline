@@ -28,11 +28,24 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples) : ITaskRun
         }
     }
 
-    public void SetMessage(BuiltTask task, string message) => throw NotYet(nameof(TaskContext.SetMessage));
+    public void SetMessage(BuiltTask task, string message) => inbox.Post(Input.MessageSet(task, message));
 
-    public void AddDetail(BuiltTask task, IEnumerable<string> texts) => throw NotYet(nameof(TaskContext.AddDetail));
+    /// <summary>Posts the detail lines that are kept; those beyond the kept are only counted on the task's sample.</summary>
+    public void AddDetail(BuiltTask task, IEnumerable<string> texts)
+    {
+        var kept = KeptLines(task, texts);
+        if (kept.Length > 0)
+        {
+            inbox.Post(Input.DetailKept(task, kept));
+        }
+    }
 
-    public void Fail(BuiltTask task, string message, IEnumerable<string> detail) => throw NotYet(nameof(TaskContext.Fail));
+    /// <summary>
+    /// Posts a reported failure, with the detail lines of it that are kept: the task's detail lines and its failure's share one
+    /// limit, counted on its sample.
+    /// </summary>
+    public void Fail(BuiltTask task, string message, IEnumerable<string> detail)
+        => inbox.Post(Input.FailureReported(task, message, KeptLines(task, detail)));
 
     /// <summary>
     /// Posts the opening of a waiting scope, always: only the core knows whether the task is still running, and it ignores the
@@ -52,6 +65,14 @@ internal sealed class LoopTaskRun(Inbox inbox, TaskSamples samples) : ITaskRun
     public Task SaveCheckpointAsync(BuiltTask task, string text) => throw NotYet(nameof(TaskContext.SaveCheckpointAsync));
 
     public NodeStatus StatusOf(BuiltTask task, Node dependency) => throw NotYet(nameof(TaskContext.StatusOf));
+
+    /// <summary>The lines of <paramref name="texts"/>, one for each line break, as far as the task's sample keeps them.</summary>
+    private string[] KeptLines(BuiltTask task, IEnumerable<string> texts)
+    {
+        string[] lines = [.. texts.SelectMany(LineBreaks.Lines)];
+        var kept = samples[task].KeepDetail(lines.Length);
+        return kept == lines.Length ? lines : lines[..kept];
+    }
 
     private static NotSupportedException NotYet(string member) => new($"The new engine does not yet take {member} from a task.");
 }

@@ -110,4 +110,58 @@ public class LoopReportTests
         settled.Node.WaitingSince.ShouldBeNull();
         result.Snapshot[jobTask.Path].WaitingSince.ShouldBeNull();
     }
+
+    [Test]
+    public async Task The_message_and_detail_lines_are_no_event_and_show_once_the_loop_has_applied_them_and_found_its_inbox_empty()
+    {
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        var loadTask = builder.Task("load", load.Body);
+        var reporter = new RecordingReporter();
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None, Reporters = [reporter] });
+        run.Pump();
+        var context = await load.Started;
+        var eventsBefore = reporter.Events.Count;
+
+        context.SetMessage("checking entities");
+        context.AddDetail("tenant-a: 25 entities", "tenant-b: none");
+        context.SetMessage("checked 40 entities");
+        var whenTheCallsReturn = run.Current[loadTask.Path];
+        run.PumpLoop().ShouldBe(1);
+        var onceApplied = run.Current[loadTask.Path];
+        run.Pump();
+        var eventsAfter = reporter.Events.Count;
+        load.Release();
+        var result = await run.Finish();
+
+        whenTheCallsReturn.Message.ShouldBeNull();
+        whenTheCallsReturn.Detail.ShouldBeEmpty();
+        onceApplied.Message.ShouldBe("checked 40 entities");
+        onceApplied.Detail.ShouldBe(["tenant-a: 25 entities", "tenant-b: none"]);
+        eventsAfter.ShouldBe(eventsBefore);
+        result.Snapshot[loadTask.Path].Message.ShouldBe("checked 40 entities");
+    }
+
+    [Test]
+    public async Task A_reported_failure_is_applied_in_the_order_of_the_calls_and_wins_over_the_bodys_end()
+    {
+        var load = new PausedBody();
+        var builder = new GraphBuilder();
+        var loadTask = builder.Task("load", load.Body);
+        var run = ScriptedDriver.Start(builder.Build(), new RunOptions { Journal = Journal.None });
+        run.Pump();
+        var context = await load.Started;
+
+        context.SetMessage("checking entities");
+        context.Fail("2 bad entities", "entity 3: missing owner");
+        context.AddDetail("entity 17: bad date");
+        load.Release();
+        var result = await run.Finish();
+
+        var failed = result.Snapshot[loadTask.Path];
+        failed.Status.ShouldBe(NodeStatus.Failed);
+        failed.Failure.ShouldBe(FailureKind.Reported);
+        failed.Message.ShouldBe("2 bad entities");
+        failed.Detail.ShouldBe(["entity 3: missing owner", "entity 17: bad date"]);
+    }
 }

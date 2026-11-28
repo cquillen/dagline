@@ -18,6 +18,15 @@ internal enum InputKind
     /// <summary>A task closed a waiting scope.</summary>
     WaitClosed,
 
+    /// <summary>A task set its message.</summary>
+    MessageSet,
+
+    /// <summary>A task added detail lines that are kept, each one line, which its sample counted.</summary>
+    DetailKept,
+
+    /// <summary>A task reported a failure, with its message and the detail lines of it that are kept.</summary>
+    FailureReported,
+
     /// <summary>
     /// The result of the write the last <see cref="EffectKind.Record"/> asked for. The loop gives it to the core next, ahead of
     /// anything in the inbox, and never posts it.
@@ -55,6 +64,13 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
 
     public static Input WaitClosed(BuiltTask task) => new(InputKind.WaitClosed, task);
 
+    public static Input MessageSet(BuiltTask task, string message) => new(InputKind.MessageSet, task, message);
+
+    public static Input DetailKept(BuiltTask task, string[] lines) => new(InputKind.DetailKept, task, lines);
+
+    public static Input FailureReported(BuiltTask task, string message, string[] lines)
+        => new(InputKind.FailureReported, task, new ReportedFailure(message, lines));
+
     /// <summary>The result of a write: <paramref name="failure"/> is what it threw, or <see langword="null"/> when it landed.</summary>
     public static Input Written(Exception? failure) => new(InputKind.Written, Payload: failure);
 
@@ -64,4 +80,15 @@ internal readonly record struct Input(InputKind Kind, BuiltTask? Task = null, ob
 
     /// <summary>The text a task reported, for a report that carries one.</summary>
     public string? Text => (string?)Payload;
+
+    /// <summary>The detail lines of <see cref="InputKind.DetailKept"/>.</summary>
+    public string[] Lines => (string[])Payload!;
+
+    /// <summary>The failure of <see cref="InputKind.FailureReported"/>.</summary>
+    public ReportedFailure Failed => (ReportedFailure)Payload!;
 }
+
+/// <summary>A failure a task reported, as <see cref="InputKind.FailureReported"/> carries it.</summary>
+/// <param name="Message">The message the failure replaces the task's with.</param>
+/// <param name="Lines">The detail lines of the failure that are kept, each one line.</param>
+internal sealed record ReportedFailure(string Message, string[] Lines);
