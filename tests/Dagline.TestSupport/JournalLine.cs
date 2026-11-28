@@ -14,9 +14,17 @@ internal readonly record struct JournalLine(string Kind, string? Path)
     private const string _settle = "taskSettled";
     private const string _checkpointSave = "checkpointSaved";
     private const string _runEnd = "runEnded";
+    private const string _runStart = "runStarted";
+    private const string _start = "taskStarted";
+
+    /// <summary>The line of the run's start.</summary>
+    public static JournalLine RunStart { get; } = new(_runStart, null);
 
     /// <summary>The line of the run's end.</summary>
     public static JournalLine RunEnd { get; } = new(_runEnd, null);
+
+    /// <summary>The line of the start of the task at <paramref name="path"/>.</summary>
+    public static JournalLine StartOf(string path) => new(_start, path);
 
     /// <summary>The line of the settle of the task at <paramref name="path"/>.</summary>
     public static JournalLine SettleOf(string path) => new(_settle, path);
@@ -51,8 +59,8 @@ internal readonly record struct JournalLine(string Kind, string? Path)
     public string Describe() => Kind switch
     {
         "header" => "header",
-        "runStarted" => "run started",
-        "taskStarted" => $"started {Path}",
+        _runStart => "run started",
+        _start => $"started {Path}",
         _settle => $"settled {Path}",
         "setAside" => $"set aside {Path}",
         _checkpointSave => $"checkpoint saved {Path}",

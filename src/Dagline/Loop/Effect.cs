@@ -31,7 +31,10 @@ internal enum EffectKind
     /// </summary>
     StartGracePeriod,
 
-    /// <summary>The run has ended with a run outcome: the loop waits for its reporters, then returns its result.</summary>
+    /// <summary>
+    /// The run has ended with a run outcome, and with the failure of a write if one failed: the loop waits for its reporters, then
+    /// returns its result.
+    /// </summary>
     EndRun,
 
     /// <summary>
@@ -61,6 +64,11 @@ internal enum EffectKind
 /// <param name="Outcome">The run outcome, for <see cref="EffectKind.EndRun"/>.</param>
 /// <param name="Save">The save to answer, for <see cref="EffectKind.AnswerSave"/>.</param>
 /// <param name="Refusal">What refuses the save, for <see cref="EffectKind.AnswerSave"/>: <see langword="null"/> when it is made.</param>
+/// <param name="JournalError">The file system's failure of a write, for <see cref="EffectKind.EndRun"/>, if one failed.</param>
+/// <param name="Unrecorded">
+/// What the run ends with when it ends unrecorded, for <see cref="EffectKind.EndRun"/>, which takes precedence over
+/// <paramref name="Outcome"/>; <see langword="null"/> otherwise.
+/// </param>
 internal readonly record struct Effect(
     EffectKind Kind,
     RunEvent? Event = null,
@@ -70,7 +78,9 @@ internal readonly record struct Effect(
     JournalFlush Flush = JournalFlush.None,
     RunOutcome Outcome = default,
     CheckpointSave? Save = null,
-    Exception? Refusal = null)
+    Exception? Refusal = null,
+    Exception? JournalError = null,
+    JournalWriteException? Unrecorded = null)
 {
     public static Effect CloseJournal { get; } = new(EffectKind.CloseJournal);
 
@@ -85,7 +95,8 @@ internal readonly record struct Effect(
 
     public static Effect StartBody(BuiltTask task) => new(EffectKind.StartBody, Task: task);
 
-    public static Effect EndRun(RunOutcome outcome) => new(EffectKind.EndRun, Outcome: outcome);
+    public static Effect EndRun(RunOutcome outcome, Exception? journalError = null, JournalWriteException? unrecorded = null)
+        => new(EffectKind.EndRun, Outcome: outcome, JournalError: journalError, Unrecorded: unrecorded);
 
     public static Effect SaveMade(BuiltTask task, CheckpointSave save) => new(EffectKind.AnswerSave, Task: task, Save: save);
 

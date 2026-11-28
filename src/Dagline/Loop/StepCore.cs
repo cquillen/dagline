@@ -25,6 +25,12 @@ namespace Dagline;
 /// Each event's snapshot is built by the loop as it publishes the event, from the change the event carries, never for every event
 /// of a step beforehand: a step that makes twenty thousand tasks ready would otherwise hold twenty thousand snapshots.
 /// </para>
+/// <para>
+/// A write that fails is never tried again, and nothing more is written. What it held back is decided as though it had landed,
+/// except that nothing starts: Dagline applies a stop, unless one has been applied, where the tasks that fit would have started,
+/// and the run ends unrecorded, with no end entry. A failed start is undone, and its task stays ready. A failed save is refused,
+/// then the stop applied. Only a failed end entry, the last write, leaves the run the outcome it reached, with the error beside it.
+/// </para>
 /// </remarks>
 internal sealed class StepCore
 {
@@ -87,6 +93,14 @@ internal sealed class StepCore
 
     private AfterWrite _afterWrite;
     private Life _life;
+
+    // The file system's failure of the first write that failed: from then on nothing is written, and nothing starts.
+    private Exception? _writeFailure;
+
+    // The outcome the run reached by the rule, and, when a write failed before the run ended, the exception it ends with, which
+    // holds it unrecorded until the cutover (#153) makes unrecorded a run outcome.
+    private RunOutcome _reached;
+    private JournalWriteException? _unrecorded;
     private AskedBeforeTheStart _askedBeforeTheStart = AskedBeforeTheStart.Nothing;
     private DateTimeOffset _now;
     private RunMilestones _milestones = new(Started: default, Drain: null, Stop: null, Ended: null, Outcome: null);
@@ -322,7 +336,7 @@ internal sealed class StepCore
         MakeReady();
         AnnounceSettledGroups(_rollUp.TakeSettled());
         ApplyWhatWasAskedBeforeTheStart();
-        StartWhatFits();
+        StartWhatFitsUnlessTheJournalFailed();
     }
 
     /// <summary>
@@ -414,18 +428,22 @@ internal sealed class StepCore
     /// </summary>
     private void Settle(BuiltTask task, IReadOnlyList<TaskChange> changes, List<JournalEntry> entries)
     {
-        _slots.GiveBack(task);
-        foreach (var limit in task.HeldLimits)
-        {
-            _held.LimitGivenBack(limit);
-        }
-
+        GiveBackTheSlotsOf(task);
         foreach (var change in changes)
         {
             ApplyAndHold(task, change, entries);
         }
 
         _settling.Add(task);
+    }
+
+    private void GiveBackTheSlotsOf(BuiltTask task)
+    {
+        _slots.GiveBack(task);
+        foreach (var limit in task.HeldLimits)
+        {
+            _held.LimitGivenBack(limit);
+        }
     }
 
     /// <summary>
@@ -484,6 +502,21 @@ internal sealed class StepCore
 
         MakeReady();
         AnnounceSettledGroups(settledGroups);
+        StartWhatFitsUnlessTheJournalFailed();
+    }
+
+    /// <summary>
+    /// Starts the ready tasks that fit, as <see cref="StartWhatFits"/> does, unless a write has failed: then Dagline applies a stop
+    /// in their place, unless one has been applied, so that nothing starts that could not be recorded.
+    /// </summary>
+    private void StartWhatFitsUnlessTheJournalFailed()
+    {
+        if (_writeFailure is not null && !HasStopped)
+        {
+            Stop(StopRequester.Dagline);
+            return;
+        }
+
         StartWhatFits();
     }
 
@@ -570,6 +603,30 @@ internal sealed class StepCore
     }
 
     /// <summary>
+    /// The write of the starts failed, so none starts: each task gives back its slots and stays ready, and its start is never
+    /// published. The changes its start closed are taken all the same, unpublished, so that the changes after them are taken in
+    /// the order they were made.
+    /// </summary>
+    private void StartsNotRecorded()
+    {
+        foreach (var held in _heldEvents)
+        {
+            _ = _snapshots.Take(held.Change);
+        }
+
+        _heldEvents.Clear();
+        foreach (var task in _starting)
+        {
+            GiveBackTheSlotsOf(task);
+            _running.Remove(task.Position);
+            Apply(task, InstanceOf(task).StayReady(_now));
+            _ready.Add(task.Position);
+        }
+
+        _starting.Clear();
+    }
+
+    /// <summary>
     /// The position of the task to try next, the first among the ready tasks and the held tasks that fit, and whether it is held;
     /// <see langword="null"/> once there is none.
     /// </summary>
@@ -614,7 +671,8 @@ internal sealed class StepCore
     /// <summary>
     /// The run ends when no task is running and, unless a drain or a stop has been applied, none is ready: its end is recorded,
     /// flushed, then the journal is closed and the end is published. Its outcome is complete when every task succeeded, and
-    /// otherwise stopped after a drain or a stop, and incomplete without one.
+    /// otherwise stopped after a drain or a stop, and incomplete without one. After a failed write it ends unrecorded instead,
+    /// which takes precedence over each of them: it records no end, and its snapshot has an end and no run outcome.
     /// </summary>
     private void EndIfDone()
     {
@@ -627,26 +685,33 @@ internal sealed class StepCore
             : IsEndingEarly ? RunOutcome.Stopped
             : RunOutcome.Incomplete;
         _life = Life.Ended;
-        _milestones = _milestones with { Ended = _now, Outcome = outcome };
+        _reached = outcome;
+        _unrecorded = _writeFailure is { } failure ? new JournalWriteException(failure) : null;
+        _milestones = _milestones with { Ended = _now, Outcome = _unrecorded is null ? outcome : null };
         Record(_onAJournal ? [new RunEndedEntry(_now, outcome)] : [], JournalFlush.ToDisk, AfterWrite.End);
     }
 
+    /// <summary>
+    /// The end is written, or is not written since a write failed: the journal is closed, then the end is published. A run that
+    /// ends unrecorded publishes the exception it ends with in place of a run outcome, as the existing engine does, until the
+    /// cutover (#153). The run's result carries the failure of a write either way, that of its end entry alone included.
+    /// </summary>
     private void AfterTheEndIsWritten()
     {
-        var outcome = _milestones.Outcome!.Value;
         if (_onAJournal)
         {
             _effects.Add(Effect.CloseJournal);
         }
 
-        Publish(new RunEnded(_now, outcome));
-        _effects.Add(Effect.EndRun(outcome));
+        Publish(_unrecorded is null ? new RunEnded(_now, _reached) : new RunEnded(_now, _unrecorded));
+        _effects.Add(Effect.EndRun(_reached, _writeFailure, _unrecorded));
     }
 
     /// <summary>
     /// A task saves its checkpoint, or clears it. A task that is not running, since it has settled or the run has let go of it, is
-    /// refused. A clearing of no checkpoint is made at once and writes nothing. Any other save is recorded, flushed, as the run's
-    /// durability says, and made once that write lands; with no journal, at once. A save is in no event and no snapshot.
+    /// refused. After a failed write any save is refused with that failure, and nothing is written. A clearing of no checkpoint is
+    /// made at once and writes nothing. Any other save is recorded, flushed, as the run's durability says, and made once that write
+    /// lands, when the task's checkpoint changes; with no journal, at once. A save is in no event and no snapshot.
     /// </summary>
     private void SaveCheckpoint(BuiltTask task, CheckpointSave save)
     {
@@ -657,7 +722,13 @@ internal sealed class StepCore
             return;
         }
 
-        if (!instance.ChangeCheckpoint(save.Text))
+        if (_writeFailure is { } failed)
+        {
+            _effects.Add(Effect.SaveRefused(task, save, new JournalWriteException(failed, _source.Current)));
+            return;
+        }
+
+        if (!instance.IsCheckpointChangedBy(save.Text))
         {
             _effects.Add(Effect.SaveMade(task, save));
             return;
@@ -676,7 +747,20 @@ internal sealed class StepCore
     {
         var (task, save) = _saving!.Value;
         _saving = null;
+        InstanceOf(task).ChangeCheckpoint(save.Text);
         _effects.Add(Effect.SaveMade(task, save));
+    }
+
+    /// <summary>
+    /// The write of a save failed: the save is refused with the failure, so the task that made it learns its checkpoint was not
+    /// kept, and then Dagline applies a stop, unless one has been applied.
+    /// </summary>
+    private void SaveNotRecorded(Exception failure)
+    {
+        var (task, save) = _saving!.Value;
+        _saving = null;
+        _effects.Add(Effect.SaveRefused(task, save, new JournalWriteException(failure, _source.Current)));
+        StartWhatFitsUnlessTheJournalFailed();
     }
 
     /// <summary>Applies the drain and the stop already asked for when the run started, the drain first, each as if asked for then.</summary>
@@ -786,11 +870,11 @@ internal sealed class StepCore
 
     /// <summary>
     /// Asks for a write as the last effect of the list and keeps what follows it until its result is given; or, with nothing to
-    /// write, goes straight on.
+    /// write, or once a write has failed, goes straight on.
     /// </summary>
     private void Record(List<JournalEntry> entries, JournalFlush flush, AfterWrite follows)
     {
-        if (entries.Count > 0)
+        if (entries.Count > 0 && _writeFailure is null)
         {
             _effects.Add(Effect.Record(entries, flush));
             _afterWrite = follows;
@@ -808,15 +892,30 @@ internal sealed class StepCore
             throw new InvalidOperationException($"The step core awaits the result of a write, and was given the input {input.Kind}.");
         }
 
-        if (input.Failure is { } failure)
-        {
-            // A failed write faults the run until the core decides what follows one: nothing starts, a stop, and the run unrecorded.
-            throw new InvalidOperationException("A journal write failed, and the new engine does not yet decide what follows one.", failure);
-        }
-
         var follows = _afterWrite;
         _afterWrite = AfterWrite.Nothing;
-        Continue(follows);
+        if (input.Failure is not { } failure)
+        {
+            Continue(follows);
+            return;
+        }
+
+        _writeFailure = failure;
+        switch (follows)
+        {
+            case AfterWrite.Starts:
+                StartsNotRecorded();
+                StartWhatFitsUnlessTheJournalFailed();
+                break;
+            case AfterWrite.Save:
+                SaveNotRecorded(failure);
+                break;
+            default:
+                // The run's start and settles go on as though written, and stop in place of any start. The end keeps the outcome
+                // the run reached, since the run had ended before its write failed.
+                Continue(follows);
+                break;
+        }
     }
 
     private void Continue(AfterWrite follows)

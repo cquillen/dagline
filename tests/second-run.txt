@@ -1,5 +1,6 @@
 # The test classes CI's second run includes, on the new engine (spec #139); tests/second-run.sh runs them. One class per line,
 # as <test project>/<class>, kept in order. A ticket adds a line for each class it makes pass. The list goes at the cutover.
+Dagline.Spectre.Tests/AsciiTests
 Dagline.Spectre.Tests/ChoosingTests
 Dagline.Spectre.Tests/DrawingTests
 Dagline.Spectre.Tests/GroupsTests
@@ -8,6 +9,7 @@ Dagline.Spectre.Tests/ProblemsTests
 Dagline.Spectre.Tests/SmallTerminalTests
 Dagline.Spectre.Tests/SpaceTests
 Dagline.Spectre.Tests/StopBannerTests
+Dagline.Spectre.Tests/SummaryTests
 Dagline.Spectre.Tests/WidthTests
 Dagline.Tests/ArgumentTests
 Dagline.Tests/BlockingTests
@@ -16,6 +18,7 @@ Dagline.Tests/ConsoleStopTests
 Dagline.Tests/ContinueTests
 Dagline.Tests/DependencyTests
 Dagline.Tests/DrainTests
+Dagline.Tests/FailedJournalWriteTests
 Dagline.Tests/FailureSummaryTests
 Dagline.Tests/FailureTests
 Dagline.Tests/GracePeriodTests
@@ -37,10 +40,12 @@ Dagline.Tests/LoopPlainTextReporterTests
 Dagline.Tests/LoopReportTests
 Dagline.Tests/LoopRunCheckpointTests
 Dagline.Tests/LoopRunEndingEarlyTests
+Dagline.Tests/LoopRunFailedWriteTests
 Dagline.Tests/LoopRunReporterWaitTests
 Dagline.Tests/LoopRunTests
 Dagline.Tests/MaxRunningTasksTests
 Dagline.Tests/MessageAndDetailTests
+Dagline.Tests/PlainTextJournalTests
 Dagline.Tests/PlainTextReporterTests
 Dagline.Tests/ProgressTests
 Dagline.Tests/ReportedFailureTests
